@@ -14,7 +14,7 @@ ASMFLAGS := -f elf32
 
 # Список исходников (можно дополнять)
 SRCS_AS := kernel.asm
-SRCS_C  := kernel.c
+SRCS_C  := kernel.c vga/vga.c
 
 # Сгенерированные object‑файлы (.asm → .asm.o, .c → .c.o)
 ASM_OBJS := $(SRCS_AS:.asm=.asm.o)
