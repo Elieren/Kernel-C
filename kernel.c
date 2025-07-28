@@ -7,8 +7,6 @@ typedef unsigned int uint32_t;
 
 uint32_t input_len = 0;
 
-extern void isr32();
-
 void kmain(void)
 {
 
