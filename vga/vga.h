@@ -1,8 +1,10 @@
 #ifndef VGA_H
 #define VGA_H
 
-typedef unsigned char uint8_t;
-typedef unsigned char uint8;
+#include <stdint.h>
+typedef uint8_t uint8;
+typedef uint16_t uint16;
+typedef uint32_t uint32;
 
 enum vga_color
 {
@@ -30,5 +32,15 @@ void print_char(const char c,
                 const unsigned int y,
                 const uint8_t fore,
                 const uint8_t back);
+
+void print_char_long(const char c,
+                     const uint8_t fore,
+                     const uint8_t back);
+
+void new_line(void);
+
+void backspace(void);
+
+void update_hardware_cursor(void);
 
 #endif
