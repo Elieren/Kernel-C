@@ -7,7 +7,14 @@
 // массив указателей на заглушки 0..31
 extern void (*const isr_stubs[32])();
 void (*const isr_stubs[32])() = {
-    isr_stub_0, isr_stub_1, /* … */ isr_stub_31};
+    isr_stub_0, isr_stub_1, isr_stub_2, isr_stub_3,
+    isr_stub_4, isr_stub_5, isr_stub_6, isr_stub_7,
+    isr_stub_8, isr_stub_9, isr_stub_10, isr_stub_11,
+    isr_stub_12, isr_stub_13, isr_stub_14, isr_stub_15,
+    isr_stub_16, isr_stub_17, isr_stub_18, isr_stub_19,
+    isr_stub_20, isr_stub_21, isr_stub_22, isr_stub_23,
+    isr_stub_24, isr_stub_25, isr_stub_26, isr_stub_27,
+    isr_stub_28, isr_stub_29, isr_stub_30, isr_stub_31};
 
 static struct idt_entry idt[IDT_ENTRIES];
 static struct idt_ptr idtp;
