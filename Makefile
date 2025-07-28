@@ -13,8 +13,8 @@ LDFLAGS  := -m elf_i386 -T link.ld
 ASMFLAGS := -f elf32
 
 # Список исходников (можно дополнять)
-SRCS_AS := kernel.asm
-SRCS_C  := kernel.c vga/vga.c keyboard/keyboard.c keyboard/portio.c
+SRCS_AS := kernel.asm idt_load.asm isr.asm isr_stubs.asm
+SRCS_C  := kernel.c vga/vga.c keyboard/keyboard.c keyboard/portio.c time/timer.c idt.c pic.c
 
 # Сгенерированные object‑файлы (.asm → .asm.o, .c → .c.o)
 ASM_OBJS := $(SRCS_AS:.asm=.asm.o)
