@@ -9,7 +9,8 @@ isr_stub_%1:
   iretd
 %endmacro
 
-ISR_STUB 0
-ISR_STUB 1
-; …
-ISR_STUB 31
+%assign i 0
+%rep 32
+  ISR_STUB i
+  %assign i i+1
+%endrep
