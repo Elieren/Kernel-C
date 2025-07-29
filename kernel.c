@@ -6,8 +6,7 @@
 #include "idt.h"
 #include "time/timer.h"
 
-typedef unsigned char uint8_t;
-typedef unsigned int uint32_t;
+#include <stdint.h>
 
 uint32_t input_len = 0;
 

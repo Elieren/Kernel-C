@@ -14,8 +14,8 @@
 
 extern uint32_t input_len;
 
-uint8 x = 3;
-uint8 y;
+uint8_t x = 3;
+uint8_t y;
 
 const char *prompt = "$: ";
 

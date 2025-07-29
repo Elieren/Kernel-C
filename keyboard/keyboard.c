@@ -6,7 +6,7 @@ extern uint32_t input_len;
 
 char get_input_keycode(void)
 {
-    uint8 code;
+    uint8_t code;
     // ждем make‑код
     do
     {
@@ -76,9 +76,9 @@ static const char scancode_to_ascii[256] = {
 };
 
 // Преобразование сканкода в ASCII (или 0, если нет соответствия)
-char get_ascii_char(uint8 scancode)
+char get_ascii_char(uint8_t scancode)
 {
-    return scancode_to_ascii[(uint8)scancode];
+    return scancode_to_ascii[(uint8_t)scancode];
 }
 
 /*
@@ -86,7 +86,7 @@ keep the cpu busy for doing nothing(nop)
 so that io port will not be processed by cpu
 here timer can also be used, but lets do this in looping counter
 */
-void wait_for_io(uint32 timer_count)
+void wait_for_io(uint32_t timer_count)
 {
     while (1)
     {
@@ -97,7 +97,7 @@ void wait_for_io(uint32 timer_count)
     }
 }
 
-void sleep(uint32 timer_count)
+void sleep(uint32_t timer_count)
 {
     wait_for_io(timer_count);
 }

@@ -3,15 +3,18 @@
 #include "timer.h"
 #include "../pic.h"
 
-volatile uint32_t tick_time = 0;
+volatile uint8_t tick_time = 0;
+volatile uint32_t seconds = 0;
 
 void timer_handler()
 {
     tick_time++;
-    if ((tick_time % (100 * 3)) == 0)
+    if (tick_time == 100)
     {
         clean_screen();
         update_hardware_cursor();
+        tick_time = 0;
+        seconds++;
     }
     // говорим PIC: «я обработал IRQ0»
     pic_send_eoi(0);
