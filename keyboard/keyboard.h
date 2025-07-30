@@ -2,6 +2,11 @@
 #define KEYBOARD_H
 
 #include <stdint.h>
+#include <ctype.h>
+
+#define bool _Bool
+#define true 1
+#define false 0
 
 #define KEYBOARD_PORT 0x60
 
@@ -83,5 +88,12 @@
 #define KEY_SPACE 0x39
 #define KEY_TAB 0x0F
 #define KEY_UP 0x48
+#define KEY_APOSTROPHE 0x28
+#define KEY_GRAVE 0x29
+
+#define KEY_LSHIFT 0x2A
+#define KEY_RSHIFT 0x36
+
+#define KEY_CAPSLOCK 0x3A
 
 #endif
