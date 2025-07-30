@@ -10,6 +10,27 @@
 
 uint32_t input_len = 0;
 
+static inline uint32_t sys_print_char(
+    uint32_t x,
+    uint32_t y,
+    char ch,
+    uint8_t f_color,
+    uint8_t b_color) // <-- новый параметр
+{
+    uint32_t ret;
+    asm volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(0),       // номер syscall = 0 → EAX
+          "b"(x),       // arg1 → EBX
+          "c"(y),       // arg2 → ECX
+          "d"(ch),      // arg3 → EDX
+          "S"(f_color), // arg4 → ESI
+          "D"(b_color)  // arg5 → EDI
+        : "memory");
+    return ret;
+}
+
 void kmain(void)
 {
     idt_install();
@@ -38,6 +59,8 @@ void kmain(void)
     {
         print_char(prompt[i], i, 0, WHITE, BLACK);
     }
+
+    sys_print_char(5, 10, 'X', WHITE, RED);
 
     for (;;)
     {

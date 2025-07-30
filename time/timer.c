@@ -11,7 +11,7 @@ void timer_handler()
     tick_time++;
     if (tick_time == 100)
     {
-        clean_screen();
+        // clean_screen();
         update_hardware_cursor();
         tick_time = 0;
         seconds++;
