@@ -46,5 +46,6 @@ extern void isr_stub_31();
  * Реализован в isr_stubs.asm или isr.asm как глобальный isr32.
  */
 extern void isr32();
+extern void isr33();
 
 #endif // ISR_H

@@ -14,7 +14,7 @@ void kmain(void)
 {
     idt_install();
     init_timer(1);
-    outb(0x21, 0xFE);
+    outb(0x21, 0xFC);
 
     __asm__ volatile("sti");
 
@@ -38,8 +38,6 @@ void kmain(void)
     {
         print_char(prompt[i], i, 0, WHITE, BLACK);
     }
-
-    input();
 
     for (;;)
         ;

@@ -1,23 +1,9 @@
 #include "keyboard.h"
 #include "../vga/vga.h"
 #include "portio.h"
+#include "../pic.h"
 
 extern uint32_t input_len;
-
-char get_input_keycode(void)
-{
-    uint8_t code;
-    // ждем make‑код
-    do
-    {
-        // статусный порт 0x64, бит0=1 когда готово
-        while (!(inb(0x64) & 1))
-        { /* nop */
-        }
-        code = inb(KEYBOARD_PORT);
-    } while (code & 0x80); // пропускаем все коды с установленным старшим битом
-    return (char)code;
-}
 
 // Таблица 0–255, все неиспользуемые элементы = 0
 static const char scancode_to_ascii[256] = {
@@ -81,53 +67,32 @@ char get_ascii_char(uint8_t scancode)
     return scancode_to_ascii[(uint8_t)scancode];
 }
 
-/*
-keep the cpu busy for doing nothing(nop)
-so that io port will not be processed by cpu
-here timer can also be used, but lets do this in looping counter
-*/
-void wait_for_io(uint32_t timer_count)
+void keyboard_handler(void)
 {
-    while (1)
-    {
-        asm volatile("nop");
-        timer_count--;
-        if (timer_count <= 0)
-            break;
-    }
-}
-
-void sleep(uint32_t timer_count)
-{
-    wait_for_io(timer_count);
-}
-
-void input(void)
-{
-    char ch = 0;
-    char keycode = 0;
-
-    while (1)
-    {
-        keycode = get_input_keycode();
-        if (keycode == KEY_ENTER)
+    uint8_t code = inb(KEYBOARD_PORT);
+    if (!(code & 0x80))
+    { // make‑code только
+        char ch = get_ascii_char(code);
+        if (ch)
         {
-            new_line();
-            input_len = 0;
-        }
-        else if (keycode == KEY_BACKSPACE)
-        {
-            if (input_len > 0)
+            if (code == KEY_ENTER)
             {
-                backspace();
+                new_line();
+                input_len = 0;
+            }
+            else if (code == KEY_BACKSPACE)
+            {
+                if (input_len > 0)
+                {
+                    backspace();
+                }
+            }
+            else
+            {
+                print_char_long(ch, WHITE, BLACK);
+                input_len++;
             }
         }
-        else
-        {
-            ch = get_ascii_char(keycode);
-            print_char_long(ch, WHITE, BLACK);
-            input_len++;
-        }
-        // sleep(0x02FFFFFF);
     }
+    pic_send_eoi(1); // EOI для клавиатуры
 }

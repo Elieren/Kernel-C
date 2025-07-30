@@ -41,6 +41,7 @@ void idt_install(void)
     }
     // PIT IRQ0 → вектор 32
     idt_set_gate(32, (uint32_t)isr32, 0x08, 0x8E);
+    idt_set_gate(33, (uint32_t)isr33, 0x08, 0x8E);
 
     idt_load((uint32_t)&idtp);
 }
