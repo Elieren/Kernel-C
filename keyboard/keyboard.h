@@ -84,6 +84,4 @@
 #define KEY_TAB 0x0F
 #define KEY_UP 0x48
 
-void input(void);
-
 #endif
