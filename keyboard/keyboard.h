@@ -2,7 +2,6 @@
 #define KEYBOARD_H
 
 #include <stdint.h>
-#include <ctype.h>
 
 #define bool _Bool
 #define true 1
