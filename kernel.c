@@ -16,7 +16,7 @@ void kmain(void)
     init_timer(1);
     outb(0x21, 0xFC);
 
-    __asm__ volatile("sti");
+    asm volatile("sti");
 
     const char *msg = "Hello, World!";
     uint8_t *vid = (uint8_t *)0xB8000;
@@ -40,5 +40,7 @@ void kmain(void)
     }
 
     for (;;)
-        ;
+    {
+        asm volatile("hlt");
+    }
 }
