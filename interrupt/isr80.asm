@@ -5,8 +5,8 @@ extern syscall_handler
 global isr80
 
 isr80:
-    cli                  ; запретить прерывания
     pushfd               ; сохранить EFLAGS
+    cli                  ; запретить прерывания
 
     ; ——— Сохранить контекст (все регистры, кроме ESP) ———
     push    edi
@@ -38,6 +38,6 @@ isr80:
     pop     esi
     pop     edi
 
-    popfd                ; восстановить EFLAGS
     sti                  ; разрешить прерывания
+    popfd                ; восстановить EFLAGS
     iret                 ; возврат из прерывания
