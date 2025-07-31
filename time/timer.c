@@ -2,6 +2,7 @@
 #include "../vga/vga.h"
 #include "timer.h"
 #include "../pic.h"
+#include "clock/clock.h"
 
 volatile uint8_t tick_time = 0;
 volatile uint32_t seconds = 0;
@@ -15,6 +16,8 @@ void timer_handler()
         update_hardware_cursor();
         tick_time = 0;
         seconds++;
+        clock_tick();
+        print_time();
     }
     // говорим PIC: «я обработал IRQ0»
     pic_send_eoi(0);

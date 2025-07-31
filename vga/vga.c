@@ -1,5 +1,7 @@
 #include "vga.h"
 #include "../keyboard/portio.h"
+#include "../time/timer.h"
+#include "../time/clock/clock.h"
 
 #define VGA_BUF ((uint8_t *)0xB8000)
 #define CELL_SIZE 2
@@ -14,10 +16,14 @@
 
 extern uint32_t input_len;
 
+extern uint32_t seconds;
+
 uint8_t x = 3;
 uint8_t y;
 
 const char *prompt = "$: ";
+
+char time_str[9];
 
 void clean_screen(void)
 {
@@ -162,4 +168,14 @@ void update_hardware_cursor(void)
     // младший байт
     outb(VGA_CTRL, CURSOR_LOW);
     outb(VGA_DATA, pos & 0xFF);
+}
+
+void print_time(void)
+{
+    format_clock(time_str, system_clock);
+
+    for (uint32_t i = 0; time_str[i]; ++i)
+    {
+        print_char(time_str[i], 70 + i, 24, YELLOW, BLACK);
+    }
 }

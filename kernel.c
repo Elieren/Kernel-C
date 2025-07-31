@@ -5,6 +5,7 @@
 
 #include "idt.h"
 #include "time/timer.h"
+#include "time/clock/clock.h"
 
 #include <stdint.h>
 
@@ -34,6 +35,7 @@ static inline uint32_t sys_print_char(
 void kmain(void)
 {
     idt_install();
+    init_system_clock();
     init_timer(1);
     outb(0x21, 0xFC);
 
