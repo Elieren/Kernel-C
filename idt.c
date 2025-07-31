@@ -5,7 +5,6 @@
 #include "pic.h"
 
 // массив указателей на заглушки 0..31
-extern void (*const isr_stubs[32])();
 void (*const isr_stubs[32])() = {
     isr_stub_0, isr_stub_1, isr_stub_2, isr_stub_3,
     isr_stub_4, isr_stub_5, isr_stub_6, isr_stub_7,
