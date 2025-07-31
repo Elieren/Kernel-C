@@ -15,7 +15,6 @@ isr80:
     push    ebx
     push    edx
     push    ecx
-    push    eax
 
     ; ——— Передать 6 аргументов в стек по cdecl ———
     push    ebp         ; a6
@@ -30,7 +29,6 @@ isr80:
     add     esp, 28     ; убрать 7 × 4 байт аргументов
 
     ; ——— Восстановить сохранённые регистры ———
-    pop     eax
     pop     ecx
     pop     edx
     pop     ebx

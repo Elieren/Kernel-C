@@ -6,31 +6,11 @@
 #include "idt.h"
 #include "time/timer.h"
 #include "time/clock/clock.h"
+#include "syscall/syscall.h"
 
 #include <stdint.h>
 
 uint32_t input_len = 0;
-
-static inline uint32_t sys_print_char(
-    uint32_t x,
-    uint32_t y,
-    char ch,
-    uint8_t f_color,
-    uint8_t b_color) // <-- новый параметр
-{
-    uint32_t ret;
-    asm volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(0),       // номер syscall = 0 → EAX
-          "b"(x),       // arg1 → EBX
-          "c"(y),       // arg2 → ECX
-          "d"(ch),      // arg3 → EDX
-          "S"(f_color), // arg4 → ESI
-          "D"(b_color)  // arg5 → EDI
-        : "memory");
-    return ret;
-}
 
 void kmain(void)
 {
@@ -61,6 +41,13 @@ void kmain(void)
     }
 
     sys_print_char(5, 10, 'X', WHITE, RED);
+
+    const char *secs = sys_get_seconds_str();
+
+    for (uint32_t i = 0; secs[i]; ++i)
+    {
+        sys_print_char(i, 20, secs[i], WHITE, RED);
+    }
 
     for (;;)
     {

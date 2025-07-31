@@ -14,4 +14,36 @@ uint32_t syscall_handler(
     uint32_t a6   // EBP
 );
 
+static inline uint32_t sys_print_char(
+    uint32_t x,
+    uint32_t y,
+    char ch,
+    uint8_t f_color,
+    uint8_t b_color) // <-- новый параметр
+{
+    uint32_t ret;
+    asm volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(0),       // номер syscall = 0 → EAX
+          "b"(x),       // arg1 → EBX
+          "c"(y),       // arg2 → ECX
+          "d"(ch),      // arg3 → EDX
+          "S"(f_color), // arg4 → ESI
+          "D"(b_color)  // arg5 → EDI
+        : "memory");
+    return ret;
+}
+
+static inline const char *sys_get_seconds_str(void)
+{
+    uint32_t ptr;
+    asm volatile(
+        "int $0x80"
+        : "=a"(ptr)
+        : "a"(1)
+        : "memory");
+    return (const char *)ptr;
+}
+
 #endif
