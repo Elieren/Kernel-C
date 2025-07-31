@@ -18,6 +18,7 @@ void timer_handler()
         seconds++;
         clock_tick();
         print_time();
+        print_systemup();
     }
     // говорим PIC: «я обработал IRQ0»
     pic_send_eoi(0);

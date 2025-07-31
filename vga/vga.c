@@ -24,6 +24,7 @@ uint8_t y;
 const char *prompt = "$: ";
 
 char time_str[9];
+char time_up[9];
 
 void clean_screen(void)
 {
@@ -168,6 +169,34 @@ void update_hardware_cursor(void)
     // младший байт
     outb(VGA_CTRL, CURSOR_LOW);
     outb(VGA_DATA, pos & 0xFF);
+}
+
+void format_up(unsigned total_seconds, char *buffer)
+{
+    unsigned hours = total_seconds / 3600;
+    unsigned minutes = (total_seconds % 3600) / 60;
+    unsigned seconds = total_seconds % 60;
+
+    /* Число часов может быть больше 99, если нужно — увеличить разрядность. */
+    buffer[0] = '0' + (hours / 10) % 10; /* старший разряд часов */
+    buffer[1] = '0' + (hours % 10);      /* младший разряд часов */
+    buffer[2] = ':';
+    buffer[3] = '0' + (minutes / 10);
+    buffer[4] = '0' + (minutes % 10);
+    buffer[5] = ':';
+    buffer[6] = '0' + (seconds / 10);
+    buffer[7] = '0' + (seconds % 10);
+    buffer[8] = '\0';
+}
+
+void print_systemup(void)
+{
+    format_up(seconds, time_up);
+
+    for (uint32_t i = 0; time_up[i]; ++i)
+    {
+        print_char(time_up[i], 70 + i, 23, YELLOW, BLACK);
+    }
 }
 
 void print_time(void)

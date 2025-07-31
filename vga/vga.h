@@ -41,5 +41,6 @@ void backspace(void);
 void update_hardware_cursor(void);
 
 void print_time(void);
+void print_systemup(void);
 
 #endif
