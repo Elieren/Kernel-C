@@ -57,7 +57,7 @@ void kmain(void)
 
     for (uint32_t i = 0; prompt[i]; ++i)
     {
-        print_char(prompt[i], i, 0, WHITE, BLACK);
+        print_char_long(prompt[i], WHITE, BLACK);
     }
 
     sys_print_char(5, 10, 'X', WHITE, RED);

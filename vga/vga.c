@@ -18,7 +18,7 @@ extern uint32_t input_len;
 
 extern uint32_t seconds;
 
-uint8_t x = 3;
+uint8_t x;
 uint8_t y;
 
 const char *prompt = "$: ";
