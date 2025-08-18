@@ -5,6 +5,10 @@
 
 #define IDT_ENTRIES 256
 
+#define TIMER 32
+#define KEYBOARD 33
+#define INTERRUPT 0x80
+
 struct idt_entry
 {
     uint16_t base_low;

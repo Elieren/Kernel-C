@@ -39,9 +39,9 @@ void idt_install(void)
         idt_set_gate(i, (uint32_t)isr_stubs[i], 0x08, 0x8E);
     }
     // PIT IRQ0 → вектор 32
-    idt_set_gate(32, (uint32_t)isr32, 0x08, 0x8E);
-    idt_set_gate(33, (uint32_t)isr33, 0x08, 0x8E);
-    idt_set_gate(0x80, (uint32_t)isr80, 0x08, 0xEE);
+    idt_set_gate(TIMER, (uint32_t)isr32, 0x08, 0x8E);
+    idt_set_gate(KEYBOARD, (uint32_t)isr33, 0x08, 0x8E);
+    idt_set_gate(INTERRUPT, (uint32_t)isr80, 0x08, 0xEE);
 
     idt_load((uint32_t)&idtp);
 }
