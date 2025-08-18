@@ -25,6 +25,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Memory allocator.
 
+* [X] Add power off and reboot to kernel.
+
 * [ ] Multitasking.
 
 * [ ] Make the terminal a separate application rather than part of the kernel.
