@@ -3,6 +3,8 @@
 #include "../vga/vga.h"
 #include "../time/timer.h"
 #include "../malloc/malloc.h"
+#include "../power/poweroff.h"
+#include "../power/reboot.h"
 
 extern uint32_t seconds;
 
@@ -72,6 +74,13 @@ uint32_t syscall_handler(
             get_kmalloc_stats((kmalloc_stats_t *)a1); // a1 = указатель на структуру
         }
         return 0;
+    case SYSCALL_POWER_OFF:
+        power_off();
+        return 0; // на самом деле ядро выключится и сюда не вернётся
+
+    case SYSCALL_REBOOT:
+        reboot_system();
+        return 0; // ядро перезагрузится
     default:
         return (uint32_t)-1;
     }

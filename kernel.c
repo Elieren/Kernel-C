@@ -13,6 +13,9 @@
 #include "malloc/malloc.h"
 #include "libc/string.h"
 
+#include "power/poweroff.h"
+#include "power/reboot.h"
+
 /* глобальные переменные */
 uint32_t input_len = 0;
 
@@ -52,6 +55,9 @@ static void debug_run_tests(void)
     }
 
     print_kmalloc_stats();
+
+    // sys_reboot();
+    // sys_power_off();
 }
 #endif // DEBUG
 

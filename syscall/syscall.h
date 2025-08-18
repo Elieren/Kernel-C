@@ -15,6 +15,9 @@
 #define SYSCALL_FREE 12
 #define SYSCALL_KMALLOC_STATS 13
 
+#define SYSCALL_POWER_OFF 100 // выключение системы
+#define SYSCALL_REBOOT 101    // перезагрузка системы
+
 // Обёртки для удобства
 static inline void *sys_malloc(size_t size)
 {
@@ -87,6 +90,24 @@ static inline void sys_print_char(char ch, uint32_t x, uint32_t y, uint8_t fg, u
         "int $0x80"
         :
         : "a"(SYSCALL_PRINT_CHAR), "b"(ch), "c"(x), "d"(y), "S"(fg), "D"(bg)
+        : "memory");
+}
+
+static inline void sys_power_off(void)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_POWER_OFF)
+        : "memory");
+}
+
+static inline void sys_reboot(void)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_REBOOT)
         : "memory");
 }
 

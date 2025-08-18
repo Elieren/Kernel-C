@@ -10,7 +10,7 @@ ASMFLAGS := -f elf32
 
 # Источники
 SRCS_AS := kernel.asm idt_load.asm interrupt/isr32.asm interrupt/isr33.asm interrupt/isr_stubs.asm interrupt/isr80.asm
-SRCS_C  := kernel.c vga/vga.c keyboard/keyboard.c keyboard/portio.c time/timer.c idt.c pic.c syscall/syscall.c time/clock/clock.c time/clock/rtc.c malloc/malloc.c libc/string.c libc/stack_protector.c
+SRCS_C  := kernel.c vga/vga.c keyboard/keyboard.c keyboard/portio.c time/timer.c idt.c pic.c syscall/syscall.c time/clock/clock.c time/clock/rtc.c malloc/malloc.c libc/string.c libc/stack_protector.c power/poweroff.c power/reboot.c
 
 # Объекты
 ASM_OBJS := $(patsubst %.asm,build/%.asm.o,$(SRCS_AS))
