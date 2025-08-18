@@ -23,7 +23,7 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [x] Add a syscall for string output to the terminal (`sys_write`).
 
-* [ ] Memory allocator.
+* [X] Memory allocator.
 
 * [ ] Multitasking.
 

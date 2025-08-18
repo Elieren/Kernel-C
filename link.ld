@@ -6,4 +6,11 @@ SECTIONS {
   .rodata : { *(.rodata*) }
   .data : { *(.data*) }
   .bss : { *(.bss*) }
+
+  /* Простая область под кучу: 32 MiB сразу после .bss */
+  .heap : {
+    _heap_start = .;
+    . = . + 32 * 1024 * 1024; /* 32 MiB */
+    _heap_end = .;
+  }
 }
