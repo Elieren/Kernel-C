@@ -1,5 +1,5 @@
 // pic.c
-#include "keyboard/portio.h"
+#include "portio/portio.h"
 #include "pic.h"
 #define ICW1_INIT 0x10
 #define ICW1_ICW4 0x01

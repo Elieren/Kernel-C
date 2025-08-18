@@ -1,5 +1,5 @@
 #include "rtc.h"
-#include "../../keyboard/portio.h"
+#include "../../portio/portio.h"
 
 // Ждём окончания обновления RTC (Update-in-Progress бит в регистре 0x0A)
 static void rtc_wait_ready(void)

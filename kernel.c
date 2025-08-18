@@ -1,7 +1,7 @@
 /* kernel.c */
 #include "vga/vga.h"
 #include "keyboard/keyboard.h"
-#include "keyboard/portio.h"
+#include "portio/portio.h"
 
 #include "idt.h"
 #include "time/timer.h"

@@ -1,5 +1,5 @@
 #include "vga.h"
-#include "../keyboard/portio.h"
+#include "../portio/portio.h"
 #include "../time/timer.h"
 #include "../time/clock/clock.h"
 

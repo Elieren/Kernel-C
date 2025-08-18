@@ -1,6 +1,6 @@
 // idt.c
 #include "idt.h"
-#include "keyboard/portio.h"
+#include "portio/portio.h"
 #include "isr.h"
 #include "pic.h"
 

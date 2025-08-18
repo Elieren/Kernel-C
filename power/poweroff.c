@@ -1,5 +1,5 @@
 #include "poweroff.h"
-#include "../keyboard/portio.h"
+#include "../portio/portio.h"
 #include <stdint.h>
 
 #define SLP_EN (1 << 13)

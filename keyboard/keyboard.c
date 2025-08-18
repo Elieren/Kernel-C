@@ -1,6 +1,6 @@
 #include "keyboard.h"
 #include "../vga/vga.h"
-#include "portio.h"
+#include "../portio/portio.h"
 #include "../pic.h"
 
 extern uint32_t input_len;

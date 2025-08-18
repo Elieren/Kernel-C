@@ -1,5 +1,5 @@
 #include "reboot.h"
-#include "../keyboard/portio.h"
+#include "../portio/portio.h"
 #include <stdint.h>
 
 void reboot_system(void)
