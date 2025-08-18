@@ -56,14 +56,6 @@ void kmain(void)
 
     /* Пример: выделить 2 MiB */
     void *p = malloc(2 * 1024 * 1024);
-    if (!p)
-    {
-        sys_print_str("malloc failed", 50, 14, WHITE, RED);
-        for (;;)
-        {
-            asm volatile("hlt");
-        }
-    }
 
     /* записать строку в выделенную память */
     char *s = (char *)p;
@@ -72,20 +64,11 @@ void kmain(void)
 
     /* расширяем до 3 MiB */
     p = realloc(p, 3 * 1024 * 1024);
-    if (!p)
-    {
-        sys_print_str("realloc failed", 50, 16, WHITE, RED);
-        for (;;)
-        {
-            asm volatile("hlt");
-        }
-    }
     s = (char *)p;
     sys_print_str(s, 50, 17, WHITE, RED);
 
     /* освобождение */
     free(p);
-    sys_print_str("freed", 50, 18, WHITE, RED);
 
     // print_kmalloc_stats();
 
