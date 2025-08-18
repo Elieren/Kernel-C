@@ -34,6 +34,12 @@ void print_char_long(const char c,
                      const uint8_t fore,
                      const uint8_t back);
 
+void print_string(const char *str,
+                  const unsigned int x,
+                  const unsigned int y,
+                  const uint8_t fore,
+                  const uint8_t back);
+
 void new_line(void);
 
 void backspace(void);

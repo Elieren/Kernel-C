@@ -21,7 +21,7 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [x] System call vector (`0x80`) is already connected in the IDT — framework ready.
 
-* [ ] Add a syscall for string output to the terminal (`sys_write`).
+* [x] Add a syscall for string output to the terminal (`sys_write`).
 
 * [ ] Memory allocator.
 

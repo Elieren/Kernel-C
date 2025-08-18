@@ -50,11 +50,14 @@ uint32_t syscall_handler(
     switch (num)
     {
     case 0:
-        print_char((char)a3, a1, a2, (uint8_t)a4, (uint8_t)a5);
+        print_char((char)a1, a2, a3, (uint8_t)a4, (uint8_t)a5);
         return 0;
     case 1:
         uint_to_str(seconds, str);
         return (uint32_t)str;
+    case 2:
+        print_string((const char *)a1, a2, a3, (uint8_t)a4, (uint8_t)a5);
+        return 0;
     default:
         return (uint32_t)-1;
     }

@@ -62,6 +62,27 @@ void print_char(const char c,
     vid[offset + 1] = color;  // атрибут цвета
 }
 
+void print_string(const char *str,
+                  const unsigned int x,
+                  const unsigned int y,
+                  const uint8_t fore,
+                  const uint8_t back)
+{
+    uint8_t *vid = (uint8_t *)0xB8000;
+
+    // вычисляем смещение в байтах
+    unsigned int offset = (y * VGA_WIDTH + x) * 2;
+
+    uint8_t color = make_color(fore, back);
+
+    for (uint32_t i = 0; str[i]; ++i)
+    {
+        vid[offset] = (uint8_t)str[i];
+        vid[offset + 1] = color;
+        offset += 2;
+    }
+}
+
 // скроллим экран на одну строку
 static void scroll_screen(void)
 {

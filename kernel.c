@@ -22,14 +22,10 @@ void kmain(void)
     asm volatile("sti");
 
     // const char *msg = "Hello, World!";
-    // uint8_t *vid = (uint8_t *)0xB8000;
 
     // clean_screen();
 
-    // for (uint32_t i = 0; msg[i]; ++i)
-    // {
-    //     print_char(msg[i], i, 0, YELLOW, BLACK);
-    // }
+    // sys_print_str(msg, 78, 11, WHITE, BLACK);
 
     clean_screen();
 
@@ -40,14 +36,11 @@ void kmain(void)
         print_char_long(prompt[i], WHITE, BLACK);
     }
 
-    sys_print_char(5, 10, 'X', WHITE, RED);
+    sys_print_char('X', 5, 10, WHITE, RED);
 
     const char *secs = sys_get_seconds_str();
 
-    for (uint32_t i = 0; secs[i]; ++i)
-    {
-        sys_print_char(i, 20, secs[i], WHITE, RED);
-    }
+    sys_print_str(secs, 0, 20, WHITE, RED);
 
     for (;;)
     {

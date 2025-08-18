@@ -15,9 +15,9 @@ uint32_t syscall_handler(
 );
 
 static inline uint32_t sys_print_char(
+    char ch,
     uint32_t x,
     uint32_t y,
-    char ch,
     uint8_t f_color,
     uint8_t b_color) // <-- новый параметр
 {
@@ -26,9 +26,30 @@ static inline uint32_t sys_print_char(
         "int $0x80"
         : "=a"(ret)
         : "a"(0),       // номер syscall = 0 → EAX
-          "b"(x),       // arg1 → EBX
-          "c"(y),       // arg2 → ECX
-          "d"(ch),      // arg3 → EDX
+          "b"(ch),      // arg1 → EBX
+          "c"(x),       // arg2 → ECX
+          "d"(y),       // arg3 → EDX
+          "S"(f_color), // arg4 → ESI
+          "D"(b_color)  // arg5 → EDI
+        : "memory");
+    return ret;
+}
+
+static inline uint32_t sys_print_str(
+    const char *s,
+    uint32_t x,
+    uint32_t y,
+    uint8_t f_color,
+    uint8_t b_color) // <-- новый параметр
+{
+    uint32_t ret;
+    asm volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(2),       // номер syscall = 0 → EAX
+          "b"(s),       // arg1 → EBX
+          "c"(x),       // arg2 → ECX
+          "d"(y),       // arg3 → EDX
           "S"(f_color), // arg4 → ESI
           "D"(b_color)  // arg5 → EDI
         : "memory");
