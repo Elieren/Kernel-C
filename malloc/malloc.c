@@ -276,18 +276,6 @@ void *realloc(void *ptr, size_t new_size)
 
 /* ---- stats for kernel malloc ---- */
 
-/* структура статистики */
-typedef struct
-{
-    size_t total_managed; /* payloads + headers (в байтах) */
-    size_t used_payload;
-    size_t free_payload;
-    size_t largest_free;
-    size_t num_blocks;
-    size_t num_used;
-    size_t num_free;
-} kmalloc_stats_t;
-
 /* Обойти список блоков и собрать статистику.
    heap_head и block_header_t — доступны в этом файле */
 void get_kmalloc_stats(kmalloc_stats_t *st)

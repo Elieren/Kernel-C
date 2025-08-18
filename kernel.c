@@ -54,21 +54,27 @@ void kmain(void)
 
     sys_print_str(secs, 0, 20, WHITE, RED);
 
-    /* Пример: выделить 2 MiB */
-    void *p = malloc(2 * 1024 * 1024);
+    /* Пример: выделить 2 MiB через syscall */
+    void *p = sys_malloc(2 * 1024 * 1024);
 
-    /* записать строку в выделенную память */
-    char *s = (char *)p;
-    strcpy(s, "Hello from kernel heap!");
-    sys_print_str(s, 50, 15, WHITE, RED);
+    if (p)
+    {
+        /* записать строку в выделенную память */
+        char *s = (char *)p;
+        strcpy(s, "Hello from kernel heap!");
+        sys_print_str(s, 50, 15, WHITE, RED);
 
-    /* расширяем до 3 MiB */
-    p = realloc(p, 3 * 1024 * 1024);
-    s = (char *)p;
-    sys_print_str(s, 50, 17, WHITE, RED);
+        /* расширяем до 3 MiB через syscall */
+        p = sys_realloc(p, 3 * 1024 * 1024);
+        if (p)
+        {
+            s = (char *)p;
+            sys_print_str(s, 50, 17, WHITE, RED);
+        }
 
-    /* освобождение */
-    free(p);
+        /* освобождение через syscall */
+        sys_free(p);
+    }
 
     // print_kmalloc_stats();
 
