@@ -27,7 +27,7 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Add power off and reboot to kernel.
 
-* [ ] Multitasking.
+* [X] Multitasking.
 
 * [ ] Make the terminal a separate application rather than part of the kernel.
 

@@ -16,6 +16,8 @@
 #include "power/poweroff.h"
 #include "power/reboot.h"
 
+#include "multitask/task.h"
+
 /* глобальные переменные */
 uint32_t input_len = 0;
 
@@ -61,6 +63,48 @@ static void debug_run_tests(void)
 }
 #endif // DEBUG
 
+void user_task1(void)
+{
+    int x = 2;       /* стартовая колонка */
+    const int y = 5; /* фиксированная строка */
+    for (;;)
+    {
+        /* рисуем */
+        sys_print_char('.', x, y, BLUE, BLACK);
+
+        /* простая задержка (busy-wait как у вас раньше) */
+        for (volatile int i = 0; i < 10000000; ++i)
+            asm volatile("");
+
+        /* стираем текущее положение (заменяем пробелом с фоном) */
+        sys_print_char(' ', x, y, BLACK, BLACK);
+
+        /* смещаемся вправо, обёртка по ширине экрана */
+        x++;
+        if (x >= 80)
+            x = 0;
+    }
+}
+
+void user_task2(void)
+{
+    int x = 3;       /* стартовая колонка */
+    const int y = 6; /* фиксированная строка */
+    for (;;)
+    {
+        sys_print_char('#', x, y, YELLOW, BLACK);
+
+        for (volatile int i = 0; i < 10000000; ++i)
+            asm volatile("");
+
+        sys_print_char(' ', x, y, BLACK, BLACK);
+
+        x++;
+        if (x >= 80)
+            x = 0;
+    }
+}
+
 /*-------------------------------------------------------------
     Основная функция ядра
 -------------------------------------------------------------*/
@@ -76,18 +120,23 @@ void kmain(void)
     size_t heap_size = (size_t)((uintptr_t)&_heap_end - (uintptr_t)&_heap_start);
     malloc_init(&_heap_start, heap_size);
 
+    clean_screen();
+
+    scheduler_init();
+    task_create(user_task1, 1);
+    task_create(user_task2, 2);
+
     /* Разрешаем прерывания */
     asm volatile("sti");
 
     /* Очистка экрана и курсор */
-    clean_screen();
-    update_hardware_cursor();
+    // update_hardware_cursor();
 
-    /* Отображение приветственного текста (prompt) */
-    for (uint32_t i = 0; prompt[i]; ++i)
-    {
-        print_char_long(prompt[i], WHITE, BLACK);
-    }
+    // /* Отображение приветственного текста (prompt) */
+    // for (uint32_t i = 0; prompt[i]; ++i)
+    // {
+    //     print_char_long(prompt[i], WHITE, BLACK);
+    // }
 
     /* Запуск debug-фич, если включено */
 #ifdef DEBUG

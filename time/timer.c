@@ -3,16 +3,20 @@
 #include "timer.h"
 #include "../pic.h"
 #include "clock/clock.h"
+#include "../multitask/task.h"
 
 volatile uint8_t tick_time = 0;
 volatile uint32_t seconds = 0;
 
-void timer_handler()
+uint32_t *isr_timer_dispatch(uint32_t *regs_ptr)
 {
+    /* Это точка, где мы на каждом тике обрабатываем время и планировщик.
+       Примечание: прерывания уже отключены в isr.asm (cli). */
+
+    /* Обновляем экранное время раз в 100 тиксов (как у вас было) */
     tick_time++;
-    if (tick_time == 100)
+    if (tick_time >= 100)
     {
-        // clean_screen();
         update_hardware_cursor();
         tick_time = 0;
         seconds++;
@@ -20,8 +24,15 @@ void timer_handler()
         print_time();
         print_systemup();
     }
-    // говорим PIC: «я обработал IRQ0»
+
+    /* Посылаем EOI PIC — делаем это здесь, до возможного переключения */
     pic_send_eoi(0);
+
+    /* Запускаем scheduler: он сохранит regs текущей задачи и вернёт frame следующей. */
+    uint32_t *out_regs = regs_ptr;
+    schedule_from_isr(regs_ptr, &out_regs);
+
+    return out_regs;
 }
 
 void init_timer(uint32_t frequency)
