@@ -39,3 +39,6 @@ isr80:
     sti                  ; разрешить прерывания
     popfd                ; восстановить EFLAGS
     iret                 ; возврат из прерывания
+
+section .note.GNU-stack
+; empty

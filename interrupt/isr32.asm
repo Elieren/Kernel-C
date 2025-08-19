@@ -41,3 +41,6 @@ isr32:
 
     sti
     iretd
+
+section .note.GNU-stack
+; empty

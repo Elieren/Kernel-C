@@ -14,3 +14,6 @@ isr_stub_%1:
   ISR_STUB i
   %assign i i+1
 %endrep
+
+section .note.GNU-stack
+; empty

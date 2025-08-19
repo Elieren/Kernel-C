@@ -12,3 +12,7 @@ isr33:
     out 0x20, al         ; EOI на мастере
     ; (Slave PIC – не нужен, т.к. keyboard на мастере)
     iretd
+
+
+section .note.GNU-stack
+; empty

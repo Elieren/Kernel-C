@@ -20,3 +20,6 @@ start:
 section .bss
     resb 8192              ; резервируем 8 KiB под стек
 stack_top:
+
+section .note.GNU-stack
+; empty
