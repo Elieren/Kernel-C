@@ -151,8 +151,11 @@ void terminal_entry(void)
     for (;;)
     {
         char ch = sys_getchar();
-        if (ch == '\0' || ch == ' ') // пустой буфер
+        if (ch == '\0' || ch == ' ')
+        {
+            asm volatile("hlt");
             continue;
+        } // пустой буфер
 
         if (ch == '\n')
         {
