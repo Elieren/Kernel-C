@@ -16,7 +16,8 @@
 #include "power/poweroff.h"
 #include "power/reboot.h"
 
-#include "multitask/task.h"
+#include "multitask/multitask.h"
+#include "tasks/tasks.h"
 
 /* глобальные переменные */
 uint32_t input_len = 0;
@@ -61,7 +62,6 @@ static void debug_run_tests(void)
     // sys_reboot();
     // sys_power_off();
 }
-#endif // DEBUG
 
 void user_task1(void)
 {
@@ -105,6 +105,8 @@ void user_task2(void)
     }
 }
 
+#endif // DEBUG
+
 /*-------------------------------------------------------------
     Основная функция ядра
 -------------------------------------------------------------*/
@@ -123,8 +125,7 @@ void kmain(void)
     clean_screen();
 
     scheduler_init();
-    task_create(user_task1, 1);
-    task_create(user_task2, 2);
+    tasks_init();
 
     /* Разрешаем прерывания */
     asm volatile("sti");

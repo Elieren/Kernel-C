@@ -3,7 +3,7 @@
 #include "timer.h"
 #include "../pic.h"
 #include "clock/clock.h"
-#include "../multitask/task.h"
+#include "../multitask/multitask.h"
 
 volatile uint8_t tick_time = 0;
 volatile uint32_t seconds = 0;
@@ -21,8 +21,6 @@ uint32_t *isr_timer_dispatch(uint32_t *regs_ptr)
         tick_time = 0;
         seconds++;
         clock_tick();
-        print_time();
-        print_systemup();
     }
 
     /* Посылаем EOI PIC — делаем это здесь, до возможного переключения */
