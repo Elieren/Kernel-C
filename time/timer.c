@@ -4,13 +4,13 @@
 #include "clock/clock.h"
 #include "../multitask/multitask.h"
 
-volatile uint8_t tick_time = 0;
+volatile uint16_t tick_time = 0;
 volatile uint32_t seconds = 0;
 
 uint32_t *isr_timer_dispatch(uint32_t *regs_ptr)
 {
     tick_time++;
-    if (tick_time >= 100)
+    if (tick_time >= 1000)
     {
         tick_time = 0;
         seconds++;

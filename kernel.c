@@ -70,7 +70,7 @@ void kmain(void)
     /* Инициализация прерываний и таймера */
     idt_install();
     init_system_clock();
-    init_timer(1);
+    init_timer(1000);
     outb(0x21, 0xFC); // маска прерываний
 
     /* Вычисляем размер кучи по линкер-символам */
