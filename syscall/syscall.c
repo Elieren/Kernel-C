@@ -56,19 +56,25 @@ uint32_t syscall_handler(
     case SYSCALL_PRINT_CHAR:
         print_char((char)a1, a2, a3, (uint8_t)a4, (uint8_t)a5);
         return 0;
+
     case SYSCALL_PRINT_STRING:
         print_string((const char *)a1, a2, a3, (uint8_t)a4, (uint8_t)a5);
         return 0;
+
     case SYSCALL_GET_TIME:
         uint_to_str(seconds, str);
         return (uint32_t)str;
+
     case SYSCALL_MALLOC:
         return (uint32_t)malloc((size_t)a1); // a1 = размер
+
     case SYSCALL_FREE:
         free((void *)a1); // a1 = указатель
         return 0;
+
     case SYSCALL_REALLOC:
         return (uint32_t)realloc((void *)a1, (size_t)a2); // a1 = ptr, a2 = new_size
+
     case SYSCALL_KMALLOC_STATS:
         if (a1)
         {
@@ -97,6 +103,7 @@ uint32_t syscall_handler(
     case SYSCALL_REBOOT:
         reboot_system();
         return 0; // ядро перезагрузится
+
     default:
         return (uint32_t)-1;
     }
