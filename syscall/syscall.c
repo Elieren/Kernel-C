@@ -5,6 +5,7 @@
 #include "../malloc/malloc.h"
 #include "../power/poweroff.h"
 #include "../power/reboot.h"
+#include "../keyboard/keyboard.h"
 
 extern uint32_t seconds;
 
@@ -74,6 +75,21 @@ uint32_t syscall_handler(
             get_kmalloc_stats((kmalloc_stats_t *)a1); // a1 = указатель на структуру
         }
         return 0;
+
+    case SYSCALL_GETCHAR:
+    {
+        char c = kbd_getchar(); /* возвращает -1 если пусто */
+        if (c == -1)
+            return '\0'; /* пустой символ */
+        return c;        /* возвращаем сразу char */
+    }
+
+    case SYSCALL_SETPOSCURSOR:
+    {
+        update_hardware_cursor((uint8_t)a1, (uint8_t)a2);
+        return 0;
+    }
+
     case SYSCALL_POWER_OFF:
         power_off();
         return 0; // на самом деле ядро выключится и сюда не вернётся

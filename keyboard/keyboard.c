@@ -3,10 +3,17 @@
 #include "../portio/portio.h"
 #include "../pic.h"
 
-extern uint32_t input_len;
+#define KBD_BUF_SIZE 256
+
+#define INTERNAL_SPACE 0x01
 
 static bool shift_down = false;
 static bool caps_lock = false;
+
+/* Кольцевой буфер */
+static char kbd_buf[KBD_BUF_SIZE];
+static volatile int kbd_head = 0; /* место для следующего push */
+static volatile int kbd_tail = 0; /* место для чтения */
 
 // Таблица 0–255, все неиспользуемые элементы = 0
 static const char scancode_to_ascii[256] = {
@@ -60,7 +67,7 @@ static const char scancode_to_ascii[256] = {
     [KEY_APOSTROPHE] = '\'',
     [KEY_GRAVE] = '`',
 
-    [KEY_SPACE] = ' ',
+    [KEY_SPACE] = INTERNAL_SPACE,
     [KEY_ENTER] = '\n',
     [KEY_TAB] = '\t',
     [KEY_BACKSPACE] = '\b',
@@ -117,7 +124,7 @@ static const char scancode_to_ascii_shifted[256] = {
     [KEY_APOSTROPHE] = '\"',
     [KEY_GRAVE] = '~',
 
-    [KEY_SPACE] = ' ',
+    [KEY_SPACE] = INTERNAL_SPACE,
     [KEY_ENTER] = '\n',
     [KEY_TAB] = '\t',
     [KEY_BACKSPACE] = '\b',
@@ -188,6 +195,52 @@ char get_ascii_char(uint8_t scancode)
     }
 }
 
+/* Простые helpers для атомарности: сохраняем/восстанавливаем flags */
+static inline unsigned long irq_save_flags(void)
+{
+    unsigned long flags;
+    asm volatile("pushf; pop %0; cli" : "=g"(flags)::"memory");
+    return flags;
+}
+
+static inline void irq_restore_flags(unsigned long flags)
+{
+    asm volatile("push %0; popf" ::"g"(flags) : "memory", "cc");
+}
+
+/* Вызывается из ISR (keyboard_handler). Добавляет ASCII в буфер (если не переполнен). */
+void kbd_buffer_push(char c)
+{
+    unsigned long flags = irq_save_flags(); /* отключаем прерывания на короткое время */
+    int next = (kbd_head + 1) % KBD_BUF_SIZE;
+    if (next != kbd_tail) /* если не полный */
+    {
+        kbd_buf[kbd_head] = c;
+        kbd_head = next;
+    }
+    else
+    {
+        /* буфер полный — символ теряем (альтернатива: overwrite oldest) */
+    }
+    irq_restore_flags(flags);
+}
+
+/* Берёт символ из буфера без блокировки. Возвращает -1 если пусто. */
+char kbd_getchar(void)
+{
+    unsigned long flags = irq_save_flags();
+    if (kbd_head == kbd_tail)
+    {
+        irq_restore_flags(flags);
+        return -1; /* пусто */
+    }
+    char c = (char)kbd_buf[kbd_tail];
+    kbd_tail = (kbd_tail + 1) % KBD_BUF_SIZE;
+    irq_restore_flags(flags);
+    return c;
+}
+
+/* Модифицированный обработчик клавиатуры — вместо печати пушим символ в буфер. */
 void keyboard_handler(void)
 {
     uint8_t code = inb(KEYBOARD_PORT);
@@ -210,29 +263,12 @@ void keyboard_handler(void)
         return;
     }
 
-    // Обработка Make‑кодов остальных клавиш
     if (!released)
     {
         char ch = get_ascii_char(key);
         if (ch)
         {
-            if (key == KEY_ENTER)
-            {
-                new_line();
-                input_len = 0;
-            }
-            else if (key == KEY_BACKSPACE)
-            {
-                if (input_len > 0)
-                {
-                    backspace();
-                }
-            }
-            else
-            {
-                print_char_long(ch, WHITE, BLACK);
-                input_len++;
-            }
+            kbd_buffer_push(ch);
         }
     }
 

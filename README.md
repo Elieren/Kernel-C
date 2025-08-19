@@ -29,9 +29,11 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Multitasking.
 
-* [ ] Make the terminal a separate application rather than part of the kernel.
+* [X] Create terminal.
 
 * [ ] Implement a basic file system.
+
+* [ ] Make the terminal a separate application rather than part of the kernel.
 
 ## Build and Run
 

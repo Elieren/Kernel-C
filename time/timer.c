@@ -1,5 +1,4 @@
 #include "../portio/portio.h"
-#include "../vga/vga.h"
 #include "timer.h"
 #include "../pic.h"
 #include "clock/clock.h"
@@ -10,14 +9,9 @@ volatile uint32_t seconds = 0;
 
 uint32_t *isr_timer_dispatch(uint32_t *regs_ptr)
 {
-    /* Это точка, где мы на каждом тике обрабатываем время и планировщик.
-       Примечание: прерывания уже отключены в isr.asm (cli). */
-
-    /* Обновляем экранное время раз в 100 тиксов (как у вас было) */
     tick_time++;
     if (tick_time >= 100)
     {
-        update_hardware_cursor();
         tick_time = 0;
         seconds++;
         clock_tick();

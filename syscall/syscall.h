@@ -15,6 +15,9 @@
 #define SYSCALL_FREE 12
 #define SYSCALL_KMALLOC_STATS 13
 
+#define SYSCALL_GETCHAR 30 /* получить символ из клавиатурного буфера; -1 если пусто */
+#define SYSCALL_SETPOSCURSOR 31
+
 #define SYSCALL_POWER_OFF 100 // выключение системы
 #define SYSCALL_REBOOT 101    // перезагрузка системы
 
@@ -61,6 +64,24 @@ static inline void sys_get_kmalloc_stats(kmalloc_stats_t *st)
         :
         : "a"(SYSCALL_KMALLOC_STATS),
           "b"(st)
+        : "memory");
+}
+
+static inline const char sys_getchar(void)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_GETCHAR)
+        : "memory");
+}
+
+static inline void sys_setposcursor(uint32_t x, uint32_t y)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_SETPOSCURSOR), "b"(x), "c"(y)
         : "memory");
 }
 

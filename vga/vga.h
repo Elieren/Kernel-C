@@ -30,21 +30,13 @@ void print_char(const char c,
                 const uint8_t fore,
                 const uint8_t back);
 
-void print_char_long(const char c,
-                     const uint8_t fore,
-                     const uint8_t back);
-
 void print_string(const char *str,
                   const unsigned int x,
                   const unsigned int y,
                   const uint8_t fore,
                   const uint8_t back);
 
-void new_line(void);
-
-void backspace(void);
-
-void update_hardware_cursor(void);
+void update_hardware_cursor(uint8_t x, uint8_t y);
 
 void print_time(void);
 void print_systemup(void);
