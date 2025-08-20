@@ -6,6 +6,7 @@
 #include "../power/poweroff.h"
 #include "../power/reboot.h"
 #include "../keyboard/keyboard.h"
+#include "../multitask/multitask.h"
 
 extern uint32_t seconds;
 
@@ -103,6 +104,20 @@ uint32_t syscall_handler(
     case SYSCALL_REBOOT:
         reboot_system();
         return 0; // ядро перезагрузится
+
+    case SYSCALL_TASK_CREATE:
+        task_create((void (*)(void))a1, (size_t)a2);
+        return 0;
+
+    case SYSCALL_TASK_LIST:
+        return task_list((task_info_t *)a1, a2);
+
+    case SYSCALL_TASK_STOP:
+        return task_stop((int)a1);
+
+    case SYSCALL_REAP_ZOMBIES:
+        reap_zombies();
+        return 0;
 
     default:
         return (uint32_t)-1;

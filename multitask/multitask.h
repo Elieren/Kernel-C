@@ -16,18 +16,27 @@ typedef enum
 
 typedef struct task
 {
-    int pid;
-    task_state_t state;
-    uint32_t *regs; /* указатель на стек-фрейм (тот, который подставляем в esp) */
-    void *kstack;   /* низ стека (malloc) */
-    size_t kstack_size;
-    struct task *next;
+    int pid;            /* уникальный идентификатор задачи (0 = init) */
+    task_state_t state; /* текущее состояние */
+    uint32_t *regs;     /* указатель на стек-фрейм (тот, который подставляем в ESP при переключении) */
+    void *kstack;       /* указатель на начало выделенного kstack (malloc) */
+    size_t kstack_size; /* размер стека в байтах */
+    int exit_code;      /* код завершения (если TASK_ZOMBIE) */
+    struct task *next;  /* кольцевая ссылка (tail->next = head) или список зомби */
 } task_t;
+
+typedef struct task_info
+{
+    int pid;
+    int state; // TASK_RUNNING, TASK_READY и т. д.
+} task_info_t;
 
 void scheduler_init(void);
 /* теперь вместо pid передаём stack_size (0 = дефолт) */
-task_t *task_create(void (*entry)(void), size_t stack_size);
+void task_create(void (*entry)(void), size_t stack_size);
 void schedule_from_isr(uint32_t *regs, uint32_t **out_regs_ptr);
-task_t *get_current_task(void);
+int task_list(task_info_t *buf, size_t max);
+int task_stop(int pid);
+void reap_zombies(void);
 
 #endif

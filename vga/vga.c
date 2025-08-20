@@ -13,6 +13,8 @@
 #define CURSOR_HIGH 0x0E
 #define CURSOR_LOW 0x0F
 
+#define TAB_SIZE 8
+
 extern uint32_t seconds;
 
 char time_str[9];
@@ -61,17 +63,38 @@ void print_string(const char *str,
                   const uint8_t back)
 {
     uint8_t *vid = VGA_BUF;
-
-    // вычисляем смещение в байтах
     unsigned int offset = (y * VGA_WIDTH + x) * 2;
-
     uint8_t color = make_color(fore, back);
+
+    unsigned int col = x; // текущая колонка
 
     for (uint32_t i = 0; str[i]; ++i)
     {
-        vid[offset] = (uint8_t)str[i];
-        vid[offset + 1] = color;
-        offset += 2;
+        char c = str[i];
+
+        if (c == '\t')
+        {
+            // считаем сколько пробелов до следующего кратного TAB_SIZE
+            unsigned int spaces = TAB_SIZE - (col % TAB_SIZE);
+            for (unsigned int s = 0; s < spaces; s++)
+            {
+                vid[offset] = ' ';
+                vid[offset + 1] = color;
+                offset += 2;
+                col++;
+            }
+        }
+        else
+        {
+            vid[offset] = (uint8_t)c;
+            vid[offset + 1] = color;
+            offset += 2;
+            col++;
+        }
+
+        // если дошли до конца строки VGA
+        if (col >= VGA_WIDTH)
+            break; // (или можно сделать перенос)
     }
 }
 

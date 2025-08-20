@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stddef.h>           // для size_t
 #include "../malloc/malloc.h" // для kmalloc_stats_t
+#include "../multitask/multitask.h"
 
 #define SYSCALL_PRINT_CHAR 0
 #define SYSCALL_PRINT_STRING 1
@@ -20,6 +21,12 @@
 
 #define SYSCALL_POWER_OFF 100 // выключение системы
 #define SYSCALL_REBOOT 101    // перезагрузка системы
+
+// Syscall номера для мультизадачности
+#define SYSCALL_TASK_CREATE 200
+#define SYSCALL_TASK_LIST 201
+#define SYSCALL_TASK_STOP 202
+#define SYSCALL_REAP_ZOMBIES 203
 
 // Обёртки для удобства
 static inline void *sys_malloc(size_t size)
@@ -129,6 +136,51 @@ static inline void sys_reboot(void)
         "int $0x80"
         :
         : "a"(SYSCALL_REBOOT)
+        : "memory");
+}
+
+static inline void sys_task_create(void (*entry)(void), size_t stack_size)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_TASK_CREATE),
+          "b"(entry),
+          "c"(stack_size)
+        : "memory");
+}
+
+static inline int sys_task_list(task_info_t *buf, size_t max)
+{
+    int ret;
+    asm volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_TASK_LIST),
+          "b"(buf),
+          "c"(max)
+        : "memory");
+    return ret; // возвращает число реально записанных задач
+}
+
+static inline int sys_task_stop(int pid)
+{
+    int ret;
+    asm volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_TASK_STOP),
+          "b"(pid)
+        : "memory");
+    return ret;
+}
+
+static inline void sys_reap_zombies(void)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_REAP_ZOMBIES)
         : "memory");
 }
 

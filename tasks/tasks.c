@@ -26,6 +26,16 @@ void user_task2(void)
 }
 #endif
 
+/* Задача-реапер: бесконечно вызывает reap_zombies(), можно вызывать каждые N тикoв */
+void zombie_reaper_task(void)
+{
+    for (;;)
+    {
+        reap_zombies();
+        asm volatile("hlt");
+    }
+}
+
 /* Регистрация всех стартовых задач */
 void tasks_init(void)
 {
@@ -35,6 +45,8 @@ void tasks_init(void)
     task_create(user_task2, 0);
 #endif
     task_create(terminal_entry, 0);
+
+    task_create(zombie_reaper_task, 0);
 
     /* если надо — можно задать другой размер стека */
     // task_create(user_task3, 16 * 1024);
