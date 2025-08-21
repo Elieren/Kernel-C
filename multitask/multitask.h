@@ -14,15 +14,17 @@ typedef enum
     TASK_ZOMBIE
 } task_state_t;
 
+/* в multitask.h или где определена task_t */
 typedef struct task
 {
-    int pid;            /* уникальный идентификатор задачи (0 = init) */
-    task_state_t state; /* текущее состояние */
-    uint32_t *regs;     /* указатель на стек-фрейм (тот, который подставляем в ESP при переключении) */
-    void *kstack;       /* указатель на начало выделенного kstack (malloc) */
-    size_t kstack_size; /* размер стека в байтах */
-    int exit_code;      /* код завершения (если TASK_ZOMBIE) */
-    struct task *next;  /* кольцевая ссылка (tail->next = head) или список зомби */
+    int pid;
+    int state;
+    uint32_t *regs;
+    void *kstack;
+    size_t kstack_size;
+    int exit_code;
+    struct task *next;  /* кольцевой список задач */
+    struct task *znext; /* список зомби (отдельный указатель!) */
 } task_t;
 
 typedef struct task_info
@@ -38,5 +40,8 @@ void schedule_from_isr(uint32_t *regs, uint32_t **out_regs_ptr);
 int task_list(task_info_t *buf, size_t max);
 int task_stop(int pid);
 void reap_zombies(void);
+
+task_t *get_current_task(void);
+void task_exit(int exit_code);
 
 #endif

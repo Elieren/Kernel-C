@@ -4,7 +4,8 @@ AS      := nasm
 QEMU    := qemu-system-i386
 
 # Базовые флаги
-CFLAGS   := -m32
+BASE_CFLAGS := -m32
+DEBUG_CFLAGS := -g -O0
 LDFLAGS  := -m elf_i386 -T link.ld
 ASMFLAGS := -f elf32
 
@@ -34,14 +35,14 @@ build/%.asm.o: %.asm
 
 build/%.c.o: %.c
 	@mkdir -p $(dir $@)
-	$(CC) $(CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
+	$(CC) $(BASE_CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
 
 $(BUILD_KERNEL): $(OBJECTS) link.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
 
 # --- debug ---
-debug: EXTRA_CFLAGS=-DDEBUG
+debug: EXTRA_CFLAGS=$(DEBUG_CFLAGS) -DDEBUG
 debug: all
 	$(QEMU) -kernel $(BUILD_KERNEL) -serial stdio $(QEMU_OPTS)
 

@@ -179,7 +179,7 @@ static void add_to_zombie_list(task_t *t)
 {
     if (!t)
         return;
-    t->next = zombie_list;
+    t->znext = zombie_list;
     zombie_list = t;
 }
 
@@ -240,9 +240,9 @@ static void reap_zombies_internal(void)
 
     while (z)
     {
-        task_t *next_z = z->next;
+        task_t *next_z = z->znext;
         cli();
-        unlink_from_ring(z);
+        unlink_from_ring(z); /* теперь unlink безопасен — кольцо не порчено */
         sti();
 
         free_task_resources(z);
@@ -338,4 +338,18 @@ int task_stop(int pid)
     reap_zombies_internal();
 
     return 0;
+}
+
+void task_exit(int exit_code)
+{
+    cli();
+    reap_zombies_internal();
+
+    if (!current || current == &init_task)
+        return;
+
+    current->exit_code = exit_code;
+    current->state = TASK_ZOMBIE;
+    add_to_zombie_list(current);
+    sti();
 }

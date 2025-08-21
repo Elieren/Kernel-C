@@ -27,6 +27,7 @@
 #define SYSCALL_TASK_LIST 201
 #define SYSCALL_TASK_STOP 202
 #define SYSCALL_REAP_ZOMBIES 203
+#define SYSCALL_TASK_EXIT 204
 
 // Обёртки для удобства
 static inline void *sys_malloc(size_t size)
@@ -182,6 +183,18 @@ static inline void sys_reap_zombies(void)
         :
         : "a"(SYSCALL_REAP_ZOMBIES)
         : "memory");
+}
+
+static inline int sys_task_exit(int code)
+{
+    int ret;
+    asm volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_TASK_EXIT),
+          "b"(code)
+        : "memory");
+    return ret;
 }
 
 #endif // SYSCALL_H

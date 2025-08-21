@@ -9,6 +9,7 @@
 #include "../multitask/multitask.h"
 
 extern uint32_t seconds;
+extern volatile task_t *syscall_caller;
 
 char str[11];
 char tmp[11];
@@ -118,6 +119,12 @@ uint32_t syscall_handler(
     case SYSCALL_REAP_ZOMBIES:
         reap_zombies();
         return 0;
+
+    case SYSCALL_TASK_EXIT:
+    {
+        task_exit((int)a1);
+        return 0;
+    }
 
     default:
         return (uint32_t)-1;
