@@ -3,6 +3,7 @@
 #include "../vga/vga.h"
 #include "../user/terminal.h"
 #include "../syscall/syscall.h"
+#include "../tasks/exec_inplace.h"
 
 /* Здесь будут ваши функции */
 void user_task1(void)
@@ -44,7 +45,7 @@ void tasks_init(void)
 #ifdef DEBUG
     task_create(user_task2, 0);
 #endif
-    task_create(terminal_entry, 0);
+    start_task_from_fs("terminal", "elf", 8192);
 
     task_create(zombie_reaper_task, 0);
 

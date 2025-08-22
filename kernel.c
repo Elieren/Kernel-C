@@ -19,6 +19,15 @@
 #include "multitask/multitask.h"
 #include "tasks/tasks.h"
 
+#include "user/terminal_bin.h"
+
+#include "tasks/exec_inplace.h"
+
+#include "ramdisk/ramdisk.h"
+#include "fat16/fs.h"
+
+#include "malloc/user_malloc.h"
+
 /* символы из link.ld */
 extern char _heap_start;
 extern char _heap_end;
@@ -128,6 +137,11 @@ void user_task_list(void)
     }
 }
 
+void load_terminal_to_fs(void)
+{
+    int _ = fs_write_file("terminal", "elf", terminal_elf, terminal_elf_len);
+}
+
 /*-------------------------------------------------------------
     Основная функция ядра
 -------------------------------------------------------------*/
@@ -142,6 +156,12 @@ void kmain(void)
     /* Вычисляем размер кучи по линкер-символам */
     size_t heap_size = (size_t)((uintptr_t)&_heap_end - (uintptr_t)&_heap_start);
     malloc_init(&_heap_start, heap_size);
+    user_malloc_init();
+
+    ramdisk_init();
+    fs_init();
+
+    load_terminal_to_fs();
 
     clean_screen();
 
@@ -159,8 +179,6 @@ void kmain(void)
     /* Основной бесконечный цикл ядра */
     for (;;)
     {
-        // clean_screen();
-        // user_task_list();
         asm volatile("hlt");
     }
 }

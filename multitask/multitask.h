@@ -23,8 +23,10 @@ typedef struct task
     void *kstack;
     size_t kstack_size;
     int exit_code;
-    struct task *next;  /* кольцевой список задач */
-    struct task *znext; /* список зомби (отдельный указатель!) */
+    struct task *next;    /* кольцевой список задач */
+    struct task *znext;   /* список зомби (отдельный указатель!) */
+    void *user_mem;       // указатель на .user память
+    size_t user_mem_size; // размер .user памяти
 } task_t;
 
 typedef struct task_info
@@ -43,5 +45,7 @@ void reap_zombies(void);
 
 task_t *get_current_task(void);
 void task_exit(int exit_code);
+
+void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size);
 
 #endif

@@ -4,6 +4,7 @@
 #include "../libc/string.h"
 #include "../vga/vga.h"
 #include "../syscall/syscall.h" /* для SYSCALL_PRINT_STRING / SYSCALL_PRINT_CHAR */
+#include "../malloc/user_malloc.h"
 
 #include <stdint.h>
 
@@ -225,8 +226,17 @@ static void free_task_resources(task_t *t)
 {
     if (!t || t == &init_task)
         return;
+
     if (t->kstack)
         free(t->kstack);
+
+    if (t->user_mem)
+    {
+        user_free(t->user_mem);
+        t->user_mem = NULL;
+        t->user_mem_size = 0;
+    }
+
     free(t);
 }
 
@@ -352,4 +362,45 @@ void task_exit(int exit_code)
     current->state = TASK_ZOMBIE;
     add_to_zombie_list(current);
     sti();
+}
+void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size)
+{
+    if (stack_size == 0)
+        stack_size = KSTACK_SIZE;
+
+    task_t *t = (task_t *)malloc(sizeof(task_t));
+    if (!t)
+        return;
+
+    void *kstack = malloc(stack_size);
+    if (!kstack)
+    {
+        free(t);
+        return;
+    }
+
+    memset(t, 0, sizeof(*t));
+    t->pid = next_pid++;
+    t->state = TASK_READY;
+    t->kstack = kstack;
+    t->kstack_size = stack_size;
+    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size);
+    t->exit_code = 0;
+
+    /* Сохраняем пользовательскую память */
+    t->user_mem = user_mem;
+    t->user_mem_size = user_mem_size;
+
+    /* Вставляем в кольцо */
+    if (!task_ring)
+    {
+        task_ring = t;
+        t->next = t;
+    }
+    else
+    {
+        t->next = task_ring->next;
+        task_ring->next = t;
+        task_ring = t;
+    }
 }

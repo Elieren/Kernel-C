@@ -1,4 +1,3 @@
-#include "../syscall/syscall.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -31,9 +30,50 @@ enum vga_color
     WHITE,
 };
 
+#define SYSCALL_PRINT_CHAR 0
+#define SYSCALL_PRINT_STRING 1
+#define SYSCALL_GETCHAR 30 /* получить символ из клавиатурного буфера; -1 если пусто */
+#define SYSCALL_SETPOSCURSOR 31
+
 // Внутренний буфер экрана
 static char screen_chars[VGA_HEIGHT][VGA_WIDTH];
 static uint8_t screen_attr[VGA_HEIGHT][VGA_WIDTH];
+
+static inline void sys_print_str(const char *s, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_PRINT_STRING), "b"(s), "c"(x), "d"(y), "S"(fg), "D"(bg) // теперь = 1
+        : "memory");
+}
+
+static inline void sys_print_char(char ch, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_PRINT_CHAR), "b"(ch), "c"(x), "d"(y), "S"(fg), "D"(bg)
+        : "memory");
+}
+
+static inline const char sys_getchar(void)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_GETCHAR)
+        : "memory");
+}
+
+static inline void sys_setposcursor(uint32_t x, uint32_t y)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_SETPOSCURSOR), "b"(x), "c"(y)
+        : "memory");
+}
 
 void new_line(void)
 {
@@ -128,7 +168,7 @@ void backspace(void)
     sys_setposcursor(x, y);
 }
 
-void terminal_entry(void)
+void main(void)
 {
     x = 0;
     y = 0;
