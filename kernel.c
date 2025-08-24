@@ -158,7 +158,6 @@ void kmain(void)
     malloc_init(&_heap_start, heap_size);
     user_malloc_init();
 
-    ramdisk_init();
     fs_init();
 
     load_terminal_to_fs();
