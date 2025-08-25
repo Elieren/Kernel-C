@@ -5,7 +5,6 @@ extern syscall_handler
 global isr80
 
 isr80:
-    pushfd               ; сохранить EFLAGS
     cli                  ; запретить прерывания
 
     ; ——— Сохранить контекст (все регистры, кроме ESP) ———
@@ -36,7 +35,6 @@ isr80:
     pop     esi
     pop     edi
 
-    popfd                ; восстановить сохранённые флаги (включая IF)
     iret                 ; возврат из прерывания
 
 section .note.GNU-stack
