@@ -39,7 +39,6 @@ isr32:
     pop es
     pop ds
 
-    sti
     iretd
 
 section .note.GNU-stack
