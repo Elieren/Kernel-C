@@ -1,4 +1,4 @@
-; boot.asm — точка входа, Multiboot‑заголовок
+; kernel.asm — точка входа, Multiboot‑заголовок
 bits 32
 
 section .text
