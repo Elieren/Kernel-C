@@ -1,9 +1,9 @@
 #include "tasks.h"
-#include "../multitask/multitask.h" // task_create()
+#include "../multitask/multitask.h"
 #include "../vga/vga.h"
-#include "../user/terminal.h"
 #include "../syscall/syscall.h"
 #include "../tasks/exec_inplace.h"
+#include "../fat16/fs.h"
 
 /* Здесь будут ваши функции */
 void user_task1(void)
@@ -45,7 +45,16 @@ void tasks_init(void)
 #ifdef DEBUG
     task_create(user_task2, 0);
 #endif
-    start_task_from_fs("terminal", "elf", 8192);
+    // получить индекс /bin (или -1)
+    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    if (bin_idx >= 0)
+    {
+        start_task_from_fs("terminal", "elf", bin_idx, 0);
+    }
+    else
+    {
+        sys_print_str("No /bin found", 4, 6, YELLOW, BLACK);
+    }
 
     task_create(zombie_reaper_task, 0);
 

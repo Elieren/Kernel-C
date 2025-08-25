@@ -3,7 +3,7 @@
 #include "../malloc/malloc.h"
 #include "../libc/string.h"
 #include "../vga/vga.h"
-#include "../syscall/syscall.h" /* для SYSCALL_PRINT_STRING / SYSCALL_PRINT_CHAR */
+#include "../syscall/syscall.h"
 #include "../malloc/user_malloc.h"
 
 #include <stdint.h>
@@ -21,13 +21,10 @@ static task_t init_task;
 /* Список зомби для отложенной очистки */
 static task_t *zombie_list = NULL;
 
-/* CLI/STI (заменить, если у вас другие реализации) */
+/* CLI/STI */
 static inline void cli(void) { __asm__ volatile("cli" ::: "memory"); }
 static inline void sti(void) { __asm__ volatile("sti" ::: "memory"); }
 
-/* layout стек-фрейма, который ожидает ISR:
-   [0] int_no, [1] err_code, [2] EDI ... [14] EIP, [15] CS, [16] EFLAGS
-*/
 static inline uint32_t *align_down_16(uint32_t *p)
 {
     return (uint32_t *)(((uintptr_t)p) & ~0xFUL);

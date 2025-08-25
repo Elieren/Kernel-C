@@ -14,7 +14,6 @@ typedef enum
     TASK_ZOMBIE
 } task_state_t;
 
-/* в multitask.h или где определена task_t */
 typedef struct task
 {
     int pid;

@@ -194,7 +194,7 @@ void *user_realloc(void *ptr, size_t new_size)
     return newp;
 }
 
-/* Опционально: статистика */
+/* Статистика */
 void get_usermalloc_stats(umalloc_stats_t *st)
 {
     if (!st)

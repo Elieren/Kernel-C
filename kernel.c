@@ -69,8 +69,6 @@ static void debug_run_tests(void)
     // sys_power_off();
 }
 
-#endif // DEBUG
-
 static void uitoa(unsigned int value, char *buf)
 {
     char tmp[16];
@@ -137,9 +135,77 @@ void user_task_list(void)
     }
 }
 
+char *itoa(uint32_t num, char *str, int base)
+{
+    int i = 0;
+    if (num == 0)
+    {
+        str[i++] = '0';
+        str[i] = '\0';
+        return str;
+    }
+
+    while (num > 0)
+    {
+        int rem = num % base;
+        str[i++] = (rem > 9) ? (rem - 10) + 'A' : rem + '0';
+        num /= base;
+    }
+
+    str[i] = '\0';
+
+    // Разворачиваем строку
+    for (int j = 0; j < i / 2; j++)
+    {
+        char temp = str[j];
+        str[j] = str[i - j - 1];
+        str[i - j - 1] = temp;
+    }
+
+    return str;
+}
+
+void list_root_dir(void)
+{
+    static fs_entry_t files[FS_MAX_ENTRIES];
+    int count = fs_get_all_in_dir(files, FS_MAX_ENTRIES, FS_ROOT_IDX); // всегда корень
+    char size_buf[40];
+
+    print_string("Root directory:", 0, 0, RED, BLACK);
+
+    for (int i = 0; i < count; i++)
+    {
+        print_string(files[i].name, 0, i + 1, WHITE, BLACK);
+        if (!files[i].is_dir)
+        {
+            itoa(files[i].size, size_buf, 10);
+            print_string(size_buf, 22, i + 1, RED, BLACK);
+        }
+    }
+}
+
+#endif // DEBUG
+
 void load_terminal_to_fs(void)
 {
-    int _ = fs_write_file("terminal", "elf", terminal_elf, terminal_elf_len);
+    // Найти/создать каталог /bin
+    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    if (bin_idx < 0)
+    {
+        bin_idx = fs_mkdir("bin", FS_ROOT_IDX);
+        if (bin_idx < 0)
+        {
+            // обработка ошибки: не удалось создать /bin
+            return;
+        }
+    }
+
+    // Записать файл terminal.elf в каталог /bin
+    int rc = fs_write_file_in_dir("terminal", "elf", bin_idx, terminal_elf, terminal_elf_len);
+    if (rc != 0)
+    {
+        // ошибка записи (можно вывести код rc)
+    }
 }
 
 /*-------------------------------------------------------------
@@ -173,6 +239,7 @@ void kmain(void)
     /* Запуск debug-фич, если включено */
 #ifdef DEBUG
     debug_run_tests();
+    list_root_dir();
 #endif
 
     /* Основной бесконечный цикл ядра */

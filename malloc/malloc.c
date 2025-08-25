@@ -33,7 +33,6 @@ extern char _heap_end;
 
 /* Внешние функции (реализованы в других файлах вашего ядра) */
 extern void *memcpy(void *dst, const void *src, size_t n);
-extern void console_puts(const char *s);
 
 static inline size_t align_up(size_t n)
 {
@@ -319,7 +318,7 @@ static size_t kstrlen(const char *s)
     return i;
 }
 
-/* Быстрая утилита: перевод unsigned -> строка десятичная (buf размером >= 32) */
+/* Перевод unsigned -> строка десятичная (buf размером >= 32) */
 static char *u32_to_dec(uint32_t v, char *buf)
 {
     char tmp[32];
@@ -341,7 +340,7 @@ static char *u32_to_dec(uint32_t v, char *buf)
     return buf;
 }
 
-/* Печать статистики в человекочитаемом виде.
+/* Печать статистики в читаемом виде.
    Использует console_puts(const char *s) — объявлен вверху extern. */
 void print_kmalloc_stats(void)
 {

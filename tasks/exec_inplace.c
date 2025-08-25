@@ -8,7 +8,7 @@
 #include <limits.h>
 #include <string.h>
 #include "../malloc/malloc.h"
-#include "../malloc/user_malloc.h" // include our user allocator
+#include "../malloc/user_malloc.h"
 
 #ifndef PAGE_SIZE
 #define PAGE_SIZE 0x1000u
@@ -163,18 +163,25 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
  *   Loads ELF from FS into malloc buffer, calls exec_inplace,
  *   frees temporary kernel buffer and returns utask_load_t.
  */
-utask_load_t load_task_entry(const char *name, const char *ext)
+utask_load_t load_task_entry_from_dir(const char *name, const char *ext, int dir_idx)
 {
     utask_load_t result = {0};
 
-    fs_file_t file;
-    if (fs_find(name, ext, &file) < 0)
+    if (dir_idx < 0)
     {
-        sys_print_str("File not found!", 4, 4, RED, BLACK);
+        sys_print_str("Bad dir index", 4, 4, RED, BLACK);
         return result;
     }
 
-    size_t file_size = file.size;
+    fs_entry_t fentry;
+    int fidx = fs_find_in_dir(name, ext, dir_idx, &fentry);
+    if (fidx < 0)
+    {
+        sys_print_str("File not found in dir!", 4, 4, RED, BLACK);
+        return result;
+    }
+
+    size_t file_size = fentry.size;
     if (file_size == 0)
     {
         sys_print_str("File is empty!", 4, 5, RED, BLACK);
@@ -189,7 +196,7 @@ utask_load_t load_task_entry(const char *name, const char *ext)
     }
 
     size_t out_size = 0;
-    if (fs_read_file(name, ext, elf_buffer, file_size, &out_size) != 0 || out_size != file_size)
+    if (fs_read_file_in_dir(name, ext, dir_idx, elf_buffer, file_size, &out_size) != 0 || out_size != file_size)
     {
         sys_print_str("Error reading ELF!", 4, 5, RED, BLACK);
         free(elf_buffer);
@@ -197,30 +204,20 @@ utask_load_t load_task_entry(const char *name, const char *ext)
     }
 
     result = exec_inplace(elf_buffer, file_size);
-
-    free(elf_buffer); // free temporary kernel buffer
+    free(elf_buffer);
     return result;
 }
 
-/*
- * start_task_from_fs
- *   Loads a task and creates it in the scheduler.
- *   stack_size in bytes (0 -> default). Returns 0 / -1.
- */
-int start_task_from_fs(const char *name, const char *ext, size_t stack_size)
+int start_task_from_fs(const char *name, const char *ext, int dir_idx, size_t stack_size)
 {
-    utask_load_t utask = load_task_entry(name, ext);
+    utask_load_t utask = load_task_entry_from_dir(name, ext, dir_idx);
     if (!utask.entry || !utask.user_mem || utask.user_mem_size == 0)
     {
         sys_print_str("Failed to load task!", 6, 4, RED, BLACK);
         return -1;
     }
 
-    // If stack size not specified, use default 8192
     size_t stack_sz = stack_size ? stack_size : 8192;
-
-    // Create task with allocated user memory
     utask_create((void (*)(void))utask.entry, stack_sz, utask.user_mem, utask.user_mem_size);
-
     return 0;
 }

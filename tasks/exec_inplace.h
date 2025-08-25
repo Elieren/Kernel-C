@@ -5,6 +5,6 @@
 #include <stddef.h>
 #include <string.h>
 
-int start_task_from_fs(const char *name, const char *ext, size_t stack_size);
+int start_task_from_fs(const char *name, const char *ext, int dir_idx, size_t stack_size);
 
 #endif

@@ -2,8 +2,8 @@
 #define SYSCALL_H
 
 #include <stdint.h>
-#include <stddef.h>           // для size_t
-#include "../malloc/malloc.h" // для kmalloc_stats_t
+#include <stddef.h>
+#include "../malloc/malloc.h"
 #include "../multitask/multitask.h"
 
 #define SYSCALL_PRINT_CHAR 0
@@ -99,7 +99,7 @@ static inline const char *sys_get_seconds_str(void)
     asm volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYSCALL_GET_TIME) // теперь = 2
+        : "a"(SYSCALL_GET_TIME)
         : "memory");
     return (const char *)ret;
 }
@@ -109,7 +109,7 @@ static inline void sys_print_str(const char *s, uint32_t x, uint32_t y, uint8_t 
     asm volatile(
         "int $0x80"
         :
-        : "a"(SYSCALL_PRINT_STRING), "b"(s), "c"(x), "d"(y), "S"(fg), "D"(bg) // теперь = 1
+        : "a"(SYSCALL_PRINT_STRING), "b"(s), "c"(x), "d"(y), "S"(fg), "D"(bg)
         : "memory");
 }
 
@@ -161,7 +161,7 @@ static inline int sys_task_list(task_info_t *buf, size_t max)
           "b"(buf),
           "c"(max)
         : "memory");
-    return ret; // возвращает число реально записанных задач
+    return ret;
 }
 
 static inline int sys_task_stop(int pid)

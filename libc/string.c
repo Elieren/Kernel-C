@@ -100,3 +100,18 @@ char *strrchr(const char *s, int c)
     }
     return (char *)last;
 }
+
+char *strncat(char *dest, const char *src, size_t n)
+{
+    char *d = dest;
+    while (*d)
+        ++d; /* найдём конец dest */
+    size_t i = 0;
+    while (i < n && src[i] != '\0')
+    {
+        d[i] = src[i];
+        ++i;
+    }
+    d[i] = '\0';
+    return dest;
+}
