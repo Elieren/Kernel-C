@@ -36,8 +36,7 @@ isr80:
     pop     esi
     pop     edi
 
-    sti                  ; разрешить прерывания
-    popfd                ; восстановить EFLAGS
+    popfd                ; восстановить сохранённые флаги (включая IF)
     iret                 ; возврат из прерывания
 
 section .note.GNU-stack
