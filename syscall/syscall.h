@@ -32,37 +32,52 @@
 // Обёртки для удобства
 static inline void *sys_malloc(size_t size)
 {
-    uint32_t ret;
-    asm volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYSCALL_MALLOC),
-          "b"(size)
-        : "memory");
-    return (void *)ret;
+    register uint64_t rax asm("rax") = SYSCALL_MALLOC;
+    register uint64_t rdi asm("rdi") = (uint64_t)size;
+    register uint64_t rsi asm("rsi") = 0;
+    register uint64_t rdx asm("rdx") = 0;
+    register uint64_t r10 asm("r10") = 0;
+    register uint64_t r8 asm("r8") = 0;
+    register uint64_t r9 asm("r9") = 0;
+
+    asm volatile("syscall"
+                 : "+r"(rax)
+                 : "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8), "r"(r9)
+                 : "rcx", "r11", "memory");
+    return (void *)rax;
 }
 
 static inline void *sys_realloc(void *ptr, size_t new_size)
 {
-    uint32_t ret;
-    asm volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYSCALL_REALLOC),
-          "b"(ptr),
-          "c"(new_size)
-        : "memory");
-    return (void *)ret;
+    register uint64_t rax asm("rax") = SYSCALL_REALLOC;
+    register uint64_t rdi asm("rdi") = (uint64_t)ptr;
+    register uint64_t rsi asm("rsi") = (uint64_t)new_size;
+    register uint64_t rdx asm("rdx") = 0;
+    register uint64_t r10 asm("r10") = 0;
+    register uint64_t r8 asm("r8") = 0;
+    register uint64_t r9 asm("r9") = 0;
+
+    asm volatile("syscall"
+                 : "+r"(rax)
+                 : "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8), "r"(r9)
+                 : "rcx", "r11", "memory");
+    return (void *)rax;
 }
 
 static inline void sys_free(void *ptr)
 {
-    asm volatile(
-        "int $0x80"
-        :
-        : "a"(SYSCALL_FREE),
-          "b"(ptr)
-        : "memory");
+    register uint64_t rax asm("rax") = SYSCALL_FREE;
+    register uint64_t rdi asm("rdi") = (uint64_t)ptr;
+    register uint64_t rsi asm("rsi") = 0;
+    register uint64_t rdx asm("rdx") = 0;
+    register uint64_t r10 asm("r10") = 0;
+    register uint64_t r8 asm("r8") = 0;
+    register uint64_t r9 asm("r9") = 0;
+
+    asm volatile("syscall"
+                 : "+r"(rax)
+                 : "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8), "r"(r9)
+                 : "rcx", "r11", "memory");
 }
 
 static inline void sys_get_kmalloc_stats(kmalloc_stats_t *st)
@@ -95,31 +110,54 @@ static inline void sys_setposcursor(uint32_t x, uint32_t y)
 
 static inline const char *sys_get_seconds_str(void)
 {
-    uint32_t ret;
-    asm volatile(
-        "int $0x80"
-        : "=a"(ret)
-        : "a"(SYSCALL_GET_TIME)
-        : "memory");
-    return (const char *)ret;
+    register uint64_t rax asm("rax") = SYSCALL_GET_TIME;
+    register uint64_t rdi asm("rdi") = 0;
+    register uint64_t rsi asm("rsi") = 0;
+    register uint64_t rdx asm("rdx") = 0;
+    register uint64_t r10 asm("r10") = 0;
+    register uint64_t r8 asm("r8") = 0;
+    register uint64_t r9 asm("r9") = 0;
+
+    asm volatile("syscall"
+                 : "+r"(rax)
+                 : "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8), "r"(r9)
+                 : "rcx", "r11", "memory");
+    return (const char *)rax;
 }
 
-static inline void sys_print_str(const char *s, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)
+static inline uintptr_t sys_print_char(char ch, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)
 {
-    asm volatile(
-        "int $0x80"
-        :
-        : "a"(SYSCALL_PRINT_STRING), "b"(s), "c"(x), "d"(y), "S"(fg), "D"(bg)
-        : "memory");
+    register uint64_t rax asm("rax") = SYSCALL_PRINT_CHAR;
+    register uint64_t rdi asm("rdi") = (uint64_t)ch;
+    register uint64_t rsi asm("rsi") = (uint64_t)x;
+    register uint64_t rdx asm("rdx") = (uint64_t)y;
+    register uint64_t r10 asm("r10") = (uint64_t)fg;
+    register uint64_t r8 asm("r8") = (uint64_t)bg;
+    register uint64_t r9 asm("r9") = 0;
+
+    asm volatile("syscall"
+                 : "+r"(rax)
+                 : "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8), "r"(r9)
+                 : "rcx", "r11", "memory");
+
+    return rax;
 }
 
-static inline void sys_print_char(char ch, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)
+static inline uintptr_t sys_print_str(const char *s, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)
 {
-    asm volatile(
-        "int $0x80"
-        :
-        : "a"(SYSCALL_PRINT_CHAR), "b"(ch), "c"(x), "d"(y), "S"(fg), "D"(bg)
-        : "memory");
+    register uint64_t rax asm("rax") = SYSCALL_PRINT_STRING;
+    register uint64_t rdi asm("rdi") = (uint64_t)s;
+    register uint64_t rsi asm("rsi") = (uint64_t)x;
+    register uint64_t rdx asm("rdx") = (uint64_t)y;
+    register uint64_t r10 asm("r10") = (uint64_t)fg;
+    register uint64_t r8 asm("r8") = (uint64_t)bg;
+    register uint64_t r9 asm("r9") = 0;
+
+    asm volatile("syscall"
+                 : "+r"(rax)
+                 : "r"(rdi), "r"(rsi), "r"(rdx), "r"(r10), "r"(r8), "r"(r9)
+                 : "rcx", "r11", "memory");
+    return rax;
 }
 
 static inline void sys_power_off(void)

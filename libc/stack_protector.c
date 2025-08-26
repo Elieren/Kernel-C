@@ -10,8 +10,8 @@ uintptr_t __stack_chk_guard = 0xBAAAD00Du;
 static void __attribute__((noreturn)) kstack_panic(const char *msg)
 {
     /* Печатаем короткое сообщение красным */
-    sys_print_str("STACK SMASHING DETECTED", 20, 2, WHITE, RED);
-    sys_print_str(msg, 20, 3, WHITE, RED);
+    print_string("STACK SMASHING DETECTED", 20, 2, WHITE, RED);
+    print_string(msg, 20, 3, WHITE, RED);
     /* Глушим всё */
     asm volatile("cli; hlt");
     __builtin_unreachable();

@@ -25,35 +25,48 @@ static task_t *zombie_list = NULL;
 static inline void cli(void) { __asm__ volatile("cli" ::: "memory"); }
 static inline void sti(void) { __asm__ volatile("sti" ::: "memory"); }
 
-static inline uint32_t *align_down_16(uint32_t *p)
+static inline uint64_t *align_down_16(uint64_t *p)
 {
-    return (uint32_t *)(((uintptr_t)p) & ~0xFUL);
+    return (uint64_t *)(((uintptr_t)p) & ~0xFUL);
 }
 
-static uint32_t *prepare_initial_stack(void (*entry)(void), void *kstack_top)
+static uint64_t *prepare_initial_stack(void (*entry)(void),
+                                       void *kstack_top,
+                                       void *user_stack,
+                                       uint16_t user_ss)
 {
-    const int FRAME_WORDS = 17;
-    uint32_t *sp = (uint32_t *)kstack_top;
-    sp = align_down_16(sp);
-    sp -= FRAME_WORDS;
+    int frame_words = (user_stack && user_ss) ? 23 : 21; // kernel vs user
+    uint64_t *sp = (uint64_t *)kstack_top;
+    sp = (uint64_t *)(((uintptr_t)sp) & ~0xF);
+    sp -= frame_words;
 
-    sp[0] = 32;               /* int_no (dummy) */
-    sp[1] = 0;                /* err_code */
-    sp[2] = 0;                /* EDI */
-    sp[3] = 0;                /* ESI */
-    sp[4] = 0;                /* EBP */
-    sp[5] = (uint32_t)sp;     /* ESP_saved */
-    sp[6] = 0;                /* EBX */
-    sp[7] = 0;                /* EDX */
-    sp[8] = 0;                /* ECX */
-    sp[9] = 0;                /* EAX */
-    sp[10] = 0x10;            /* DS */
-    sp[11] = 0x10;            /* ES */
-    sp[12] = 0x10;            /* FS */
-    sp[13] = 0x10;            /* GS */
-    sp[14] = (uint32_t)entry; /* EIP */
-    sp[15] = 0x08;            /* CS */
-    sp[16] = 0x202;           /* EFLAGS: IF = 1 */
+    sp[0] = 0;  // int_no
+    sp[1] = 0;  // err_code
+    sp[2] = 0;  // R15
+    sp[3] = 0;  // R14
+    sp[4] = 0;  // R13
+    sp[5] = 0;  // R12
+    sp[6] = 0;  // R11
+    sp[7] = 0;  // R10
+    sp[8] = 0;  // R9
+    sp[9] = 0;  // R8
+    sp[10] = 0; // RDI
+    sp[11] = 0; // RSI
+    sp[12] = 0; // RBP
+    sp[13] = 0; // RBX
+    sp[14] = 0; // RDX
+    sp[15] = 0; // RCX
+    sp[16] = 0; // RAX
+
+    sp[17] = (uint64_t)entry; // RIP
+    sp[18] = 0x08;            // CS
+    sp[19] = 0x202;           // RFLAGS
+
+    if (user_stack && user_ss)
+    {
+        sp[20] = (uint64_t)user_stack; // RSP
+        sp[21] = (uint64_t)user_ss;    // SS
+    }
 
     return sp;
 }
@@ -99,7 +112,7 @@ void task_create(void (*entry)(void), size_t stack_size)
     t->next = NULL;
 
     void *kstack_top = (char *)kstack + stack_size;
-    t->regs = prepare_initial_stack(entry, kstack_top);
+    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size, NULL, 0);
 
     /* Вставляем в кольцо как новый tail */
     if (!task_ring)
@@ -135,7 +148,7 @@ static task_t *pick_next(void)
 }
 
 /* schedule_from_isr: переключение — вызывается из ISR (прерывания отключены) */
-void schedule_from_isr(uint32_t *regs, uint32_t **out_regs_ptr)
+void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
 {
     if (!current)
     {
@@ -381,7 +394,12 @@ void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t
     t->state = TASK_READY;
     t->kstack = kstack;
     t->kstack_size = stack_size;
-    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size);
+    uint16_t user_ss = 0x23; // ring3 data segment
+    void *user_stack_top = (char *)user_mem + user_mem_size;
+    t->regs = prepare_initial_stack(entry,
+                                    (char *)kstack + stack_size,
+                                    user_stack_top,
+                                    user_ss);
     t->exit_code = 0;
 
     /* Сохраняем пользовательскую память */

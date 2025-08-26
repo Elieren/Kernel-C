@@ -15,17 +15,17 @@ void user_task1(void)
         asm volatile("hlt");
     }
 }
-#ifdef DEBUG
-void user_task2(void)
-{
-    for (;;)
-    {
-        const char *secs = sys_get_seconds_str();
-        sys_print_str(secs, 0, 20, WHITE, RED);
-        asm volatile("hlt");
-    }
-}
-#endif
+// #ifdef DEBUG
+// void user_task2(void)
+// {
+//     for (;;)
+//     {
+//         const char *secs = sys_get_seconds_str();
+//         sys_print_str(secs, 0, 20, WHITE, RED);
+//         asm volatile("hlt");
+//     }
+// }
+// #endif
 
 /* Задача-реапер: бесконечно вызывает reap_zombies(), можно вызывать каждые N тикoв */
 void zombie_reaper_task(void)
@@ -41,20 +41,29 @@ void zombie_reaper_task(void)
 void tasks_init(void)
 {
     /* создаём задачи с дефолтным стеком (8192) */
-    task_create(user_task1, 0);
-#ifdef DEBUG
-    task_create(user_task2, 0);
-#endif
+    size_t kstack_size = 8192;
+
+    size_t ustack_size = 8192;
+
+    void *user_stack1 = malloc(ustack_size);
+    if (!user_stack1)
+        return;
+
+    utask_create(user_task1, kstack_size, user_stack1, ustack_size);
+
+    // #ifdef DEBUG
+    //     // task_create(user_task2, 0);
+    // #endif
     // получить индекс /bin (или -1)
-    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
-    if (bin_idx >= 0)
-    {
-        start_task_from_fs("terminal", "elf", bin_idx, 0);
-    }
-    else
-    {
-        sys_print_str("No /bin found", 4, 6, YELLOW, BLACK);
-    }
+    // int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    // if (bin_idx >= 0)
+    // {
+    //     start_task_from_fs("terminal", "elf", bin_idx, 0);
+    // }
+    // else
+    // {
+    //     sys_print_str("No /bin found", 4, 6, YELLOW, BLACK);
+    // }
 
     task_create(zombie_reaper_task, 0);
 

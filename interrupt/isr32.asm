@@ -1,45 +1,58 @@
-; isr.asm
-[bits 32]
+; isr32.asm — 64-bit версия для IRQ32 (таймер)
+[BITS 64]
 
 global isr32
-extern isr_timer_dispatch  ; C-функция, возвращающая указатель на стек фрейм для восстановления
+extern isr_timer_dispatch  ; C-функция: uintptr_t* isr_timer_dispatch(uintptr_t* regs)
 
 isr32:
     cli
 
-    ; save segment registers (will be restored after iret)
-    push ds
-    push es
-    push fs
-    push gs
+    ; Сохраняем все регистры в порядке, соответствующем prepare_initial_stack
+    push rax
+    push rcx
+    push rdx
+    push rbx
+    push rbp
+    push rsi
+    push rdi
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
 
-    ; save general-purpose registers
-    pusha
+    push 0       ; err_code
+    push 32      ; int_no (dummy)
 
-    ; push fake err_code and int_no for uniform frame
-    push dword 0
-    push dword 32
-
-    ; pass pointer to frame (esp) -> call dispatch
-    mov eax, esp
-    push eax
+    ; Передаем указатель на стек
+    mov rdi, rsp
     call isr_timer_dispatch
-    add esp, 4
+    mov rsp, rax
 
-    ; isr_timer_dispatch returns pointer to frame to restore in EAX
-    mov esp, eax
+    pop rax
+    pop rax
 
-    ; pop int_no, err_code (balanced with pushes earlier)
-    pop eax
-    pop eax
+    ; Восстанавливаем в обратном порядке
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rdi
+    pop rsi
+    pop rbp
+    pop rbx
+    pop rdx
+    pop rcx
+    pop rax
 
-    popa
-    pop gs
-    pop fs
-    pop es
-    pop ds
-
-    iretd
+    iretq
 
 section .note.GNU-stack
 ; empty

@@ -54,7 +54,7 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
 
     if (!elf_data || elf_len < sizeof(Elf32_Ehdr))
     {
-        sys_print_str("Invalid ELF data ptr/len", 2, 2, YELLOW, BLACK);
+        print_string("Invalid ELF data ptr/len", 2, 2, YELLOW, BLACK);
         return result;
     }
 
@@ -62,31 +62,31 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
     if (!(ehdr->e_ident[0] == 0x7F && ehdr->e_ident[1] == 'E' &&
           ehdr->e_ident[2] == 'L' && ehdr->e_ident[3] == 'F'))
     {
-        sys_print_str("Not an ELF binary!", 2, 3, YELLOW, BLACK);
+        print_string("Not an ELF binary!", 2, 3, YELLOW, BLACK);
         return result;
     }
 
     if (ehdr->e_ident[4] != 1)
     {
-        sys_print_str("ELF not 32-bit", 2, 3, YELLOW, BLACK);
+        print_string("ELF not 32-bit", 2, 3, YELLOW, BLACK);
         return result;
     }
 
     if (ehdr->e_machine != 3)
     {
-        sys_print_str("Unsupported machine type", 2, 4, YELLOW, BLACK);
+        print_string("Unsupported machine type", 2, 4, YELLOW, BLACK);
         return result;
     }
 
     if (ehdr->e_phoff == 0 || ehdr->e_phnum == 0)
     {
-        sys_print_str("No program headers", 2, 4, YELLOW, BLACK);
+        print_string("No program headers", 2, 4, YELLOW, BLACK);
         return result;
     }
 
     if (!check_inside(ehdr->e_phoff, ehdr->e_phnum * sizeof(Elf32_Phdr), elf_len))
     {
-        sys_print_str("Bad phdr offset/size", 2, 4, YELLOW, BLACK);
+        print_string("Bad phdr offset/size", 2, 4, YELLOW, BLACK);
         return result;
     }
 
@@ -109,7 +109,7 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
     }
     if (!found)
     {
-        sys_print_str("No PT_LOAD found", 2, 4, YELLOW, BLACK);
+        print_string("No PT_LOAD found", 2, 4, YELLOW, BLACK);
         return result;
     }
 
@@ -120,7 +120,7 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
     void *task_load_base = user_malloc(span_aligned);
     if (!task_load_base)
     {
-        sys_print_str("User area exhausted", 2, 5, YELLOW, BLACK);
+        print_string("User area exhausted", 2, 5, YELLOW, BLACK);
         return result;
     }
 
@@ -134,7 +134,7 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
 
         if (!check_inside(phdr[i].p_offset, phdr[i].p_filesz, elf_len))
         {
-            sys_print_str("PHDR points outside ELF", 2, 5, YELLOW, BLACK);
+            print_string("PHDR points outside ELF", 2, 5, YELLOW, BLACK);
             user_free(task_load_base);
             return result;
         }
@@ -169,7 +169,7 @@ utask_load_t load_task_entry_from_dir(const char *name, const char *ext, int dir
 
     if (dir_idx < 0)
     {
-        sys_print_str("Bad dir index", 4, 4, RED, BLACK);
+        print_string("Bad dir index", 4, 4, RED, BLACK);
         return result;
     }
 
@@ -177,28 +177,28 @@ utask_load_t load_task_entry_from_dir(const char *name, const char *ext, int dir
     int fidx = fs_find_in_dir(name, ext, dir_idx, &fentry);
     if (fidx < 0)
     {
-        sys_print_str("File not found in dir!", 4, 4, RED, BLACK);
+        print_string("File not found in dir!", 4, 4, RED, BLACK);
         return result;
     }
 
     size_t file_size = fentry.size;
     if (file_size == 0)
     {
-        sys_print_str("File is empty!", 4, 5, RED, BLACK);
+        print_string("File is empty!", 4, 5, RED, BLACK);
         return result;
     }
 
     uint8_t *elf_buffer = (uint8_t *)malloc(file_size);
     if (!elf_buffer)
     {
-        sys_print_str("No memory for ELF!", 4, 5, RED, BLACK);
+        print_string("No memory for ELF!", 4, 5, RED, BLACK);
         return result;
     }
 
     size_t out_size = 0;
     if (fs_read_file_in_dir(name, ext, dir_idx, elf_buffer, file_size, &out_size) != 0 || out_size != file_size)
     {
-        sys_print_str("Error reading ELF!", 4, 5, RED, BLACK);
+        print_string("Error reading ELF!", 4, 5, RED, BLACK);
         free(elf_buffer);
         return result;
     }
@@ -213,7 +213,7 @@ int start_task_from_fs(const char *name, const char *ext, int dir_idx, size_t st
     utask_load_t utask = load_task_entry_from_dir(name, ext, dir_idx);
     if (!utask.entry || !utask.user_mem || utask.user_mem_size == 0)
     {
-        sys_print_str("Failed to load task!", 6, 4, RED, BLACK);
+        print_string("Failed to load task!", 6, 4, RED, BLACK);
         return -1;
     }
 
