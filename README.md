@@ -35,6 +35,10 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Make the terminal a separate application rather than part of the kernel.
 
+* [X] Implement Long mode
+
+* [ ] Implement working multitasking for Long mode
+
 * [ ] Add cross compiler.
 
 ## Build and Run
