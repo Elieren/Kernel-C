@@ -33,12 +33,12 @@ void fs_init(void);
 
 int fs_mkdir(const char *name, int parent);
 int fs_rmdir(int dir_idx);
-int fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_cluster);
+int fs_create_file(const char *name, const char *ext, int parent, uint32_t *out_cluster);
 int fs_remove_entry(int idx);
 int fs_find_in_dir(const char *name, const char *ext, int parent, fs_entry_t *out);
 int fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent);
-size_t fs_read(uint16_t first_cluster, void *buf, size_t size);
-size_t fs_write(uint16_t first_cluster, const void *buf, size_t size);
+size_t fs_read(uint32_t first_cluster, void *buf, size_t size);
+size_t fs_write(uint32_t first_cluster, const void *buf, size_t size);
 int fs_write_file_in_dir(const char *name, const char *ext, int parent, const void *data, size_t size);
 int fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf, size_t bufsize, size_t *out_size);
 
