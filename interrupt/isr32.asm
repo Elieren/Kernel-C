@@ -1,13 +1,17 @@
 ; isr32.asm — 64-bit версия для IRQ32 (таймер)
+; Сохраняет регистры -> вызывает timer_tick_only() -> посылает EOI -> вызывает schedule_from_isr из ASM
+; Ожидается: schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
+
 [BITS 64]
 
 global isr32
-extern isr_timer_dispatch  ; C-функция: uintptr_t* isr_timer_dispatch(uintptr_t* regs)
+extern timer_tick    ; void timer_tick(void)
+extern schedule_from_isr  ; void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
 
 isr32:
     cli
 
-    ; Сохраняем все регистры в порядке, соответствующем prepare_initial_stack
+    ; --- сохранить регистры в том же порядке, как у вас было ранее ---
     push rax
     push rcx
     push rdx
@@ -24,18 +28,35 @@ isr32:
     push r14
     push r15
 
-    push 0       ; err_code
-    push 32      ; int_no (dummy)
+    ; err_code, int_no (как раньше)
+    push 0        ; err_code
+    push 32       ; int_no (dummy)
 
-    ; Передаем указатель на стек
-    mov rdi, rsp
-    call isr_timer_dispatch
+    ; --- обновляем только время (C функция, не трогающая regs) ---
+    call timer_tick
+
+    ; --- выделим 8 байт для out_slot на стеке ---
+    sub rsp, 8
+
+    ; Передаём:
+    ;   rdi = pointer на сохранённый frame регистров (включая int_no/err_code) -> rsp+8
+    ;   rsi = адрес out_slot (в котором schedule_from_isr запишет pointer на frame следующей задачи)
+    lea rdi, [rsp + 8]   ; regs_ptr (указывает на int_no)
+    lea rsi, [rsp]       ; адрес out_slot
+    call schedule_from_isr
+
+    ; schedule_from_isr запишет pointer на frame в [rsi] (out_slot)
+    mov rax, [rsp]       ; rax = out_regs pointer
+    add rsp, 8           ; освободили out_slot
+
+    ; переключаем стек на возвращённый frame
     mov rsp, rax
 
+    ; --- удалить int_no/err_code (2 qwords) перед pop-ами регистров ---
     pop rax
     pop rax
 
-    ; Восстанавливаем в обратном порядке
+    ; --- восстановить регистры в обратном порядке ---
     pop r15
     pop r14
     pop r13

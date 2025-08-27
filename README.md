@@ -37,7 +37,9 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Implement Long mode
 
-* [ ] Implement working multitasking for Long mode
+* [X] Implement working multitasking for Long mode
+
+* [ ] Rewriting the terminal program from elf-32 to elf-64 and checking syscall
 
 * [ ] Add cross compiler.
 

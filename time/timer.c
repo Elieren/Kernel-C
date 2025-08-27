@@ -27,6 +27,20 @@ uint64_t *isr_timer_dispatch(uint64_t *regs_ptr)
     return out_regs;
 }
 
+void timer_tick(void)
+{
+    tick_time++;
+    if (tick_time >= 1000)
+    {
+        tick_time = 0;
+        seconds++;
+        clock_tick();
+    }
+
+    /* Посылаем EOI PIC — делаем это здесь, до возможного переключения */
+    pic_send_eoi(0);
+}
+
 void init_timer(uint32_t frequency)
 {
     uint32_t divisor = 1193180 / frequency;

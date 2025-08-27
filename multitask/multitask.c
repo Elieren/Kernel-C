@@ -1,4 +1,7 @@
-// multitask.c
+// multitask64.c
+// Простая вытесняемая мультизадачность для long mode (x86_64).
+// Сделано максимально аналогично вашей 32-bit версии.
+
 #include "multitask.h"
 #include "../malloc/malloc.h"
 #include "../libc/string.h"
@@ -7,6 +10,7 @@
 #include "../malloc/user_malloc.h"
 
 #include <stdint.h>
+#include <stddef.h>
 
 extern char _heap_start;
 extern char _heap_end;
@@ -25,51 +29,68 @@ static task_t *zombie_list = NULL;
 static inline void cli(void) { __asm__ volatile("cli" ::: "memory"); }
 static inline void sti(void) { __asm__ volatile("sti" ::: "memory"); }
 
-static inline uint64_t *align_down_16(uint64_t *p)
+/* prepare_initial_stack: layout exactly matches your ISR push order */
+static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top)
 {
-    return (uint64_t *)(((uintptr_t)p) & ~0xFUL);
-}
-
-static uint64_t *prepare_initial_stack(void (*entry)(void),
-                                       void *kstack_top,
-                                       void *user_stack,
-                                       uint16_t user_ss)
-{
-    int frame_words = (user_stack && user_ss) ? 23 : 21; // kernel vs user
+    /* Layout (qwords):
+       0  int_no
+       1  err_code
+       2  r15
+       3  r14
+       4  r13
+       5  r12
+       6  r11
+       7  r10
+       8  r9
+       9  r8
+       10 rdi
+       11 rsi
+       12 rbp
+       13 rbx
+       14 rdx
+       15 rcx
+       16 rax
+       17 rip
+       18 cs
+       19 rflags
+       20 rsp   (initial RSP, useful)
+       21 ss    (0 for kernel-mode)
+    */
+    const int FRAME_QWORDS = 22;
     uint64_t *sp = (uint64_t *)kstack_top;
-    sp = (uint64_t *)(((uintptr_t)sp) & ~0xF);
-    sp -= frame_words;
+    sp = (uint64_t *)(((uintptr_t)sp) & ~0xFULL); /* align down 16 */
+    sp -= FRAME_QWORDS;
 
-    sp[0] = 0;  // int_no
-    sp[1] = 0;  // err_code
-    sp[2] = 0;  // R15
-    sp[3] = 0;  // R14
-    sp[4] = 0;  // R13
-    sp[5] = 0;  // R12
-    sp[6] = 0;  // R11
-    sp[7] = 0;  // R10
-    sp[8] = 0;  // R9
-    sp[9] = 0;  // R8
-    sp[10] = 0; // RDI
-    sp[11] = 0; // RSI
-    sp[12] = 0; // RBP
-    sp[13] = 0; // RBX
-    sp[14] = 0; // RDX
-    sp[15] = 0; // RCX
-    sp[16] = 0; // RAX
+    sp[0] = 32; /* int_no (dummy) */
+    sp[1] = 0;  /* err_code */
 
-    sp[17] = (uint64_t)entry; // RIP
-    sp[18] = 0x08;            // CS
-    sp[19] = 0x202;           // RFLAGS
+    sp[2] = 0;  /* r15 */
+    sp[3] = 0;  /* r14 */
+    sp[4] = 0;  /* r13 */
+    sp[5] = 0;  /* r12 */
+    sp[6] = 0;  /* r11 */
+    sp[7] = 0;  /* r10 */
+    sp[8] = 0;  /* r9  */
+    sp[9] = 0;  /* r8  */
+    sp[10] = 0; /* rdi */
+    sp[11] = 0; /* rsi */
+    sp[12] = 0; /* rbp */
+    sp[13] = 0; /* rbx */
+    sp[14] = 0; /* rdx */
+    sp[15] = 0; /* rcx */
+    sp[16] = 0; /* rax */
 
-    if (user_stack && user_ss)
-    {
-        sp[20] = (uint64_t)user_stack; // RSP
-        sp[21] = (uint64_t)user_ss;    // SS
-    }
+    sp[17] = (uint64_t)entry; /* RIP */
+    sp[18] = 0x08;            /* CS (kernel code selector) */
+    sp[19] = 0x202;           /* RFLAGS (IF = 1) */
+
+    sp[20] = (uint64_t)((char *)kstack_top); /* initial RSP */
+    sp[21] = 0;                              /* SS = 0 (kernel) */
 
     return sp;
 }
+
+/* ----------------Scheduler init / create / pick_next -------------------- */
 
 void scheduler_init(void)
 {
@@ -112,7 +133,7 @@ void task_create(void (*entry)(void), size_t stack_size)
     t->next = NULL;
 
     void *kstack_top = (char *)kstack + stack_size;
-    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size, NULL, 0);
+    t->regs = prepare_initial_stack(entry, kstack_top);
 
     /* Вставляем в кольцо как новый tail */
     if (!task_ring)
@@ -147,7 +168,12 @@ static task_t *pick_next(void)
     return NULL;
 }
 
-/* schedule_from_isr: переключение — вызывается из ISR (прерывания отключены) */
+/* schedule_from_isr: переключение — вызывается из ISR (прерывания отключены)
+   Параметры:
+     regs         - pointer на текущий сохранённый regs frame (массив uint64_t)
+     out_regs_ptr - адрес указателя (uint64_t**). После вызова туда записывается
+                    pointer на regs, который должен быть восстановлен (для текущей/следующей задачи).
+*/
 void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
 {
     if (!current)
@@ -166,6 +192,7 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
     task_t *next = pick_next();
     if (!next)
     {
+        /* Нечего переключать — оставить текущие regs. */
         *out_regs_ptr = regs;
         return;
     }
@@ -177,6 +204,7 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
         return;
     }
 
+    /* переключаем на next */
     current = next;
     current->state = TASK_RUNNING;
     *out_regs_ptr = current->regs;
@@ -200,6 +228,7 @@ static int unlink_from_ring(task_t *t)
     if (!task_ring || !t)
         return -1;
 
+    /* одноэлементное кольцо */
     if (task_ring->next == task_ring)
     {
         if (task_ring == t)
@@ -280,17 +309,19 @@ void reap_zombies(void)
 /* Формат строки: "# <pid>\t<STATE>\n" */
 int task_list(task_info_t *buf, size_t max)
 {
-
     cli();
     if (!task_ring)
+    {
+        sti();
         return 0;
+    }
 
     int count = 0;
     task_t *it = task_ring->next;
 
     do
     {
-        if (count >= max)
+        if (count >= (int)max)
             break;
         buf[count].pid = it->pid;
         buf[count].state = it->state;
@@ -298,9 +329,8 @@ int task_list(task_info_t *buf, size_t max)
         it = it->next;
     } while (it != task_ring->next);
 
-    return count;
-
     sti();
+    return count;
 }
 
 /* ================= task_stop(pid) ================= */
@@ -373,6 +403,7 @@ void task_exit(int exit_code)
     add_to_zombie_list(current);
     sti();
 }
+
 void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size)
 {
     if (stack_size == 0)
@@ -394,12 +425,7 @@ void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t
     t->state = TASK_READY;
     t->kstack = kstack;
     t->kstack_size = stack_size;
-    uint16_t user_ss = 0x23; // ring3 data segment
-    void *user_stack_top = (char *)user_mem + user_mem_size;
-    t->regs = prepare_initial_stack(entry,
-                                    (char *)kstack + stack_size,
-                                    user_stack_top,
-                                    user_ss);
+    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size);
     t->exit_code = 0;
 
     /* Сохраняем пользовательскую память */

@@ -231,7 +231,7 @@ void kmain(void)
     clean_screen();
 
     scheduler_init();
-    // tasks_init();
+    tasks_init();
 
     /* Разрешаем прерывания */
     asm volatile("sti");
