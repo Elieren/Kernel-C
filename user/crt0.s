@@ -1,13 +1,15 @@
-; crt0.s
+; crt0.s (x86_64)
 global _start
 extern main
+extern syscall_stub
 
 section .text
 _start:
-    call main              ; вызываем main()
+    call main                  ; вызываем main()
 
-    ; Если main вернул, вызываем sys_task_exit(main_return)
-    mov ebx, eax           ; ebx = код возврата main()
-    mov eax, 204           ; SYSCALL_TASK_EXIT
-    int 0x80               ; Вызов системного прерывания
-    hlt                    ; Если вдруг вернётся — стоп
+    ; Если main вернул, вызываем syscall(SYSCALL_TASK_EXIT, main_return)
+    mov rdi, rax               ; rdi = код возврата main() (первый аргумент)
+    mov rax, 204               ; SYSCALL_TASK_EXIT
+    call syscall_stub          ; вызываем системный вызов
+
+    hlt                        ; если вдруг вернется — стоп

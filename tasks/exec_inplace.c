@@ -1,4 +1,9 @@
-// tasks/exec_inplace.c
+// tasks/exec_inplace64.c
+// Simple ELF64 loader (exec_inplace) — supports only 64-bit x86_64 ELF files.
+// Copies PT_LOAD segments into memory allocated by user_malloc and returns adjusted entry.
+//
+// Uses existing helpers: print_string, user_malloc, user_free, memcpy, memset.
+
 #include "../syscall/syscall.h"
 #include "../vga/vga.h"
 #include "../fat16/fs.h"
@@ -21,7 +26,8 @@ typedef struct utask_load
     size_t user_mem_size;
 } utask_load_t;
 
-static inline uint32_t align_up_u32(uint32_t v, uint32_t a)
+/* align up helpers */
+static inline uint64_t align_up_u64(uint64_t v, uint64_t a)
 {
     return (v + (a - 1)) & ~(a - 1);
 }
@@ -30,7 +36,7 @@ static inline size_t align_up_size(size_t v, size_t a)
     return (v + (a - 1)) & ~(a - 1);
 }
 
-/* Simple check that [off, off+len) is inside elf_data_len */
+/* Simple bounds check [off, off+len) inside elf_len */
 static int check_inside(size_t off, size_t len, size_t elf_len)
 {
     if (off > elf_len)
@@ -42,23 +48,20 @@ static int check_inside(size_t off, size_t len, size_t elf_len)
     return 1;
 }
 
-/*
- * exec_inplace
- *   Copies ELF segments (elf_data, elf_len) into a user area via user_malloc,
- *   returns adjusted entry point (void *).
- *   DOES NOT call the entry.
- */
-utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
+/* Main loader: only ELF64 */
+utask_load_t exec_inplace64(uint8_t *elf_data, size_t elf_len)
 {
     utask_load_t result = {0};
 
-    if (!elf_data || elf_len < sizeof(Elf32_Ehdr))
+    if (!elf_data || elf_len < sizeof(Elf64_Ehdr))
     {
         print_string("Invalid ELF data ptr/len", 2, 2, YELLOW, BLACK);
         return result;
     }
 
-    Elf32_Ehdr *ehdr = (Elf32_Ehdr *)elf_data;
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)elf_data;
+
+    /* magic check */
     if (!(ehdr->e_ident[0] == 0x7F && ehdr->e_ident[1] == 'E' &&
           ehdr->e_ident[2] == 'L' && ehdr->e_ident[3] == 'F'))
     {
@@ -66,13 +69,14 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
         return result;
     }
 
-    if (ehdr->e_ident[4] != 1)
+    /* class check */
+    if (ehdr->e_ident[4] != 2)
     {
-        print_string("ELF not 32-bit", 2, 3, YELLOW, BLACK);
+        print_string("ELF not 64-bit", 2, 3, YELLOW, BLACK);
         return result;
     }
 
-    if (ehdr->e_machine != 3)
+    if (ehdr->e_machine != EM_X86_64)
     {
         print_string("Unsupported machine type", 2, 4, YELLOW, BLACK);
         return result;
@@ -84,17 +88,18 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
         return result;
     }
 
-    if (!check_inside(ehdr->e_phoff, ehdr->e_phnum * sizeof(Elf32_Phdr), elf_len))
+    /* bounds check program header table */
+    if (!check_inside((size_t)ehdr->e_phoff, (size_t)ehdr->e_phnum * sizeof(Elf64_Phdr), elf_len))
     {
         print_string("Bad phdr offset/size", 2, 4, YELLOW, BLACK);
         return result;
     }
 
-    Elf32_Phdr *phdr = (Elf32_Phdr *)(elf_data + ehdr->e_phoff);
+    Elf64_Phdr *phdr = (Elf64_Phdr *)(elf_data + ehdr->e_phoff);
 
-    /* Find min and max p_vaddr */
-    uint32_t min_vaddr = UINT32_MAX;
-    uint32_t max_vaddr = 0;
+    /* find address range of PT_LOAD */
+    uint64_t min_vaddr = UINT64_MAX;
+    uint64_t max_vaddr = 0;
     int found = 0;
     for (int i = 0; i < ehdr->e_phnum; ++i)
     {
@@ -103,7 +108,7 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
         found = 1;
         if (phdr[i].p_vaddr < min_vaddr)
             min_vaddr = phdr[i].p_vaddr;
-        uint32_t end = phdr[i].p_vaddr + (uint32_t)phdr[i].p_memsz;
+        uint64_t end = phdr[i].p_vaddr + (uint64_t)phdr[i].p_memsz;
         if (end > max_vaddr)
             max_vaddr = end;
     }
@@ -114,25 +119,26 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
     }
 
     /* compute span and allocate via user_malloc */
-    uint32_t span = (max_vaddr > min_vaddr) ? (max_vaddr - min_vaddr) : PAGE_SIZE;
-    uint32_t span_aligned = align_up_u32(span, PAGE_SIZE);
+    uint64_t span = (max_vaddr > min_vaddr) ? (max_vaddr - min_vaddr) : PAGE_SIZE;
+    uint64_t span_aligned = align_up_u64(span, PAGE_SIZE);
 
-    void *task_load_base = user_malloc(span_aligned);
+    void *task_load_base = user_malloc((size_t)span_aligned);
     if (!task_load_base)
     {
         print_string("User area exhausted", 2, 5, YELLOW, BLACK);
         return result;
     }
 
-    uint32_t load_delta = (uint32_t)((uintptr_t)task_load_base - min_vaddr);
+    /* compute load delta: dest_addr = p_vaddr + load_delta */
+    uint64_t load_delta = (uint64_t)((uintptr_t)task_load_base - (uintptr_t)min_vaddr);
 
-    /* Copy all PT_LOAD segments to allocated area */
+    /* copy PT_LOAD segments */
     for (int i = 0; i < ehdr->e_phnum; ++i)
     {
         if (phdr[i].p_type != PT_LOAD)
             continue;
 
-        if (!check_inside(phdr[i].p_offset, phdr[i].p_filesz, elf_len))
+        if (!check_inside((size_t)phdr[i].p_offset, (size_t)phdr[i].p_filesz, elf_len))
         {
             print_string("PHDR points outside ELF", 2, 5, YELLOW, BLACK);
             user_free(task_load_base);
@@ -142,27 +148,29 @@ utask_load_t exec_inplace(uint8_t *elf_data, size_t elf_len)
         void *dest = (void *)((uintptr_t)(phdr[i].p_vaddr + load_delta));
         void *src = elf_data + phdr[i].p_offset;
 
-        memcpy(dest, src, phdr[i].p_filesz);
+        /* basic sanity: do not write to very low memory */
+        if ((uintptr_t)dest < 0x1000)
+        {
+            print_string("Bad dest addr", 2, 5, RED, BLACK);
+            user_free(task_load_base);
+            return result;
+        }
+
+        memcpy(dest, src, (size_t)phdr[i].p_filesz);
 
         if (phdr[i].p_memsz > phdr[i].p_filesz)
-        {
-            memset((uint8_t *)dest + phdr[i].p_filesz, 0, phdr[i].p_memsz - phdr[i].p_filesz);
-        }
+            memset((uint8_t *)dest + (size_t)phdr[i].p_filesz, 0, (size_t)(phdr[i].p_memsz - phdr[i].p_filesz));
     }
 
-    /* Fill result */
+    /* fill result */
     result.entry = (void *)((uintptr_t)(ehdr->e_entry + load_delta));
     result.user_mem = task_load_base;
-    result.user_mem_size = span_aligned;
+    result.user_mem_size = (size_t)span_aligned;
 
     return result;
 }
 
-/*
- * load_task_entry
- *   Loads ELF from FS into malloc buffer, calls exec_inplace,
- *   frees temporary kernel buffer and returns utask_load_t.
- */
+/* wrapper: load from FS into temp kernel malloc, call exec_inplace64, free temp buffer */
 utask_load_t load_task_entry_from_dir(const char *name, const char *ext, int dir_idx)
 {
     utask_load_t result = {0};
@@ -191,7 +199,7 @@ utask_load_t load_task_entry_from_dir(const char *name, const char *ext, int dir
     uint8_t *elf_buffer = (uint8_t *)malloc(file_size);
     if (!elf_buffer)
     {
-        print_string("No memory for ELF!", 4, 5, RED, BLACK);
+        print_string("No memory for ELF buffer!", 4, 5, RED, BLACK);
         return result;
     }
 
@@ -203,8 +211,14 @@ utask_load_t load_task_entry_from_dir(const char *name, const char *ext, int dir
         return result;
     }
 
-    result = exec_inplace(elf_buffer, file_size);
+    result = exec_inplace64(elf_buffer, file_size);
     free(elf_buffer);
+
+    if (!result.entry || !result.user_mem)
+    {
+        print_string("exec_inplace64 failed", 4, 6, RED, BLACK);
+    }
+
     return result;
 }
 

@@ -46,15 +46,15 @@ void tasks_init(void)
     //     // task_create(user_task2, 0);
     // #endif
     // получить индекс /bin (или -1)
-    // int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
-    // if (bin_idx >= 0)
-    // {
-    //     start_task_from_fs("terminal", "elf", bin_idx, 0);
-    // }
-    // else
-    // {
-    //     sys_print_str("No /bin found", 4, 6, YELLOW, BLACK);
-    // }
+    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    if (bin_idx >= 0)
+    {
+        start_task_from_fs("terminal", "elf", bin_idx, 16384);
+    }
+    else
+    {
+        sys_print_str("No /bin found", 4, 6, YELLOW, BLACK);
+    }
 
     task_create(zombie_reaper_task, 0);
 

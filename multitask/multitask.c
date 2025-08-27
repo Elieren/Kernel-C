@@ -30,7 +30,8 @@ static inline void cli(void) { __asm__ volatile("cli" ::: "memory"); }
 static inline void sti(void) { __asm__ volatile("sti" ::: "memory"); }
 
 /* prepare_initial_stack: layout exactly matches your ISR push order */
-static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top)
+static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top,
+                                       int user_mode, void *user_stack_top)
 {
     /* Layout (qwords):
        0  int_no
@@ -81,11 +82,20 @@ static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top)
     sp[16] = 0; /* rax */
 
     sp[17] = (uint64_t)entry; /* RIP */
-    sp[18] = 0x08;            /* CS (kernel code selector) */
     sp[19] = 0x202;           /* RFLAGS (IF = 1) */
 
-    sp[20] = (uint64_t)((char *)kstack_top); /* initial RSP */
-    sp[21] = 0;                              /* SS = 0 (kernel) */
+    if (user_mode)
+    {
+        sp[18] = 0x1B;                     /* User CS */
+        sp[20] = (uint64_t)user_stack_top; /* RSP (user stack) */
+        sp[21] = 0x23;                     /* User SS */
+    }
+    else
+    {
+        sp[18] = 0x08; /* Kernel CS */
+        sp[20] = (uint64_t)kstack_top;
+        sp[21] = 0x10; /* Kernel SS */
+    }
 
     return sp;
 }
@@ -133,7 +143,7 @@ void task_create(void (*entry)(void), size_t stack_size)
     t->next = NULL;
 
     void *kstack_top = (char *)kstack + stack_size;
-    t->regs = prepare_initial_stack(entry, kstack_top);
+    t->regs = prepare_initial_stack(entry, kstack_top, 0, NULL);
 
     /* Вставляем в кольцо как новый tail */
     if (!task_ring)
@@ -425,7 +435,11 @@ void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t
     t->state = TASK_READY;
     t->kstack = kstack;
     t->kstack_size = stack_size;
-    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size);
+
+    /* user stack = top of user_mem */
+    void *user_stack_top = (char *)user_mem + user_mem_size;
+
+    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size, 1, user_stack_top);
     t->exit_code = 0;
 
     /* Сохраняем пользовательскую память */

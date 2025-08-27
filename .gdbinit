@@ -1,8 +1,6 @@
 target remote :1234
 symbol-file iso/boot/kernel
 break kmain
-break tasks/tasks.c:59
-break tasks/tasks.c:35
 break multitask/multitask.c:65
 break multitask/multitask.c:100
 break multitask/multitask.c:103
@@ -13,3 +11,20 @@ break multitask/multitask.c:158
 break multitask/multitask.c:182
 break interrupt/isr32.asm:39
 break interrupt/isr32.asm:49
+break tasks/exec_inplace.c:208
+break tasks/exec_inplace.c:25
+break tasks/exec_inplace.c:29
+break tasks/exec_inplace.c:35
+break tasks/exec_inplace.c:46
+break tasks/exec_inplace.c:54
+break tasks/exec_inplace.c:63
+break tasks/exec_inplace.c:69
+break tasks/exec_inplace.c:75
+break tasks/exec_inplace.c:82
+break tasks/exec_inplace.c:88
+break tasks/exec_inplace.c:116
+break tasks/exec_inplace.c:142
+break tasks/exec_inplace.c:173
+break tasks/exec_inplace.c:187
+break tasks/exec_inplace.c:196
+break tasks/exec_inplace.c:201

@@ -7,6 +7,7 @@ syscall_stub:
     ; --- Сохраняем регистры, которые будут трогаться в syscall ---
     push rax
     push rdi
+    push rsi
     push rdx
     push r10
     push r8
@@ -19,6 +20,7 @@ syscall_stub:
     pop r8
     pop r10
     pop rdx
+    pop rsi
     pop rdi
     pop rax
 

@@ -1,17 +1,32 @@
-; isr32.asm — 64-bit версия для IRQ32 (таймер)
-; Сохраняет регистры -> вызывает timer_tick_only() -> посылает EOI -> вызывает schedule_from_isr из ASM
-; Ожидается: schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
+; isr32.asm — IRQ32 (timer) for x86_64
+; Сохранение регистров -> вызов timer_tick -> EOI -> вызов schedule_from_isr -> восстановление и iretq
+; Ожидается:
+;   extern timer_tick             ; void timer_tick(void)
+;   extern schedule_from_isr      ; void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
+; Формат кадра в стеке (по qword'ам), начинающийся с [rsp]:
+;   [0] int_no
+;   [1] err_code
+;   [2] r15
+;   [3] r14
+;   ...
+;   [16] rax
+;   [17] rip
+;   [18] cs
+;   [19] rflags
+;   [20] rsp  (user/kernel stack)
+;   [21] ss
 
 [BITS 64]
 
 global isr32
-extern timer_tick    ; void timer_tick(void)
-extern schedule_from_isr  ; void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
+extern timer_tick
+extern schedule_from_isr
 
 isr32:
     cli
 
-    ; --- сохранить регистры в том же порядке, как у вас было ранее ---
+    ; --- Сохраняем регистры в порядке: rax, rcx, rdx, rbx, rbp, rsi, rdi, r8..r15 ---
+    ; (после нескольких push'ов ниже, стек будет содержать: ... , r15, ..., rax)
     push rax
     push rcx
     push rdx
@@ -28,35 +43,35 @@ isr32:
     push r14
     push r15
 
-    ; err_code, int_no (как раньше)
-    push 0        ; err_code
-    push 32       ; int_no (dummy)
+    ; push err_code, int_no (как у ISR в protected mode; мы используем заглушки)
+    push qword 0        ; err_code
+    push qword 32       ; int_no (dummy for consistent frame)
 
-    ; --- обновляем только время (C функция, не трогающая regs) ---
+    ; --- вызов C-функции для тика таймера (не трогает regs на стеке) ---
     call timer_tick
 
-    ; --- выделим 8 байт для out_slot на стеке ---
+    ; --- выделим 8 байт на стеке для out_slot (uint64_t) ---
     sub rsp, 8
 
-    ; Передаём:
-    ;   rdi = pointer на сохранённый frame регистров (включая int_no/err_code) -> rsp+8
-    ;   rsi = адрес out_slot (в котором schedule_from_isr запишет pointer на frame следующей задачи)
-    lea rdi, [rsp + 8]   ; regs_ptr (указывает на int_no)
-    lea rsi, [rsp]       ; адрес out_slot
+    ; rdi = pointer на regs frame (указывает на int_no) => rsp + 8
+    ; rsi = pointer на out_slot => rsp
+    lea rdi, [rsp + 8]
+    lea rsi, [rsp]
     call schedule_from_isr
 
-    ; schedule_from_isr запишет pointer на frame в [rsi] (out_slot)
-    mov rax, [rsp]       ; rax = out_regs pointer
-    add rsp, 8           ; освободили out_slot
+    ; schedule_from_isr записывает pointer на frame следующей задачи в [rsi] (out_slot)
+    mov rax, [rsp]      ; rax = out_regs pointer
+    add rsp, 8          ; убираем out_slot
 
-    ; переключаем стек на возвращённый frame
+    ; --- переключаем стек на возвращённый frame ---
     mov rsp, rax
 
-    ; --- удалить int_no/err_code (2 qwords) перед pop-ами регистров ---
+    ; --- теперь на вершине стека лежит int_no, err_code, затем регистры ---
+    ; удаляем int_no и err_code (2 qwords)
     pop rax
     pop rax
 
-    ; --- восстановить регистры в обратном порядке ---
+    ; восстанавливаем регистры в обратном порядке
     pop r15
     pop r14
     pop r13
@@ -73,6 +88,7 @@ isr32:
     pop rcx
     pop rax
 
+    ; Возврат в точку назначения (iretq): если CS/SS в стеке имеют DPL=3, произойдёт переход в user mode
     iretq
 
 section .note.GNU-stack
