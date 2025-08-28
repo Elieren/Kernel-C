@@ -19,7 +19,7 @@
 #include "multitask/multitask.h"
 #include "tasks/tasks.h"
 
-#include "user/terminal_bin.h"
+// #include "user/terminal_bin.h"
 
 #include "tasks/exec_inplace.h"
 
@@ -31,6 +31,8 @@
 /* символы из link.ld */
 extern char _heap_start;
 extern char _heap_end;
+
+volatile uintptr_t syscall_caller;
 
 /*-------------------------------------------------------------
     Debug-функции: полностью исключаются из release сборки
@@ -186,27 +188,27 @@ void list_root_dir(void)
 
 #endif // DEBUG
 
-void load_terminal_to_fs(void)
-{
-    // Найти/создать каталог /bin
-    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
-    if (bin_idx < 0)
-    {
-        bin_idx = fs_mkdir("bin", FS_ROOT_IDX);
-        if (bin_idx < 0)
-        {
-            // обработка ошибки: не удалось создать /bin
-            return;
-        }
-    }
+// void load_terminal_to_fs(void)
+// {
+//     // Найти/создать каталог /bin
+//     int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+//     if (bin_idx < 0)
+//     {
+//         bin_idx = fs_mkdir("bin", FS_ROOT_IDX);
+//         if (bin_idx < 0)
+//         {
+//             // обработка ошибки: не удалось создать /bin
+//             return;
+//         }
+//     }
 
-    // Записать файл terminal.elf в каталог /bin
-    int rc = fs_write_file_in_dir("terminal", "elf", bin_idx, terminal_elf, terminal_elf_len);
-    if (rc != 0)
-    {
-        // ошибка записи (можно вывести код rc)
-    }
-}
+//     // Записать файл terminal.elf в каталог /bin
+//     int rc = fs_write_file_in_dir("terminal", "elf", bin_idx, terminal_elf, terminal_elf_len);
+//     if (rc != 0)
+//     {
+//         // ошибка записи (можно вывести код rc)
+//     }
+// }
 
 /*-------------------------------------------------------------
     Основная функция ядра
@@ -226,7 +228,7 @@ void kmain(void)
 
     fs_init();
 
-    load_terminal_to_fs();
+    // load_terminal_to_fs();
 
     clean_screen();
 

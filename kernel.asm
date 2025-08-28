@@ -61,17 +61,18 @@ long_mode_entry:
     ; -----------------------------
     ; Настройка MSR для syscall
     ; -----------------------------
-    mov ecx, 0xC0000081       ; IA32_STAR
-    mov eax, 0x00100008       ; CS_USER: 0x08 (kernel), SS_USER: 0x10 (data)
+    mov ecx, 0xC0000081      ; IA32_STAR
+    ; CS_USER: 0x18, SS_USER: 0x20
+    mov eax, (0x20 << 16) | 0x18
     mov edx, 0
     wrmsr
 
-    mov rcx, 0xC0000082       ; IA32_LSTAR
+    mov rcx, 0xC0000082      ; IA32_LSTAR
     lea rax, [rel syscall_stub]
     wrmsr
 
-    mov ecx, 0xC0000084       ; IA32_FMASK
-    mov eax, (1 << 9)         ; сброс IF в RFLAGS
+    mov ecx, 0xC0000084      ; IA32_FMASK
+    mov eax, (1 << 9)        ; сброс IF в RFLAGS
     mov edx, 0
     wrmsr
 
@@ -89,13 +90,15 @@ long_mode_entry:
 ; -----------------------------------------------------------------------
 align 8
 gdt:
-    dq 0x0000000000000000
-    dq 0x00AF9A000000FFFF      ; selector 0x08: 64-bit code (L=1, D=0)
-    dq 0x00AF92000000FFFF      ; selector 0x10: data
+    dq 0x0000000000000000     ; Null descriptor
+    dq 0x00AF9A000000FFFF     ; 0x08: Kernel Code (L=1, DPL=0)
+    dq 0x00AF92000000FFFF     ; 0x10: Kernel Data (L=1, DPL=0)
+    dq 0x00AFFA000000FFFF     ; 0x18: User Code (L=1, DPL=3)
+    dq 0x00AFF2000000FFFF     ; 0x20: User Data (L=1, DPL=3)
 gdt_end:
 gdt_desc:
     dw gdt_end - gdt - 1
-    dd gdt
+    dq gdt
 
 ; -----------------------------------------------------------------------
 ; место под стек 64-bit
