@@ -15,6 +15,10 @@
 extern char _heap_start;
 extern char _heap_end;
 
+uint64_t g_syscall_kstack_top = 0;
+
+static uint8_t init_task_stack[16 * 1024];
+
 static task_t *task_ring = NULL; /* tail (последний элемент) */
 static task_t *current = NULL;
 static int next_pid = 1;
@@ -184,13 +188,19 @@ static task_t *pick_next(void)
      out_regs_ptr - адрес указателя (uint64_t**). После вызова туда записывается
                     pointer на regs, который должен быть восстановлен (для текущей/следующей задачи).
 */
+extern uint64_t g_syscall_kstack_top;
+
 void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
 {
     if (!current)
     {
+        init_task.kstack = init_task_stack;
+        init_task.kstack_size = sizeof(init_task_stack);
         init_task.regs = regs;
         init_task.state = TASK_RUNNING;
         current = &init_task;
+
+        g_syscall_kstack_top = (uint64_t)current->kstack + current->kstack_size;
     }
     else
     {
@@ -207,15 +217,13 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
         return;
     }
 
-    if (next->page_table_pml4 != current->page_table_pml4)
-    {
-        __asm__ volatile("mov %0, %%cr3" ::"r"(next->page_table_pml4));
-    }
-
     if (next == current)
     {
         *out_regs_ptr = current->regs;
         current->state = TASK_RUNNING;
+
+        // Обновляем kstack_top всё равно (на случай если current изменялся)
+        g_syscall_kstack_top = (uint64_t)current->kstack + current->kstack_size;
         return;
     }
 
@@ -223,6 +231,9 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
     current = next;
     current->state = TASK_RUNNING;
     *out_regs_ptr = current->regs;
+
+    // Обновляем kstack_top для нового current
+    g_syscall_kstack_top = (uint64_t)current->kstack + current->kstack_size;
 }
 
 task_t *get_current_task(void) { return current; }
@@ -419,48 +430,8 @@ void task_exit(int exit_code)
     sti();
 }
 
-int create_user_pagetable(task_t *t)
-{
-    // Выделяем память для таблиц страниц (должны быть выровнены по 4KB)
-    t->pml4_vaddr = (uint64_t *)malloc(4096);
-    t->pdpt_vaddr = (uint64_t *)malloc(4096);
-    t->pd_vaddr = (uint64_t *)malloc(4096);
-
-    if (!t->pml4_vaddr || !t->pdpt_vaddr || !t->pd_vaddr)
-    {
-        if (t->pml4_vaddr)
-            free(t->pml4_vaddr);
-        if (t->pdpt_vaddr)
-            free(t->pdpt_vaddr);
-        if (t->pd_vaddr)
-            free(t->pd_vaddr);
-        return -1;
-    }
-
-    // Очищаем выделенную память
-    memset(t->pml4_vaddr, 0, 4096);
-    memset(t->pdpt_vaddr, 0, 4096);
-    memset(t->pd_vaddr, 0, 4096);
-
-    // Заполняем PD (Page Directory) - 512 записей по 2MB
-    for (int i = 0; i < 512; i++)
-    {
-        t->pd_vaddr[i] = (i * 0x200000) | 0x087; // Present | RW | PS | User
-    }
-
-    // Заполняем PDPT (Page Directory Pointer Table)
-    t->pdpt_vaddr[0] = (uint64_t)t->pd_vaddr | 0x007; // Present | RW | User
-
-    // Заполняем PML4 (Page Map Level 4)
-    t->pml4_vaddr[0] = (uint64_t)t->pdpt_vaddr | 0x007; // Present | RW | User
-
-    // Устанавливаем физический адрес PML4 для CR3
-    t->page_table_pml4 = (uint64_t)t->pml4_vaddr;
-
-    return 0;
-}
-
 // Обновите функцию utask_create:
+// utask_create для shared page table (не выделяет pml4/pdpt/pd)
 void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size)
 {
     if (stack_size == 0)
@@ -477,28 +448,24 @@ void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t
         return;
     }
 
+    void *user_stack = user_malloc(16 * 1024); // отдельный стек
+    void *user_stack_top = (char *)user_stack + 16 * 1024;
+    user_stack_top = (void *)((uintptr_t)user_stack_top & ~0xFULL);
+
     memset(t, 0, sizeof(*t));
     t->pid = next_pid++;
     t->state = TASK_READY;
     t->kstack = kstack;
     t->kstack_size = stack_size;
 
-    // Создаем таблицу страниц для пользовательского процесса
-    if (create_user_pagetable(t) != 0)
-    {
-        free(t->kstack);
-        free(t);
-        return;
-    }
-
-    // Подготавливаем стек для пользовательского режима
-    void *user_stack_top = (char *)user_mem + user_mem_size;
+    // Подготавливаем стек для пользовательского режима.
+    // void *user_stack_top = (char *)user_mem + user_mem_size; // мы держим user_mem как базу в .user
     t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size, 1, user_stack_top);
     t->exit_code = 0;
     t->user_mem = user_mem;
     t->user_mem_size = user_mem_size;
 
-    // Вставляем задачу в кольцевой список
+    // Вставляем задачу в кольцо
     if (!task_ring)
     {
         task_ring = t;
@@ -510,31 +477,4 @@ void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t
         task_ring->next = t;
         task_ring = t;
     }
-}
-
-// Обновите функцию free_task_resources:
-static void free_task_resources(task_t *t)
-{
-    if (!t || t == &init_task)
-        return;
-
-    // Освобождаем таблицы страниц
-    if (t->pml4_vaddr)
-        free(t->pml4_vaddr);
-    if (t->pdpt_vaddr)
-        free(t->pdpt_vaddr);
-    if (t->pd_vaddr)
-        free(t->pd_vaddr);
-
-    if (t->kstack)
-        free(t->kstack);
-
-    if (t->user_mem)
-    {
-        user_free(t->user_mem);
-        t->user_mem = NULL;
-        t->user_mem_size = 0;
-    }
-
-    free(t);
 }

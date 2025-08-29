@@ -61,20 +61,22 @@ long_mode_entry:
     ; -----------------------------
     ; Настройка MSR для syscall
     ; -----------------------------
-    mov ecx, 0xC0000081      ; IA32_STAR
-    ; CS_USER: 0x18, SS_USER: 0x20
-    mov eax, (0x20 << 16) | 0x18
-    mov edx, 0
+    ; kernel CS = 0x08, user CS = 0x18 (как в твоём GDT)
+    mov ecx, 0xC0000081              ; IA32_STAR
+    mov edx, (0x18 << 16) | 0x08     ; [63:48]=user CS, [47:32]=kernel CS
+    xor eax, eax                     ; [31:0] не используются в long mode
     wrmsr
 
-    mov rcx, 0xC0000082      ; IA32_LSTAR
+    mov ecx, 0xC0000082              ; IA32_LSTAR
     lea rax, [rel syscall_stub]
+    xor edx, edx
     wrmsr
 
-    mov ecx, 0xC0000084      ; IA32_FMASK
-    mov eax, (1 << 9)        ; сброс IF в RFLAGS
-    mov edx, 0
+    mov ecx, 0xC0000084              ; IA32_FMASK
+    mov eax, (1 << 9)                ; IF сбрасываем
+    xor edx, edx
     wrmsr
+
 
     ; вызов 64-битного kmain (собранного с -m64)
     call kmain
@@ -117,20 +119,21 @@ stack64_top:
 section .data
 align 4096
 pml4_table:
-    dq pdpt_table + 0x003
+    dq pdpt_table + 0x007    ; Present | RW | US
 
 align 4096
 pdpt_table:
-    dq pd_table + 0x003
+    dq pd_table + 0x007      ; Present | RW | US
 
 align 4096
 pd_table:
 %assign j 0
 %rep 512
-    ; addr = j * 0x200000, flags = 0x083
-    dq j * 0x200000 + 0x083
+    ; addr = j * 0x200000, flags = Present | RW | US | PS(2MiB) = 0x87
+    dq j * 0x200000 + 0x087
 %assign j j + 1
 %endrep
+
 
 ; -----------------------------------------------------------------------
 ; Конец

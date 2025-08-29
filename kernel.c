@@ -32,7 +32,7 @@
 extern char _heap_start;
 extern char _heap_end;
 
-volatile uintptr_t syscall_caller;
+uint64_t g_saved_user_rsp = 0;
 
 /*-------------------------------------------------------------
     Debug-функции: полностью исключаются из release сборки

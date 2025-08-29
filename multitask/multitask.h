@@ -22,14 +22,10 @@ typedef struct task
     void *kstack;
     size_t kstack_size;
     int exit_code;
-    struct task *next;     /* кольцевой список задач */
-    struct task *znext;    /* список зомби (отдельный указатель!) */
-    void *user_mem;        // указатель на .user память
-    size_t user_mem_size;  // размер .user памяти
-    void *page_table_pml4; // Указатель на PML4 задачи
-    uint64_t *pml4_vaddr;  // Виртуальный адрес PML4
-    uint64_t *pdpt_vaddr;  // Виртуальный адрес PDPT
-    uint64_t *pd_vaddr;    // Виртуальный адрес PD
+    struct task *next;    /* кольцевой список задач */
+    struct task *znext;   /* список зомби (отдельный указатель!) */
+    void *user_mem;       // указатель на .user память
+    size_t user_mem_size; // размер .user памяти
 } task_t;
 
 typedef struct task_info
