@@ -49,7 +49,7 @@ void idt_install(void)
     /* IRQ handlers (timer, keyboard) и системный вызов (DPL=3 -> 0xEE) */
     idt_set_gate(TIMER, isr32, 0x08, 0x8E);
     idt_set_gate(KEYBOARD, isr33, 0x08, 0x8E);
-    // idt_set_gate(INTERRUPT, isr80, 0x08, 0xEE);
+    idt_set_gate(INTERRUPT, isr80, 0x08, 0xEE);
 
     /* Загружаем IDT через 64-bit ассм-обёртку */
     lidt_load(&idtp);

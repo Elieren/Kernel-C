@@ -15,11 +15,11 @@ _start:
     mov     r10, 14          ; fg = yellow
     mov     r8, 0            ; bg = black
     mov     rax, SYSCALL_PRINT_STRING
-    syscall
+    int 0x80
 
     ; небольшая задержка, чтобы не спамить слишком быстро
     ; можно просто несколько hlt через цикл
-    mov rcx, 100000000
+    mov rcx, 10000
 .delay:
     loop .delay
 

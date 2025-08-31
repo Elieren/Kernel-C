@@ -11,7 +11,7 @@ section .text
     dd -(0x1BADB002 + 0x00)   ; checksum
 
 global start
-extern syscall_stub
+; extern syscall_stub
 extern kmain        ; 64-bit C entry point (link with -m64 objects)
 
 start:
@@ -57,26 +57,6 @@ long_mode_entry:
     ; настроим стек
     lea rsp, [rel stack64_top]
     and rsp, -16
-
-    ; -----------------------------
-    ; Настройка MSR для syscall
-    ; -----------------------------
-    ; kernel CS = 0x08, user CS = 0x18 (как в твоём GDT)
-    mov ecx, 0xC0000081              ; IA32_STAR
-    mov edx, (0x18 << 16) | 0x08     ; [63:48]=user CS, [47:32]=kernel CS
-    xor eax, eax                     ; [31:0] не используются в long mode
-    wrmsr
-
-    mov ecx, 0xC0000082              ; IA32_LSTAR
-    lea rax, [rel syscall_stub]
-    xor edx, edx
-    wrmsr
-
-    mov ecx, 0xC0000084              ; IA32_FMASK
-    mov eax, (1 << 9)                ; IF сбрасываем
-    xor edx, edx
-    wrmsr
-
 
     ; вызов 64-битного kmain (собранного с -m64)
     call kmain

@@ -191,7 +191,7 @@ void backspace(void)
     sys_setposcursor(x, y);
 }
 
-void main(void)
+void _start(void)
 {
     x = 0;
     y = 0;

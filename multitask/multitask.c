@@ -12,6 +12,9 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#define USER_CS ((uint64_t)0x18 | 3) /* 0x1B */
+#define USER_SS ((uint64_t)0x20 | 3) /* 0x23 */
+
 extern char _heap_start;
 extern char _heap_end;
 
@@ -90,9 +93,9 @@ static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top,
 
     if (user_mode)
     {
-        sp[18] = 0x18;                     /* User CS */
-        sp[20] = (uint64_t)user_stack_top; /* RSP (user stack) */
-        sp[21] = 0x20;                     /* User SS */
+        sp[18] = USER_CS;                  /* User CS with RPL=3 */
+        sp[20] = (uint64_t)user_stack_top; /* user RSP */
+        sp[21] = USER_SS;                  /* User SS with RPL=3 */
     }
     else
     {
