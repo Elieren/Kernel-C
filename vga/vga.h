@@ -24,17 +24,27 @@ enum vga_color
 };
 
 void clean_screen(void);
+void print_char_position(const char c,
+                         const unsigned int x,
+                         const unsigned int y,
+                         const uint8_t fore,
+                         const uint8_t back);
+
 void print_char(const char c,
-                const unsigned int x,
-                const unsigned int y,
                 const uint8_t fore,
                 const uint8_t back);
 
+void print_string_position(const char *str,
+                           const unsigned int x,
+                           const unsigned int y,
+                           const uint8_t fore,
+                           const uint8_t back);
+
 void print_string(const char *str,
-                  const unsigned int x,
-                  const unsigned int y,
                   const uint8_t fore,
                   const uint8_t back);
+
+void backspace(void);
 
 void update_hardware_cursor(uint8_t x, uint8_t y);
 

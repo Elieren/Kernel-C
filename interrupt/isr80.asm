@@ -58,6 +58,18 @@ isr80:
 .do_call:
     call    syscall_handler
 
+    ; --- Сохранить возвращаемое значение (в rax) в слот, где лежал сохранённый rax ---
+    ; После всех push-ов и дополнительного push rbx:
+    ;   если padding не ставили -> сохранённый rax находится по [rsp + 120]
+    ;   если padding ставили    -> по [rsp + 128]
+    test    r12, r12
+    jz      .store_no_pad
+    mov     QWORD [rsp + 128], rax
+    jmp     .store_done
+.store_no_pad:
+    mov     QWORD [rsp + 120], rax
+.store_done:
+
     ; ---- Убираем выравнивающий padding, если ставили ----
     cmp     r12, 0
     je      .no_pad
@@ -82,6 +94,7 @@ isr80:
     pop     rsi
     pop     rdx
     pop     rcx
-    pop     rax
+    pop     rax   ; <-- тут будет возвращённое значение syscall_handler
+
 
     iretq

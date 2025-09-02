@@ -11,22 +11,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-extern void print_char(char c, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg);
-extern void print_string(const char *str, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg);
-extern char kbd_getchar(void);
-extern void *malloc(size_t size);
-extern void free(void *ptr);
-extern void *realloc(void *ptr, size_t size);
-extern void get_kmalloc_stats(kmalloc_stats_t *st);
-extern void update_hardware_cursor(uint8_t x, uint8_t y);
-extern void power_off(void);
-extern void reboot_system(void);
-extern void task_create(void (*entry)(void), size_t stack_size);
-extern int task_list(task_info_t *buf, size_t max);
-extern int task_stop(int task_id);
-extern void reap_zombies(void);
-extern void task_exit(int code);
-
 extern uint32_t seconds;
 extern volatile task_t *syscall_caller;
 
@@ -70,12 +54,24 @@ uintptr_t syscall_handler(
 {
     switch ((uint32_t)rax)
     {
+    case SYSCALL_PRINT_CHAR_POSITION:
+        print_char_position((char)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint8_t)r10, (uint8_t)r8);
+        return 0;
+
+    case SYSCALL_PRINT_STRING_POSITION:
+        print_string_position((const char *)(uintptr_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint8_t)r10, (uint8_t)r8);
+        return 0;
+
     case SYSCALL_PRINT_CHAR:
-        print_char((char)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint8_t)r10, (uint8_t)r8);
+        print_char((char)rdi, (uint8_t)rsi, (uint8_t)rdx);
         return 0;
 
     case SYSCALL_PRINT_STRING:
-        print_string((const char *)(uintptr_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint8_t)r10, (uint8_t)r8);
+        print_string((const char *)(uintptr_t)rdi, (uint8_t)rsi, (uint8_t)rdx);
+        return 0;
+
+    case SYSCALL_BACKSPACE:
+        backspace();
         return 0;
 
     case SYSCALL_GET_TIME:

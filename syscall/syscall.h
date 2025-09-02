@@ -6,9 +6,12 @@
 #include "../malloc/malloc.h"
 #include "../multitask/multitask.h"
 
-#define SYSCALL_PRINT_CHAR 0
-#define SYSCALL_PRINT_STRING 1
-#define SYSCALL_GET_TIME 2
+#define SYSCALL_PRINT_CHAR_POSITION 0
+#define SYSCALL_PRINT_STRING_POSITION 1
+#define SYSCALL_PRINT_CHAR 2
+#define SYSCALL_PRINT_STRING 3
+#define SYSCALL_BACKSPACE 4
+#define SYSCALL_GET_TIME 5
 
 // Syscall номера для malloc
 #define SYSCALL_MALLOC 10
@@ -42,7 +45,7 @@ static inline void syscall_print_char(char c, uint32_t x, uint32_t y, uint8_t fg
         "movq %5, %%r8\n"
         "syscall\n"
         :
-        : "i"((uint64_t)SYSCALL_PRINT_CHAR), "r"((uint64_t)c), "r"((uint64_t)x), "r"((uint64_t)y), "r"((uint64_t)fg), "r"((uint64_t)bg)
+        : "i"((uint64_t)SYSCALL_PRINT_CHAR_POSITION), "r"((uint64_t)c), "r"((uint64_t)x), "r"((uint64_t)y), "r"((uint64_t)fg), "r"((uint64_t)bg)
         : "rax", "rdi", "rsi", "rdx", "r10", "r8", "memory");
 }
 
@@ -57,7 +60,7 @@ static inline void syscall_print_string(const char *str, uint32_t x, uint32_t y,
         "movq %5, %%r8\n"
         "syscall\n"
         :
-        : "i"((uint64_t)SYSCALL_PRINT_STRING), "r"((uint64_t)str), "r"((uint64_t)x), "r"((uint64_t)y), "r"((uint64_t)fg), "r"((uint64_t)bg)
+        : "i"((uint64_t)SYSCALL_PRINT_STRING_POSITION), "r"((uint64_t)str), "r"((uint64_t)x), "r"((uint64_t)y), "r"((uint64_t)fg), "r"((uint64_t)bg)
         : "rax", "rdi", "rsi", "rdx", "r10", "r8", "memory");
 }
 

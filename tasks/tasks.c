@@ -5,7 +5,6 @@
 #include "../fat16/fs.h"
 #include "../malloc/user_malloc.h"
 #include "../user/user_prog_bin.h"
-#include "../user/terminal.h"
 
 typedef struct
 {
@@ -63,28 +62,50 @@ void zombie_reaper_task(void)
 //     utask_create((void (*)(void))umem, 0, umem, sz);
 // }
 
+void load_and_run_terminal(void)
+{
+    // 1. Найти /bin
+    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    if (bin_idx < 0)
+        return; // нет /bin, выходим
+
+    // 2. Найти файл terminal в /bin
+    fs_entry_t entry;
+    int file_idx = fs_find_in_dir("terminal", "bin", bin_idx, &entry);
+    if (file_idx < 0)
+        return; // файл не найден
+
+    // 3. Выделить память для файла через user_malloc
+    void *user_mem = user_malloc(entry.size);
+    if (!user_mem)
+        return; // ошибка выделения памяти
+
+    // 4. Прочитать файл в user_mem
+    fs_read_file_in_dir("terminal", "bin", bin_idx, user_mem, entry.size, NULL);
+
+    // 5. Создать задачу и передать туда файл
+    utask_create((void (*)(void))user_mem, 16384, user_mem, entry.size);
+}
+
 /* Регистрация всех стартовых задач */
 void tasks_init(void)
 {
     task_create(user_task1, 0);
     task_create((void (*)(void))user_prog_bin, 0);
-    task_create((void (*)(void))terminal_bin, 0);
+    // task_create((void (*)(void))terminal_bin, 0);
 
     // launch_demo_user();
 
     // #ifdef DEBUG
     //     // task_create(user_task2, 0);
     // #endif
-    // получить индекс /bin (или -1)
+    // получить индекс / bin(или - 1)
     // int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
     // if (bin_idx >= 0)
     // {
-    //     start_task_from_fs("terminal", "elf", bin_idx, 16384);
+    //     start_task_from_fs("terminal", "bin", bin_idx, 16384);
     // }
-    // else
-    // {
-    //     sys_print_str("No /bin found", 4, 6, YELLOW, BLACK);
-    // }
+    load_and_run_terminal();
 
     task_create(zombie_reaper_task, 0);
 

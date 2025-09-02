@@ -21,12 +21,12 @@
 
 // #include "user/terminal_bin.h"
 
-#include "tasks/exec_inplace.h"
-
 #include "ramdisk/ramdisk.h"
 #include "fat16/fs.h"
 
 #include "malloc/user_malloc.h"
+
+#include "user/terminal.h"
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -40,10 +40,10 @@ uint64_t g_saved_user_rsp = 0;
 #ifdef DEBUG
 static void debug_run_tests(void)
 {
-    print_char('X', 5, 10, WHITE, RED);
+    print_char_position('X', 5, 10, WHITE, RED);
 
     // const char *secs = sys_get_seconds_str();
-    // print_string(secs, 0, 20, WHITE, RED);
+    // print_string_position(secs, 0, 20, WHITE, RED);
 
     /* Пример: выделить 2 MiB через syscall */
     void *p = malloc(2 * 1024 * 1024);
@@ -51,14 +51,14 @@ static void debug_run_tests(void)
     {
         char *s = (char *)p;
         strcpy(s, "Hello from kernel heap!");
-        print_string(s, 50, 15, WHITE, RED);
+        print_string_position(s, 50, 15, WHITE, RED);
 
         /* расширяем до 3 MiB через syscall */
         p = realloc(p, 3 * 1024 * 1024);
         if (p)
         {
             s = (char *)p;
-            print_string(s, 50, 17, WHITE, RED);
+            print_string_position(s, 50, 17, WHITE, RED);
         }
 
         /* освобождение через syscall */
@@ -173,42 +173,42 @@ void list_root_dir(void)
     int count = fs_get_all_in_dir(files, FS_MAX_ENTRIES, FS_ROOT_IDX); // всегда корень
     char size_buf[40];
 
-    print_string("Root directory:", 0, 0, RED, BLACK);
+    print_string_position("Root directory:", 0, 0, RED, BLACK);
 
     for (int i = 0; i < count; i++)
     {
-        print_string(files[i].name, 0, i + 1, WHITE, BLACK);
+        print_string_position(files[i].name, 0, i + 1, WHITE, BLACK);
         if (!files[i].is_dir)
         {
             itoa(files[i].size, size_buf, 10);
-            print_string(size_buf, 22, i + 1, RED, BLACK);
+            print_string_position(size_buf, 22, i + 1, RED, BLACK);
         }
     }
 }
 
 #endif // DEBUG
 
-// void load_terminal_to_fs(void)
-// {
-//     // Найти/создать каталог /bin
-//     int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
-//     if (bin_idx < 0)
-//     {
-//         bin_idx = fs_mkdir("bin", FS_ROOT_IDX);
-//         if (bin_idx < 0)
-//         {
-//             // обработка ошибки: не удалось создать /bin
-//             return;
-//         }
-//     }
+void load_terminal_to_fs(void)
+{
+    // Найти/создать каталог /bin
+    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    if (bin_idx < 0)
+    {
+        bin_idx = fs_mkdir("bin", FS_ROOT_IDX);
+        if (bin_idx < 0)
+        {
+            // обработка ошибки: не удалось создать /bin
+            return;
+        }
+    }
 
-//     // Записать файл terminal.elf в каталог /bin
-//     int rc = fs_write_file_in_dir("terminal", "elf", bin_idx, terminal_elf, terminal_elf_len);
-//     if (rc != 0)
-//     {
-//         // ошибка записи (можно вывести код rc)
-//     }
-// }
+    // Записать файл terminal.elf в каталог /bin
+    int rc = fs_write_file_in_dir("terminal", "bin", bin_idx, terminal_bin, terminal_bin_len);
+    if (rc != 0)
+    {
+        // ошибка записи (можно вывести код rc)
+    }
+}
 
 /*-------------------------------------------------------------
     Основная функция ядра
@@ -228,7 +228,7 @@ void kmain(void)
 
     fs_init();
 
-    // load_terminal_to_fs();
+    load_terminal_to_fs();
 
     clean_screen();
 
@@ -241,7 +241,7 @@ void kmain(void)
     /* Запуск debug-фич, если включено */
 #ifdef DEBUG
     debug_run_tests();
-    list_root_dir();
+    // list_root_dir();
 #endif
 
     /* Основной бесконечный цикл ядра */

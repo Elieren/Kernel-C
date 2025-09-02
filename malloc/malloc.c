@@ -356,66 +356,66 @@ void print_kmalloc_stats(void)
 
     /* Line 1: "Heap total: <bytes> bytes (<mb> MiB)" */
     x = base_x;
-    print_string("Heap total: ", x, y, fg, bg);
+    print_string_position("Heap total: ", x, y, fg, bg);
     x += (uint32_t)kstrlen("Heap total: ");
     u32_to_dec((uint32_t)s.total_managed, nbuf);
-    print_string(nbuf, x, y, fg, bg);
+    print_string_position(nbuf, x, y, fg, bg);
     x += (uint32_t)kstrlen(nbuf);
-    print_string(" bytes (", x, y, fg, bg);
+    print_string_position(" bytes (", x, y, fg, bg);
     x += (uint32_t)kstrlen(" bytes (");
     uint32_t mb = (uint32_t)(s.total_managed / (1024 * 1024));
     u32_to_dec(mb, nbuf);
-    print_string(nbuf, x, y, fg, bg);
+    print_string_position(nbuf, x, y, fg, bg);
     x += (uint32_t)kstrlen(nbuf);
-    print_string(" MiB)", x, y, fg, bg);
+    print_string_position(" MiB)", x, y, fg, bg);
 
     /* next line */
     ++y;
 
     /* Line 2: "Used: <bytes>" */
     x = base_x;
-    print_string("Used: ", x, y, fg, bg);
+    print_string_position("Used: ", x, y, fg, bg);
     x += (uint32_t)kstrlen("Used: ");
     u32_to_dec((uint32_t)s.used_payload, nbuf);
-    print_string(nbuf, x, y, fg, bg);
+    print_string_position(nbuf, x, y, fg, bg);
 
     ++y;
 
     /* Line 3: "Free: <bytes>" */
     x = base_x;
-    print_string("Free: ", x, y, fg, bg);
+    print_string_position("Free: ", x, y, fg, bg);
     x += (uint32_t)kstrlen("Free: ");
     u32_to_dec((uint32_t)s.free_payload, nbuf);
-    print_string(nbuf, x, y, fg, bg);
+    print_string_position(nbuf, x, y, fg, bg);
 
     ++y;
 
     /* Line 4: "Largest free: <bytes>" */
     x = base_x;
-    print_string("Largest free: ", x, y, fg, bg);
+    print_string_position("Largest free: ", x, y, fg, bg);
     x += (uint32_t)kstrlen("Largest free: ");
     u32_to_dec((uint32_t)s.largest_free, nbuf);
-    print_string(nbuf, x, y, fg, bg);
+    print_string_position(nbuf, x, y, fg, bg);
 
     ++y;
 
     /* Line 5: "Blocks: <num> (used=<u>, free=<f>)" */
     x = base_x;
-    print_string("Blocks: ", x, y, fg, bg);
+    print_string_position("Blocks: ", x, y, fg, bg);
     x += (uint32_t)kstrlen("Blocks: ");
     u32_to_dec((uint32_t)s.num_blocks, nbuf);
-    print_string(nbuf, x, y, fg, bg);
+    print_string_position(nbuf, x, y, fg, bg);
     x += (uint32_t)kstrlen(nbuf);
-    print_string(" (used=", x, y, fg, bg);
+    print_string_position(" (used=", x, y, fg, bg);
     x += (uint32_t)kstrlen(" (used=");
     u32_to_dec((uint32_t)s.num_used, nbuf);
-    print_string(nbuf, x, y, fg, bg);
+    print_string_position(nbuf, x, y, fg, bg);
     x += (uint32_t)kstrlen(nbuf);
-    print_string(", free=", x, y, fg, bg);
+    print_string_position(", free=", x, y, fg, bg);
     x += (uint32_t)kstrlen(", free=");
     u32_to_dec((uint32_t)s.num_free, nbuf);
-    print_string(nbuf, x, y, fg, bg);
-    print_string(")", x + (uint32_t)kstrlen(nbuf), y, fg, bg);
+    print_string_position(nbuf, x, y, fg, bg);
+    print_string_position(")", x + (uint32_t)kstrlen(nbuf), y, fg, bg);
 
     /* закончено — следующая полезная строка будет на y+1 */
 }
