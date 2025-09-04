@@ -19,18 +19,20 @@
 #include "multitask/multitask.h"
 #include "tasks/tasks.h"
 
-#include "user/terminal_bin.h"
-
-#include "tasks/exec_inplace.h"
+// #include "user/terminal_bin.h"
 
 #include "ramdisk/ramdisk.h"
 #include "fat16/fs.h"
 
 #include "malloc/user_malloc.h"
 
+#include "user/terminal.h"
+
 /* символы из link.ld */
 extern char _heap_start;
 extern char _heap_end;
+
+uint64_t g_saved_user_rsp = 0;
 
 /*-------------------------------------------------------------
     Debug-функции: полностью исключаются из release сборки
@@ -38,101 +40,32 @@ extern char _heap_end;
 #ifdef DEBUG
 static void debug_run_tests(void)
 {
-    sys_print_char('X', 5, 10, WHITE, RED);
+    print_char_position('X', 5, 10, WHITE, RED);
 
-    const char *secs = sys_get_seconds_str();
-    sys_print_str(secs, 0, 20, WHITE, RED);
+    // const char *secs = sys_get_seconds_str();
+    // print_string_position(secs, 0, 20, WHITE, RED);
 
     /* Пример: выделить 2 MiB через syscall */
-    void *p = sys_malloc(2 * 1024 * 1024);
+    void *p = malloc(2 * 1024 * 1024);
     if (p)
     {
         char *s = (char *)p;
         strcpy(s, "Hello from kernel heap!");
-        sys_print_str(s, 50, 15, WHITE, RED);
+        print_string_position(s, 50, 15, WHITE, RED);
 
         /* расширяем до 3 MiB через syscall */
-        p = sys_realloc(p, 3 * 1024 * 1024);
+        p = realloc(p, 3 * 1024 * 1024);
         if (p)
         {
             s = (char *)p;
-            sys_print_str(s, 50, 17, WHITE, RED);
+            print_string_position(s, 50, 17, WHITE, RED);
         }
 
         /* освобождение через syscall */
-        sys_free(p);
+        free(p);
     }
 
     print_kmalloc_stats();
-
-    // sys_reboot();
-    // sys_power_off();
-}
-
-static void uitoa(unsigned int value, char *buf)
-{
-    char tmp[16];
-    int i = 0;
-
-    if (value == 0)
-    {
-        buf[0] = '0';
-        buf[1] = '\0';
-        return;
-    }
-
-    while (value > 0)
-    {
-        tmp[i++] = '0' + (value % 10);
-        value /= 10;
-    }
-
-    int j = 0;
-    while (i > 0)
-    {
-        buf[j++] = tmp[--i];
-    }
-    buf[j] = '\0';
-}
-
-void user_task_list(void)
-{
-    task_info_t buf[64];
-    int n = sys_task_list(buf, 64);
-
-    char out[128];
-    uint32_t row = 0;
-
-    for (int i = 0; i < n; i++)
-    {
-        char pid_str[16];
-        uitoa(buf[i].pid, pid_str);
-
-        // форматируем строку вида: "PID=123 STATE=2"
-        int k = 0;
-        out[k++] = 'P';
-        out[k++] = 'I';
-        out[k++] = 'D';
-        out[k++] = '=';
-        for (char *p = pid_str; *p; p++)
-            out[k++] = *p;
-        out[k++] = ' ';
-
-        out[k++] = 'S';
-        out[k++] = 'T';
-        out[k++] = 'A';
-        out[k++] = 'T';
-        out[k++] = 'E';
-        out[k++] = '=';
-        char st_str[16];
-        uitoa(buf[i].state, st_str);
-        for (char *p = st_str; *p; p++)
-            out[k++] = *p;
-
-        out[k] = '\0';
-
-        sys_print_str(out, 0, row++, WHITE, BLACK);
-    }
 }
 
 char *itoa(uint32_t num, char *str, int base)
@@ -171,15 +104,15 @@ void list_root_dir(void)
     int count = fs_get_all_in_dir(files, FS_MAX_ENTRIES, FS_ROOT_IDX); // всегда корень
     char size_buf[40];
 
-    print_string("Root directory:", 0, 0, RED, BLACK);
+    print_string_position("Root directory:", 0, 0, RED, BLACK);
 
     for (int i = 0; i < count; i++)
     {
-        print_string(files[i].name, 0, i + 1, WHITE, BLACK);
+        print_string_position(files[i].name, 0, i + 1, WHITE, BLACK);
         if (!files[i].is_dir)
         {
             itoa(files[i].size, size_buf, 10);
-            print_string(size_buf, 22, i + 1, RED, BLACK);
+            print_string_position(size_buf, 22, i + 1, RED, BLACK);
         }
     }
 }
@@ -201,7 +134,7 @@ void load_terminal_to_fs(void)
     }
 
     // Записать файл terminal.elf в каталог /bin
-    int rc = fs_write_file_in_dir("terminal", "elf", bin_idx, terminal_elf, terminal_elf_len);
+    int rc = fs_write_file_in_dir("terminal", "bin", bin_idx, terminal_bin, terminal_bin_len);
     if (rc != 0)
     {
         // ошибка записи (можно вывести код rc)
@@ -239,7 +172,7 @@ void kmain(void)
     /* Запуск debug-фич, если включено */
 #ifdef DEBUG
     debug_run_tests();
-    list_root_dir();
+    // list_root_dir();
 #endif
 
     /* Основной бесконечный цикл ядра */

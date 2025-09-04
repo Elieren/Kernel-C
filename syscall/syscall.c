@@ -7,18 +7,62 @@
 #include "../power/reboot.h"
 #include "../keyboard/keyboard.h"
 #include "../multitask/multitask.h"
+#include "../fat16/fs.h"
+#include "../malloc/user_malloc.h"
+
+#include <stdint.h>
+#include <stddef.h>
 
 extern uint32_t seconds;
 extern volatile task_t *syscall_caller;
 
-char str[11];
-char tmp[11];
+static char str[11];
+static char tmp[11];
 
-char *uint_to_str(uint32_t value, char *buf)
+uint64_t load_and_run_program(const char *str)
+{
+    if (!str || str[0] == '\0')
+        return -1;
+
+    // 1. Найти /bin
+    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    if (bin_idx < 0)
+        return 0; // нет /bin, выходим
+
+    // 2. Найти файл в /bin
+    fs_entry_t entry;
+    int file_idx = fs_find_in_dir(str, "bin", bin_idx, &entry);
+    if (file_idx < 0)
+        return 0; // файл не найден
+
+    if (entry.size == 0)
+        return 0;
+
+    // 3. Выделить память для файла через user_malloc
+    void *user_mem = user_malloc(entry.size);
+    if (!user_mem)
+        return 0; // ошибка выделения памяти
+
+    memset(user_mem, 0, entry.size);
+
+    // 4. Прочитать файл в user_mem
+    fs_read_file_in_dir(str, "bin", bin_idx, user_mem, entry.size, NULL);
+
+    // 5. Создать задачу и передать туда файл
+    uint64_t pid = utask_create((void (*)(void))user_mem, 16384, user_mem, entry.size);
+    if (pid == 0)
+    {
+        user_free(user_mem);
+        return 0; // не удалось создать задачу
+    }
+
+    return pid;
+}
+
+static char *uint_to_str(uint32_t value, char *buf)
 {
     int len = 0;
 
-    // Спец-случай: ноль
     if (value == 0)
     {
         buf[0] = '0';
@@ -26,14 +70,12 @@ char *uint_to_str(uint32_t value, char *buf)
         return buf;
     }
 
-    // Собираем цифры в обратном порядке
     while (value > 0)
     {
         tmp[len++] = '0' + (value % 10);
         value /= 10;
     }
 
-    // Переворачиваем и добавляем '\0'
     for (int i = 0; i < len; i++)
     {
         buf[i] = tmp[len - 1 - i];
@@ -43,90 +85,94 @@ char *uint_to_str(uint32_t value, char *buf)
     return buf;
 }
 
-uint32_t syscall_handler(
-    uint32_t num, // EAX
-    uint32_t a1,  // EBX
-    uint32_t a2,  // ECX
-    uint32_t a3,  // EDX
-    uint32_t a4,  // ESI
-    uint32_t a5,  // EDI
-    uint32_t a6   // EBP
-)
+uintptr_t syscall_handler(
+    uint64_t rax, // syscall number
+    uint64_t rdi,
+    uint64_t rsi,
+    uint64_t rdx,
+    uint64_t r10,
+    uint64_t r8,
+    uint64_t r9)
 {
-    switch (num)
+    switch ((uint32_t)rax)
     {
+    case SYSCALL_PRINT_CHAR_POSITION:
+        print_char_position((char)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint8_t)r10, (uint8_t)r8);
+        return 0;
+
+    case SYSCALL_PRINT_STRING_POSITION:
+        print_string_position((const char *)(uintptr_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint8_t)r10, (uint8_t)r8);
+        return 0;
+
     case SYSCALL_PRINT_CHAR:
-        print_char((char)a1, a2, a3, (uint8_t)a4, (uint8_t)a5);
+        print_char((char)rdi, (uint8_t)rsi, (uint8_t)rdx);
         return 0;
 
     case SYSCALL_PRINT_STRING:
-        print_string((const char *)a1, a2, a3, (uint8_t)a4, (uint8_t)a5);
+        print_string((const char *)(uintptr_t)rdi, (uint8_t)rsi, (uint8_t)rdx);
+        return 0;
+
+    case SYSCALL_BACKSPACE:
+        backspace();
         return 0;
 
     case SYSCALL_GET_TIME:
-        uint_to_str(seconds, str);
-        return (uint32_t)str;
+        return (uintptr_t)uint_to_str(rdi, (char *)rsi);
 
     case SYSCALL_MALLOC:
-        return (uint32_t)malloc((size_t)a1); // a1 = размер
+        return (uintptr_t)malloc((size_t)rdi);
 
     case SYSCALL_FREE:
-        free((void *)a1); // a1 = указатель
+        free((void *)(uintptr_t)rdi);
         return 0;
 
     case SYSCALL_REALLOC:
-        return (uint32_t)realloc((void *)a1, (size_t)a2); // a1 = ptr, a2 = new_size
+        return (uintptr_t)realloc((void *)(uintptr_t)rdi, (size_t)rsi);
 
     case SYSCALL_KMALLOC_STATS:
-        if (a1)
-        {
-            get_kmalloc_stats((kmalloc_stats_t *)a1); // a1 = указатель на структуру
-        }
+        if (rdi)
+            get_kmalloc_stats((void *)(uintptr_t)rdi);
         return 0;
 
     case SYSCALL_GETCHAR:
     {
-        char c = kbd_getchar(); /* возвращает -1 если пусто */
-        if (c == -1)
-            return '\0'; /* пустой символ */
-        return c;        /* возвращаем сразу char */
+        int c = kbd_getchar();
+        return (uintptr_t)(c == -1 ? 0 : c);
     }
 
     case SYSCALL_SETPOSCURSOR:
-    {
-        update_hardware_cursor((uint8_t)a1, (uint8_t)a2);
+        update_hardware_cursor((uint8_t)rdi, (uint8_t)rsi);
         return 0;
-    }
 
     case SYSCALL_POWER_OFF:
         power_off();
-        return 0; // на самом деле ядро выключится и сюда не вернётся
+        return 0;
 
     case SYSCALL_REBOOT:
         reboot_system();
-        return 0; // ядро перезагрузится
-
-    case SYSCALL_TASK_CREATE:
-        task_create((void (*)(void))a1, (size_t)a2);
         return 0;
 
+    case SYSCALL_TASK_CREATE:
+        return load_and_run_program((const char *)(uintptr_t)rdi);
+
     case SYSCALL_TASK_LIST:
-        return task_list((task_info_t *)a1, a2);
+        return (uintptr_t)task_list((void *)(uintptr_t)rdi, (size_t)rsi);
 
     case SYSCALL_TASK_STOP:
-        return task_stop((int)a1);
+        return (uintptr_t)task_stop((int)rdi);
 
     case SYSCALL_REAP_ZOMBIES:
         reap_zombies();
         return 0;
 
     case SYSCALL_TASK_EXIT:
-    {
-        task_exit((int)a1);
+        task_exit((int)rdi);
         return 0;
-    }
+
+    case SYSCALL_TASK_IS_ALIVE:
+        return task_is_alive((int)rdi);
 
     default:
-        return (uint32_t)-1;
+        return (uintptr_t)-1;
     }
 }

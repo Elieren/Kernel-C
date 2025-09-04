@@ -1,11 +1,16 @@
 target remote :1234
-symbol-file build/kernel
+symbol-file iso/boot/kernel
 break kmain
-break load_terminal_to_fs
-break fs_get_all_in_dir
-break list_root_dir
-break kernel.c:194
-break kernel.c:195
-break kernel.c:196
-break kernel.c:185
-break kernel.c:186
+break syscall_handler
+break launch_demo_user
+break tasks/tasks.c:51
+break tasks/tasks.c:53
+break tasks/tasks.c:59
+break tasks/tasks.c:63
+break multitask/multitask.c:442
+break schedule_from_isr
+break interrupt/isr32.asm:51
+break interrupt/isr32.asm:60
+break interrupt/isr32.asm:63
+break syscall_stub
+break kernel.asm:72

@@ -1,4 +1,3 @@
-// idt.h
 #ifndef IDT_H
 #define IDT_H
 #include <stdint.h>
@@ -9,23 +8,29 @@
 #define KEYBOARD 33
 #define INTERRUPT 0x80
 
-struct idt_entry
+/* 64-bit IDT entry */
+struct __attribute__((packed)) idt_entry
 {
-    uint16_t base_low;
-    uint16_t sel;
-    uint8_t always0;
-    uint8_t flags;
-    uint16_t base_high;
-} __attribute__((packed));
-struct idt_ptr
+    uint16_t offset_low;  /* bits 0..15 */
+    uint16_t selector;    /* code segment selector */
+    uint8_t ist;          /* IST (3 bits) + zero */
+    uint8_t type_attr;    /* type and attributes */
+    uint16_t offset_mid;  /* bits 16..31 */
+    uint32_t offset_high; /* bits 32..63 */
+    uint32_t zero;        /* reserved */
+};
+
+/* lidt pointer for 64-bit - 16-byte base */
+struct __attribute__((packed)) idt_ptr
 {
     uint16_t limit;
-    uint32_t base;
-} __attribute__((packed));
+    uint64_t base;
+};
 
-void idt_set_gate(uint8_t num, uint32_t base, uint16_t sel, uint8_t flags);
+void idt_set_gate(uint8_t num, void (*handler)(), uint16_t sel, uint8_t flags);
 void idt_install(void);
 
-extern void idt_load(uint32_t idt_ptr_address);
+/* 64-bit wrapper for lidt implemented in asm */
+extern void lidt_load(struct idt_ptr *p);
 
-#endif
+#endif /* IDT_H */

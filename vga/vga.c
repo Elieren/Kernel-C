@@ -20,6 +20,14 @@ extern uint32_t seconds;
 char time_str[9];
 char time_up[9];
 
+uint8_t x;
+uint8_t y;
+
+uint8_t make_color(const uint8_t fore, const uint8_t back)
+{
+    return (back << 4) | (fore & 0x0F);
+}
+
 void clean_screen(void)
 {
     uint8_t *vid = VGA_BUF;
@@ -31,16 +39,34 @@ void clean_screen(void)
     }
 }
 
-uint8_t make_color(const uint8_t fore, const uint8_t back)
+// простая функция прокрутки экрана
+void scroll_screen()
 {
-    return (back << 4) | (fore & 0x0F);
+    uint16_t *vid = (uint16_t *)VGA_BUF;
+
+    // сдвигаем всё вверх на одну строку
+    for (int i = 0; i < (VGA_HEIGHT - 1) * VGA_WIDTH; i++)
+    {
+        vid[i] = vid[i + VGA_WIDTH];
+    }
+
+    // очищаем последнюю строку
+    for (int i = (VGA_HEIGHT - 1) * VGA_WIDTH; i < VGA_HEIGHT * VGA_WIDTH; i++)
+    {
+        vid[i] = (uint16_t)make_color(BLACK, BLACK) << 8 | ' ';
+    }
+
+    if (y > 0)
+        y--;
 }
 
-void print_char(const char c,
-                const unsigned int x,
-                const unsigned int y,
-                const uint8_t fore,
-                const uint8_t back)
+// ============================ char ============================
+
+void print_char_position(const char c,
+                         const unsigned int x,
+                         const unsigned int y,
+                         const uint8_t fore,
+                         const uint8_t back)
 {
     // проверка границ экрана
     if (x >= VGA_WIDTH || y >= VGA_HEIGHT)
@@ -56,11 +82,53 @@ void print_char(const char c,
     vid[offset + 1] = color;  // атрибут цвета
 }
 
-void print_string(const char *str,
-                  const unsigned int x,
-                  const unsigned int y,
-                  const uint8_t fore,
-                  const uint8_t back)
+void print_char(const char c,
+                const uint8_t fore,
+                const uint8_t back)
+{
+    uint8_t *vid = VGA_BUF;
+    uint8_t color = make_color(fore, back);
+
+    if (c == '\n')
+    {
+        x = 0;
+        y++;
+        if (y >= VGA_HEIGHT)
+        {
+            scroll_screen();
+            y = VGA_HEIGHT - 1;
+        }
+        return;
+    }
+
+    // вычисляем смещение в байтах
+    unsigned int offset = (y * VGA_WIDTH + x) * 2;
+
+    vid[offset] = (uint8_t)c; // ASCII-код символа
+    vid[offset + 1] = color;  // атрибут цвета
+
+    // двигаем курсор
+    x++;
+    if (x >= VGA_WIDTH)
+    {
+        x = 0;
+        y++;
+        if (y >= VGA_HEIGHT)
+        {
+            scroll_screen();
+            y = VGA_HEIGHT - 1;
+        }
+    }
+    update_hardware_cursor(x, y);
+}
+
+// ============================ char ============================
+
+void print_string_position(const char *str,
+                           const unsigned int x,
+                           const unsigned int y,
+                           const uint8_t fore,
+                           const uint8_t back)
 {
     uint8_t *vid = VGA_BUF;
     unsigned int offset = (y * VGA_WIDTH + x) * 2;
@@ -98,6 +166,54 @@ void print_string(const char *str,
     }
 }
 
+void print_string(const char *str,
+                  const uint8_t fore,
+                  const uint8_t back)
+{
+    for (const char *p = str; *p; p++)
+    {
+        if (*p == '\n')
+        {
+            x = 0;
+            y++;
+            if (y >= VGA_HEIGHT)
+            {
+                scroll_screen();
+                y = VGA_HEIGHT - 1;
+            }
+        }
+        else
+        {
+            print_char(*p, fore, back);
+        }
+    }
+    update_hardware_cursor(x, y);
+}
+
+void backspace(void)
+{
+    if (x == 0)
+    {
+        if (y > 0)
+        {
+            y--;
+            x = VGA_WIDTH - 1;
+        }
+    }
+    else
+    {
+        x--;
+    }
+
+    // Стереть символ на месте
+    unsigned int offset = (y * VGA_WIDTH + x) * 2;
+    uint8_t *vid = VGA_BUF;
+    vid[offset] = ' ';
+    vid[offset + 1] = make_color(BLACK, BLACK);
+
+    update_hardware_cursor(x, y);
+}
+
 void update_hardware_cursor(uint8_t x, uint8_t y)
 {
     uint16_t pos = y * VGA_WIDTH + x;
@@ -133,7 +249,7 @@ void print_systemup(void)
 
     for (uint32_t i = 0; time_up[i]; ++i)
     {
-        print_char(time_up[i], 70 + i, 23, YELLOW, BLACK);
+        print_char_position(time_up[i], 70 + i, 23, YELLOW, BLACK);
     }
 }
 
@@ -143,6 +259,6 @@ void print_time(void)
 
     for (uint32_t i = 0; time_str[i]; ++i)
     {
-        print_char(time_str[i], 70 + i, 24, YELLOW, BLACK);
+        print_char_position(time_str[i], 70 + i, 24, YELLOW, BLACK);
     }
 }
