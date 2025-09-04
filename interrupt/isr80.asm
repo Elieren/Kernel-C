@@ -1,4 +1,4 @@
-; isr80.asm — trap-gate для int 0x80, long mode, SysV ABI
+; isr80.asm
 [bits 64]
 
 extern syscall_handler
@@ -32,7 +32,6 @@ isr80:
     mov     r15, r8     ; save user r8
     mov     rbx, r9     ; save user r9 (будет push-нут как 7-й арг)
 
-    ; ---- Переставляем в регистры SysV для вызова C-функции ----
     mov     rdi, rax    ; arg0 = syscall number (from rax)
     mov     rsi, r11    ; arg1 = user rdi
     mov     rdx, r12    ; arg2 = user rsi
@@ -42,26 +41,19 @@ isr80:
 
     push    rbx         ; arg6 (7-й аргумент) = user r9
 
-    ; ---- Гарантируем выравнивание стека перед CALL ----
-    ; Требование SysV: перед CALL RSP должен быть ≡ 8 (mod 16),
-    ; чтобы на входе в функцию (после push return RIP) стек был 16-байт выровнен.
     mov     rax, rsp
     and     rax, 15
     cmp     rax, 8
     je      .aligned
     sub     rsp, 8      ; выравниваем
-    mov     r12, 1      ; пометка: сделал выравнивание (r12 ранее использовался, но мы уже скопировали его в rdx)
+    mov     r12, 1
     jmp     .do_call
 .aligned:
-    xor     r12, r12    ; пометка = 0
+    xor     r12, r12
 
 .do_call:
     call    syscall_handler
 
-    ; --- Сохранить возвращаемое значение (в rax) в слот, где лежал сохранённый rax ---
-    ; После всех push-ов и дополнительного push rbx:
-    ;   если padding не ставили -> сохранённый rax находится по [rsp + 120]
-    ;   если padding ставили    -> по [rsp + 128]
     test    r12, r12
     jz      .store_no_pad
     mov     QWORD [rsp + 128], rax
@@ -70,7 +62,6 @@ isr80:
     mov     QWORD [rsp + 120], rax
 .store_done:
 
-    ; ---- Убираем выравнивающий padding, если ставили ----
     cmp     r12, 0
     je      .no_pad
     add     rsp, 8

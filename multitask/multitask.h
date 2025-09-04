@@ -46,6 +46,8 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr);
 task_t *get_current_task(void);
 void task_exit(int exit_code);
 
-void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size);
+uint64_t utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size);
+
+int task_is_alive(int pid);
 
 #endif

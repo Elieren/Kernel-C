@@ -6,6 +6,8 @@ BITS 64
 %define SYSCALL_GETCHAR      30
 %define SYSCALL_SETPOSCURSOR   31
 
+%define SYSCALL_TASK_CREATE 200
+%define SYSCALL_TASK_IS_ALIVE 205
 
 %define VGA_WIDTH 80
 %define VGA_HEIGHT 25
@@ -49,9 +51,43 @@ _start:
     cmp al, 10
     jne .not_newline
 
+    ; Добавляем \0 в конец строки
+    mov rbx, [input_len]
+    lea rdi, [rel input_buffer]
+    mov byte [rdi + rbx], 0    ; конец строки
+
     call new_line
     mov qword [input_len], 0
 
+    ; Вызов системного вызова для обработки строки
+    lea rdi, [rel input_buffer] ; rdi = адрес строки
+    mov rax, SYSCALL_TASK_CREATE    ; номер syscall (пример, выбери свой)
+    int 0x80
+    cmp rax, 0
+    je .child_ended
+    mov r15, rax
+
+    jmp .poll_child_alive
+
+; -------------------------------------------------------------------------
+; Ждём завершения дочерней задачи (poll loop)
+; -------------------------------------------------------------------------
+.poll_child_alive:
+    mov     rdi, r15
+    mov     rax, SYSCALL_TASK_IS_ALIVE
+    int     0x80
+
+    cmp     rax, 0
+    jne     .still_running   ; если !=0 — процесс ещё жив
+
+    ; если rax == 0 — процесс завершился -> печатаем prompt
+    jmp     .child_ended
+
+.still_running:
+    hlt
+    jmp .poll_child_alive
+
+.child_ended:
     lea rdi, [rel prompt_msg]
     mov rsi, WHITE
     mov rdx, BLACK
@@ -78,6 +114,11 @@ _start:
     jne .no_replace
     mov al, 32
 .no_replace:
+
+    ; Сохранить символ в буфер
+    mov rbx, [input_len]      ; rbx = текущее количество символов
+    lea rdi, [rel input_buffer]
+    mov [rdi + rbx], al        ; записываем символ в буфер
 
     add qword [input_len], 1
 
@@ -108,6 +149,7 @@ new_line:
 
 section .bss
     input_len: resq 1
+    input_buffer: resb 4096    ; буфер на 4096 символов
 
 section .data
     prompt_msg db "$: ", 0

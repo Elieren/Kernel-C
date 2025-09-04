@@ -37,9 +37,13 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Implement Long mode
 
-* [X] Implement working multitasking for Long mode
+* [X] Implement working multitasking for Long mode (x86_64)
 
-* [ ] Rewriting the terminal program from elf-32 to elf-64 and checking syscall
+* [x] Rewrite terminal to (NASM x86_64).
+
+* [x] Check syscall operation (status working)
+
+* [X] Build kernel in iso with GRUB
 
 * [ ] Add cross compiler.
 
@@ -69,6 +73,26 @@ make run
 make debug
 ```
 
+__Build with GRUB:__
+
+* Make sure you have the necessary tools installed:
+```
+sudo apt install grub-pc-bin xorriso mtools
+```
+* Compile the project and generate the `build/kernel` and `iso/boot/kernel` files:
+
+```
+make
+```
+* Use `grub-mkrescue` to package the kernel into a bootable ISO image:
+```
+grub-mkrescue -o kernel.iso iso
+```
+* Run the generated ISO using QEMU:
+```
+qemu-system-x86_64 -cdrom kernel.iso -m 1024M
+```
+
 __Additional QEMU options:__
 * You can pass options to QEMU via the `QEMU_OPTS` variable. Examples:
 
@@ -88,3 +112,27 @@ make clean
 ```
 
 This will remove `build/` and all build artifacts.
+
+## Syscall table
+| Code (rax)                    | arg1 (rdi) | arg2 (rsi) | arg3 (rdx) | arg4 (r10) | arg5 (r8) | arg6 (r9) |   return |
+|-------------------------------|------------|------------|------------|------------|-----------|-----------|----------|
+| (0) print_char_position       |    char    |      x     |     y      |     fg     |     bg    |           |     0    |
+| (1) print_string_position     |    *str    |      x     |     y      |     fg     |     bg    |           |     0    |
+| (2) print_char                |    char    |      fg    |     bg     |            |           |           |     0    |
+| (3) print_string              |    *str    |      fg    |     bg     |            |           |           |     0    |
+| (4) backspace                 |            |            |            |            |           |           |     0    |
+| (5) get_time                  |   value    |    *buf    |            |            |           |           |   *prt   |
+| (10) malloc                   |    size    |            |            |            |           |           |   *prt   |
+| (11) free                     |    *prt    |            |            |            |           |           |     0    |
+| (12) realloc                  |    *prt    |    size    |            |            |           |           |   *ptr   |
+| (13) get_malloc_stats         |    *prt    |            |            |            |           |           |     0    |
+| (30) get_char                 |            |            |            |            |           |           |   char   |
+| (31) set_pos_cursor           |      x     |      y     |            |            |           |           |     0    |
+| (100) power_off               |            |            |            |            |           |           |          |
+| (101) reboot_system           |            |            |            |            |           |           |          |
+| (200) task_create             |    *str    |            |            |            |           |           |   pid    |
+| (201) task_list               |    *buf    |     max    |            |            |           |           | quantity |
+| (202) task_stop               |     pid    |            |            |            |           |           |  status  |
+| (203) task_reap_zombies       |            |            |            |            |           |           |     0    |
+| (204) task_exit               |  exit_code |            |            |            |           |           |     0    |
+| (205) task_is_alive           |     pid    |            |            |            |           |           |  status  |

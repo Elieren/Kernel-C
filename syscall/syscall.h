@@ -31,6 +31,7 @@
 #define SYSCALL_TASK_STOP 202
 #define SYSCALL_REAP_ZOMBIES 203
 #define SYSCALL_TASK_EXIT 204
+#define SYSCALL_TASK_IS_ALIVE 205
 
 // Обёртки для удобства
 // Обертки для пользовательского кода

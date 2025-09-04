@@ -7,6 +7,8 @@
 #include "../power/reboot.h"
 #include "../keyboard/keyboard.h"
 #include "../multitask/multitask.h"
+#include "../fat16/fs.h"
+#include "../malloc/user_malloc.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -16,6 +18,46 @@ extern volatile task_t *syscall_caller;
 
 static char str[11];
 static char tmp[11];
+
+uint64_t load_and_run_program(const char *str)
+{
+    if (!str || str[0] == '\0')
+        return -1;
+
+    // 1. Найти /bin
+    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    if (bin_idx < 0)
+        return 0; // нет /bin, выходим
+
+    // 2. Найти файл в /bin
+    fs_entry_t entry;
+    int file_idx = fs_find_in_dir(str, "bin", bin_idx, &entry);
+    if (file_idx < 0)
+        return 0; // файл не найден
+
+    if (entry.size == 0)
+        return 0;
+
+    // 3. Выделить память для файла через user_malloc
+    void *user_mem = user_malloc(entry.size);
+    if (!user_mem)
+        return 0; // ошибка выделения памяти
+
+    memset(user_mem, 0, entry.size);
+
+    // 4. Прочитать файл в user_mem
+    fs_read_file_in_dir(str, "bin", bin_idx, user_mem, entry.size, NULL);
+
+    // 5. Создать задачу и передать туда файл
+    uint64_t pid = utask_create((void (*)(void))user_mem, 16384, user_mem, entry.size);
+    if (pid == 0)
+    {
+        user_free(user_mem);
+        return 0; // не удалось создать задачу
+    }
+
+    return pid;
+}
 
 static char *uint_to_str(uint32_t value, char *buf)
 {
@@ -111,8 +153,7 @@ uintptr_t syscall_handler(
         return 0;
 
     case SYSCALL_TASK_CREATE:
-        task_create((void (*)(void))(uintptr_t)rdi, (size_t)rsi);
-        return 0;
+        return load_and_run_program((const char *)(uintptr_t)rdi);
 
     case SYSCALL_TASK_LIST:
         return (uintptr_t)task_list((void *)(uintptr_t)rdi, (size_t)rsi);
@@ -127,6 +168,9 @@ uintptr_t syscall_handler(
     case SYSCALL_TASK_EXIT:
         task_exit((int)rdi);
         return 0;
+
+    case SYSCALL_TASK_IS_ALIVE:
+        return task_is_alive((int)rdi);
 
     default:
         return (uintptr_t)-1;

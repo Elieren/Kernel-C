@@ -423,22 +423,20 @@ void task_exit(int exit_code)
     sti();
 }
 
-// Обновите функцию utask_create:
-// utask_create для shared page table (не выделяет pml4/pdpt/pd)
-void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size)
+uint64_t utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size)
 {
     if (stack_size == 0)
         stack_size = KSTACK_SIZE;
 
     task_t *t = (task_t *)malloc(sizeof(task_t));
     if (!t)
-        return;
+        return 0;
 
     void *kstack = malloc(stack_size);
     if (!kstack)
     {
         free(t);
-        return;
+        return 0;
     }
 
     memset(t, 0, sizeof(*t));
@@ -465,4 +463,44 @@ void utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t
         task_ring->next = t;
         task_ring = t;
     }
+
+    return t->pid;
+}
+
+/* Возвращает 1, если задача с pid всё ещё "жива" (READY или RUNNING),
+   возвращает 0 если не найдена или уже завершилась (ZOMBIE или удалена). */
+int task_is_alive(int pid)
+{
+    cli();
+    if (pid <= 0)
+    {
+        /* pid==0 - init, можно считать всегда живым; но безопаснее:
+           возвращаем 1 для init (если нужно), иначе 0 для невалидных pid. */
+        return (pid == 0) ? 1 : 0;
+    }
+
+    /* Уберём уже готовые к освобождению зомби — чтобы не считать старые PID "живыми". */
+    reap_zombies_internal();
+    cli();
+
+    if (!task_ring)
+    {
+        sti();
+        return 0;
+    }
+
+    task_t *it = task_ring->next;
+    do
+    {
+        if (it->pid == pid)
+        {
+            int alive = (it->state != TASK_ZOMBIE);
+            sti();
+            return alive;
+        }
+        it = it->next;
+    } while (it != task_ring->next);
+
+    sti();
+    return 0;
 }
