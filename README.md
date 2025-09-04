@@ -5,6 +5,8 @@
 This project is an educational platform for step-by-step learning and development of basic operating system components.
 The goal is not to create a fully functional OS, but to understand how its key mechanisms work "from the inside."
 
+<img width="733" height="483" alt="Снимок экрана 2025-09-04 185453" src="https://github.com/user-attachments/assets/882c9279-e629-450b-849a-38cdbd87977c" />
+
 ## RoadMap
 
 * [x] IDT initialization and interrupt handling (CPU exceptions + IRQs).
