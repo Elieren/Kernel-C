@@ -9,6 +9,7 @@
 
 static bool shift_down = false;
 static bool caps_lock = false;
+static bool ctrl_down = false;
 
 /* Кольцевой буфер */
 static char kbd_buf[KBD_BUF_SIZE];
@@ -248,6 +249,22 @@ void keyboard_handler(void)
     // Проверяем Break‑код (высокий бит = 1)
     bool released = code & 0x80;
     uint8_t key = code & 0x7F;
+
+    // Обработка Ctrl
+    if (key == KEY_LCONTROL || key == KEY_RCONTROL)
+    {
+        ctrl_down = !released;
+        pic_send_eoi(1);
+        return;
+    }
+
+    // Обработка Ctrl+C
+    if (!released && ctrl_down && key == KEY_C)
+    {
+        kbd_buffer_push(0x03); // ASCII код для Ctrl+C
+        pic_send_eoi(1);
+        return;
+    }
 
     if (key == KEY_LSHIFT || key == KEY_RSHIFT)
     {

@@ -47,7 +47,7 @@ void load_and_run_terminal(void)
         return; // файл не найден
 
     // 3. Выделить память для файла через user_malloc
-    void *user_mem = user_malloc(entry.size);
+    void *user_mem = user_malloc(entry.size + 32768);
     if (!user_mem)
         return; // ошибка выделения памяти
 
@@ -55,7 +55,7 @@ void load_and_run_terminal(void)
     fs_read_file_in_dir("terminal", "bin", bin_idx, user_mem, entry.size, NULL);
 
     // 5. Создать задачу и передать туда файл
-    utask_create((void (*)(void))user_mem, 16384, user_mem, entry.size);
+    uint64_t pid = utask_create((void (*)(void))user_mem, 0, user_mem, entry.size);
 }
 
 /* Регистрация всех стартовых задач */

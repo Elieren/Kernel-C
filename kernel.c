@@ -27,6 +27,8 @@
 #include "malloc/user_malloc.h"
 
 #include "user/terminal.h"
+#include "user/htop.h"
+#include "user/clear.h"
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -119,13 +121,13 @@ void list_root_dir(void)
 
 #endif // DEBUG
 
-void load_terminal_to_fs(void)
+void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, unsigned int dat)
 {
     // Найти/создать каталог /bin
-    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+    int bin_idx = fs_find_in_dir(folder, NULL, FS_ROOT_IDX, NULL);
     if (bin_idx < 0)
     {
-        bin_idx = fs_mkdir("bin", FS_ROOT_IDX);
+        bin_idx = fs_mkdir(folder, FS_ROOT_IDX);
         if (bin_idx < 0)
         {
             // обработка ошибки: не удалось создать /bin
@@ -134,7 +136,7 @@ void load_terminal_to_fs(void)
     }
 
     // Записать файл terminal.elf в каталог /bin
-    int rc = fs_write_file_in_dir("terminal", "bin", bin_idx, terminal_bin, terminal_bin_len);
+    int rc = fs_write_file_in_dir(name, ext, bin_idx, data, dat);
     if (rc != 0)
     {
         // ошибка записи (можно вывести код rc)
@@ -159,7 +161,9 @@ void kmain(void)
 
     fs_init();
 
-    load_terminal_to_fs();
+    load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
+    load_app_to_fs("bin", "htop", "bin", htop_bin, htop_bin_len);
+    load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
 
     clean_screen();
 

@@ -49,6 +49,10 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [ ] Add cross compiler.
 
+## Iist of available commands:
+* htop - prints information about the heap
+* clear - clears the terminal
+
 ## Build and Run
 
 __Build:__

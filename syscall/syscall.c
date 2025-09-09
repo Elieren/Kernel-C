@@ -21,27 +21,43 @@ static char tmp[11];
 
 uint64_t load_and_run_program(const char *str)
 {
+    asm volatile("cli");
     if (!str || str[0] == '\0')
+    {
+        asm volatile("sti");
         return -1;
+    }
 
     // 1. Найти /bin
     int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
     if (bin_idx < 0)
+    {
+        asm volatile("sti");
         return 0; // нет /bin, выходим
+    }
 
     // 2. Найти файл в /bin
     fs_entry_t entry;
     int file_idx = fs_find_in_dir(str, "bin", bin_idx, &entry);
     if (file_idx < 0)
+    {
+        asm volatile("sti");
         return 0; // файл не найден
+    }
 
     if (entry.size == 0)
+    {
+        asm volatile("sti");
         return 0;
+    }
 
     // 3. Выделить память для файла через user_malloc
-    void *user_mem = user_malloc(entry.size);
+    void *user_mem = user_malloc(entry.size + 16384);
     if (!user_mem)
+    {
+        asm volatile("sti");
         return 0; // ошибка выделения памяти
+    }
 
     memset(user_mem, 0, entry.size);
 
@@ -53,9 +69,11 @@ uint64_t load_and_run_program(const char *str)
     if (pid == 0)
     {
         user_free(user_mem);
+        asm volatile("sti");
         return 0; // не удалось создать задачу
     }
 
+    asm volatile("sti");
     return pid;
 }
 
@@ -118,6 +136,10 @@ uintptr_t syscall_handler(
 
     case SYSCALL_GET_TIME:
         return (uintptr_t)uint_to_str(rdi, (char *)rsi);
+
+    case SYSCALL_CLEAN_SCREEN:
+        clean_screen();
+        return 0;
 
     case SYSCALL_MALLOC:
         return (uintptr_t)malloc((size_t)rdi);

@@ -8,6 +8,7 @@ BITS 64
 
 %define SYSCALL_TASK_CREATE 200
 %define SYSCALL_TASK_IS_ALIVE 205
+%define SYSCALL_TASK_STOP 202
 
 %define VGA_WIDTH 80
 %define VGA_HEIGHT 25
@@ -22,6 +23,7 @@ section .text
 global _start
 _start:
     mov qword [input_len], 0
+    mov r15, 0
 
     lea rdi, [rel welcome_msg]
     mov rsi, WHITE
@@ -47,7 +49,18 @@ _start:
     je .wait_char
     cmp al, 32
     je .wait_char
+    cmp al, 0x03
+    jne .not_ctrl_c
 
+    cmp r15, 0
+    je .not_ctrl_c
+
+    mov rdi, r15
+    mov rax, SYSCALL_TASK_STOP
+    int 0x80
+    mov r15, 0
+
+.not_ctrl_c:
     cmp al, 10
     jne .not_newline
 
