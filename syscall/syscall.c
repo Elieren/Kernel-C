@@ -52,7 +52,7 @@ uint64_t load_and_run_program(const char *str)
     }
 
     // 3. Выделить память для файла через user_malloc
-    void *user_mem = user_malloc(entry.size + 16384);
+    void *user_mem = user_malloc(entry.size + 1024);
     if (!user_mem)
     {
         asm volatile("sti");

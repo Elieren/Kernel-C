@@ -47,7 +47,7 @@ void load_and_run_terminal(void)
         return; // файл не найден
 
     // 3. Выделить память для файла через user_malloc
-    void *user_mem = user_malloc(entry.size + 32768);
+    void *user_mem = user_malloc(entry.size + 1024);
     if (!user_mem)
         return; // ошибка выделения памяти
 
