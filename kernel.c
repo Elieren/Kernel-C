@@ -29,6 +29,8 @@
 #include "user/terminal.h"
 #include "user/htop.h"
 #include "user/clear.h"
+#include "user/shutdown.h"
+#include "user/reboot.h"
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -164,6 +166,8 @@ void kmain(void)
     load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
     load_app_to_fs("bin", "htop", "bin", htop_bin, htop_bin_len);
     load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
+    load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
+    load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
 
     clean_screen();
 

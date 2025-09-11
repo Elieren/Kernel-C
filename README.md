@@ -52,6 +52,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 ## Iist of available commands:
 * htop - prints information about the heap
 * clear - clears the terminal
+* shutdown (shutdown gives an error in VirtualBox, on all other platforms it works fine (qemu 100% operability)).
+* reboot
 
 ## Build and Run
 
