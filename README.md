@@ -47,8 +47,6 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Build kernel in iso with GRUB
 
-* [ ] Add cross compiler.
-
 ## Iist of available commands:
 * htop - prints information about the heap
 * clear - clears the terminal
