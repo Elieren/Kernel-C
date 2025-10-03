@@ -115,3 +115,41 @@ char *strncat(char *dest, const char *src, size_t n)
     d[i] = '\0';
     return dest;
 }
+
+char *strtok_r(char *str, const char *delim, char **saveptr)
+{
+    char *token;
+
+    if (str)
+        *saveptr = str;
+    if (*saveptr == NULL)
+        return NULL;
+
+    // Пропускаем ведущие символы-разделители
+    char *start = *saveptr;
+    while (*start && strchr(delim, *start))
+        start++;
+    if (*start == '\0')
+    {
+        *saveptr = NULL;
+        return NULL;
+    }
+
+    // Найти конец токена
+    token = start;
+    char *p = start;
+    while (*p && !strchr(delim, *p))
+        p++;
+
+    if (*p)
+    {
+        *p = '\0';
+        *saveptr = p + 1;
+    }
+    else
+    {
+        *saveptr = NULL;
+    }
+
+    return token;
+}

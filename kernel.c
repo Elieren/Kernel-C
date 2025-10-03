@@ -32,6 +32,8 @@
 #include "user/shutdown.h"
 #include "user/reboot.h"
 
+#include "default_files.h"
+
 /* символы из link.ld */
 extern char _heap_start;
 extern char _heap_end;
@@ -145,6 +147,48 @@ void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, un
     }
 }
 
+int init_autorun(const char *autorun)
+{
+    if (!autorun)
+        return -1;
+
+    // Найти или создать директорию boot.d в корне
+    fs_entry_t boot_dir;
+    int boot_idx = fs_find_in_dir("boot.d", NULL, FS_ROOT_IDX, &boot_dir);
+    if (boot_idx < 0)
+    {
+        // Директория не найдена — создаём
+        boot_idx = fs_mkdir("boot.d", FS_ROOT_IDX);
+        if (boot_idx < 0)
+            return -2; // Ошибка создания директории
+    }
+    else
+    {
+        if (!boot_dir.is_dir)
+            return -3; // Есть файл с именем boot.d, но это не директория — ошибка
+    }
+
+    // Проверить, есть ли файл autorun.rc внутри boot_dir
+    fs_entry_t autorun_file;
+    int autorun_idx = fs_find_in_dir("autorun", "rc", boot_idx, &autorun_file);
+    if (autorun_idx >= 0)
+    {
+        // Файл существует — ничего не делаем
+        return 0;
+    }
+
+    // Файла нет — создаём и записываем autorun
+    int create_idx = fs_create_file("autorun", "rc", boot_idx, NULL);
+    if (create_idx < 0)
+        return -4; // Ошибка создания файла
+
+    int res = fs_write_file_in_dir("autorun", "rc", boot_idx, autorun, strlen(autorun));
+    if (res != 0)
+        return -5; // Ошибка записи файла
+
+    return 0;
+}
+
 /*-------------------------------------------------------------
     Основная функция ядра
 -------------------------------------------------------------*/
@@ -162,6 +206,8 @@ void kmain(void)
     user_malloc_init();
 
     fs_init();
+
+    init_autorun(autorun);
 
     load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
     load_app_to_fs("bin", "htop", "bin", htop_bin, htop_bin_len);

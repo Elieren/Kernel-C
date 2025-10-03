@@ -16,5 +16,6 @@ int strncmp(const char *a, const char *b, size_t n);
 char *strchr(const char *s, int c);
 char *strrchr(const char *s, int c);
 char *strncat(char *dest, const char *src, size_t n);
+char *strtok_r(char *str, const char *delim, char **saveptr);
 
 #endif // KERNEL_STRING_H
