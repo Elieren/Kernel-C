@@ -4,11 +4,34 @@
 [BITS 32]
 
 section .text
-    ;multiboot spec
+    align 8
+
+    ; --------------------
+    ; Multiboot v1 (минимальный)
+    ; --------------------
     align 4
-    dd 0x1BADB002          ; magic Multiboot
-    dd 0x00                 ; flags
-    dd -(0x1BADB002 + 0x00)   ; checksum
+mb1_start:
+    dd 0x1BADB002              ; magic
+    dd 0x00000000              ; flags = 0 (минимальный)
+    dd -(0x1BADB002 + 0x00000000) ; checksum
+
+    ; --------------------
+    ; Multiboot2 (минимальный)
+    ; --------------------
+    align 8
+mb2_start:
+    dd 0xE85250D6              ; magic (multiboot2)
+    dd 0x00000000              ; architecture (0 = i386)
+    dd mb2_end - mb2_start     ; header length (в байтах)
+    ; checksum = -(magic + arch + length)  (выражение ниже даёт 32-bit)
+    dd 0x100000000 - (0xE85250D6 + 0x00000000 + (mb2_end - mb2_start))
+
+    ; --- минимальный список тэгов: конец (type=0, flags=0, size=8) ---
+    dw 0x0000                  ; tag type = 0 (end)
+    dw 0x0000                  ; flags = 0
+    dd 0x00000008              ; size = 8
+
+mb2_end:
 
 global start
 ; extern syscall_stub
