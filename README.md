@@ -52,6 +52,7 @@ The goal is not to create a fully functional OS, but to understand how its key m
 * clear - clears the terminal
 * shutdown (shutdown gives an error in VirtualBox, on all other platforms it works fine (qemu 100% operability)).
 * reboot
+* help - displays a list of commands
 
 ## Build and Run
 

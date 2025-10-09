@@ -11,6 +11,25 @@
 
 /* Индекс корневого каталога в таблице записей */
 #define FS_ROOT_IDX 0
+#define ENTRY_START_IDX 1
+
+/* Общие константы FAT */
+#define FAT_FREE 0x0000
+#define FAT_EOF 0xFFFF
+#define FAT_NO_CLUSTER 0
+
+/* Коды ошибок для функций FS (отрицательные значения) */
+#define FS_OK 0
+#define FS_ERR_INVALID_ARG -1   // неверные параметры
+#define FS_ERR_NOT_DIR -2       // родитель не существует или не каталог
+#define FS_ERR_EXISTS -3        // запись с таким именем уже существует
+#define FS_ERR_NO_SPACE -4      // нет места в таблице записей
+#define FS_ERR_NO_FAT_SPACE -5  // нет места в FAT (нет свободных кластеров)
+#define FS_ERR_PARTIAL_WRITE -6 // частично записано
+#define FS_ERR_NOT_FOUND -7     // запись не найдена
+
+#define FS_HAS_CHILDREN 1
+#define FS_NO_CHILDREN 0
 
 typedef struct
 {
@@ -45,8 +64,8 @@ int fs_find_in_dir(const char *name, const char *ext, int parent, fs_entry_t *ou
 int fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent);
 
 /* Прочитать/записать низкоуровневые данные (цепочка кластеров) */
-size_t fs_read(uint16_t first_cluster, void *buf, size_t size);
-size_t fs_write(uint16_t first_cluster, const void *buf, size_t size);
+int fs_read(uint16_t first_cluster, void *buf, size_t size);
+int fs_write(uint16_t first_cluster, const void *buf, size_t size);
 
 /* Высокоуровневые операции с файлами (по имени + каталогу) */
 int fs_write_file_in_dir(const char *name, const char *ext, int parent, const void *data, size_t size);

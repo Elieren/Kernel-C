@@ -153,3 +153,16 @@ char *strtok_r(char *str, const char *delim, char **saveptr)
 
     return token;
 }
+
+int nameeq(const char *a, const char *b, size_t n)
+{
+    for (size_t i = 0; i < n; ++i)
+    {
+        char ca = a[i], cb = b[i];
+        if (!ca && !cb)
+            return 1;
+        if (ca != cb)
+            return 0;
+    }
+    return 1;
+}
