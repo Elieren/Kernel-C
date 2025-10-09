@@ -32,6 +32,12 @@ _start:
     mov     rax, SYSCALL_PRINT_STRING
     int     0x80
 
+    lea     rdi, [rel cmd_time]
+    mov     rsi, fg_color
+    mov     rdx, bg_color
+    mov     rax, SYSCALL_PRINT_STRING
+    int     0x80
+
     ; завершение задачи
     mov     rax, SYSCALL_TASK_EXIT
     xor     rdi, rdi      ; exit code 0
@@ -45,6 +51,7 @@ section .data
     cmd_clear     db "clear    - clears the terminal", 10, 0
     cmd_shutdown  db "shutdown - (shutdown gives an error in VirtualBox, works in QEMU)", 10, 0
     cmd_reboot    db "reboot   - reboots the system", 10, 0
+    cmd_time db "time     - displays the current system time and uptime", 10, 0
 
     fg_color      equ 15    ; белый
     bg_color      equ 0     ; чёрный

@@ -6,17 +6,6 @@
 #include "../malloc/user_malloc.h"
 #include "../libc/string.h"
 
-/* Здесь будут ваши функции */
-void user_task1(void)
-{
-    for (;;)
-    {
-        print_time();
-        print_systemup();
-        asm volatile("hlt");
-    }
-}
-
 /* Задача-реапер: бесконечно вызывает reap_zombies(), можно вызывать каждые N тикoв */
 void zombie_reaper_task(void)
 {
@@ -196,8 +185,6 @@ void load_and_run_from_autorun(void)
 /* Регистрация всех стартовых задач */
 void tasks_init(void)
 {
-    task_create(user_task1, 0);
-
     load_and_run_from_autorun();
 
     task_create(zombie_reaper_task, 0);

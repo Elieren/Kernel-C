@@ -48,9 +48,4 @@ void backspace(void);
 
 void update_hardware_cursor(uint8_t x, uint8_t y);
 
-void print_time(void);
-void print_systemup(void);
-
-extern const char *prompt;
-
 #endif

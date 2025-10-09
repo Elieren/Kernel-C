@@ -9,12 +9,12 @@
 #include "../multitask/multitask.h"
 #include "../fat16/fs.h"
 #include "../malloc/user_malloc.h"
+#include "../time/clock/clock.h"
 
 #include <stdint.h>
 #include <stddef.h>
 
 extern uint32_t seconds;
-extern volatile task_t *syscall_caller;
 
 static char str[11];
 static char tmp[11];
@@ -77,32 +77,6 @@ uint64_t load_and_run_program(const char *str)
     return pid;
 }
 
-static char *uint_to_str(uint32_t value, char *buf)
-{
-    int len = 0;
-
-    if (value == 0)
-    {
-        buf[0] = '0';
-        buf[1] = '\0';
-        return buf;
-    }
-
-    while (value > 0)
-    {
-        tmp[len++] = '0' + (value % 10);
-        value /= 10;
-    }
-
-    for (int i = 0; i < len; i++)
-    {
-        buf[i] = tmp[len - 1 - i];
-    }
-    buf[len] = '\0';
-
-    return buf;
-}
-
 uintptr_t syscall_handler(
     uint64_t rax, // syscall number
     uint64_t rdi,
@@ -135,7 +109,17 @@ uintptr_t syscall_handler(
         return 0;
 
     case SYSCALL_GET_TIME:
-        return (uintptr_t)uint_to_str(rdi, (char *)rsi);
+        if (rdi && rsi >= sizeof(ClockTime))
+        {
+            uint8_t *buf = (uint8_t *)(uintptr_t)rdi;
+            buf[0] = system_clock.hh;
+            buf[1] = system_clock.mm;
+            buf[2] = system_clock.ss;
+        }
+        return 0;
+
+    case SYSCALL_GET_TIME_UP:
+        return (uintptr_t)seconds;
 
     case SYSCALL_CLEAN_SCREEN:
         clean_screen();
