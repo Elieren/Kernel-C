@@ -5,7 +5,7 @@
 This project is an educational platform for step-by-step learning and development of basic operating system components.
 The goal is not to create a fully functional OS, but to understand how its key mechanisms work "from the inside."
 
-![Loading](preview/preview.gif)
+![preview](https://github.com/user-attachments/assets/122e961e-c9bc-42ac-ac0b-a995c6b8b910)
 
 ## RoadMap
 
