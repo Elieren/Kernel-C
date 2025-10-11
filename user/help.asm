@@ -49,7 +49,7 @@ _start:
 section .data
     cmd_htop      db "htop     - prints information about the heap", 10, 0
     cmd_clear     db "clear    - clears the terminal", 10, 0
-    cmd_shutdown  db "shutdown - (shutdown gives an error in VirtualBox, works in QEMU)", 10, 0
+    cmd_shutdown  db "shutdown - shutdown the system", 10, 0
     cmd_reboot    db "reboot   - reboots the system", 10, 0
     cmd_time db "time     - displays the current system time and uptime", 10, 0
 

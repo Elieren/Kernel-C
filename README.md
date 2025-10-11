@@ -50,8 +50,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 ## Iist of available commands:
 * htop - prints information about the heap
 * clear - clears the terminal
-* shutdown (shutdown gives an error in VirtualBox, on all other platforms it works fine (qemu 100% operability)).
-* reboot
+* shutdown - system shutdown (On all virtual machines, 100% performance is guaranteed; on real hardware, 100% performance is not guaranteed.)
+* reboot - system reboot
 * help - displays a list of commands
 * time - displays the current system time and uptime
 

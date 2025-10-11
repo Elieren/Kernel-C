@@ -1,34 +1,30 @@
 // power/poweroff.c
-#include "poweroff.h"
 #include "../portio/portio.h"
 #include <stdint.h>
 #include <stddef.h>
 
-#ifndef phys_to_virt
-#define phys_to_virt(p) ((void *)(uintptr_t)(p))
-#endif
+/*
+ * Assumptions:
+ *  - kernel has identity map for physical memory (cast phys->ptr is OK)
+ *
+ * Usage:
+ *  - call acpi_init(); it returns 0 on success (found FADT+_S5_)
+ *  - call acpi_poweroff(); it will try to enable ACPI (if needed)
+ *    and write PM1x_CNT with (SLP_TYP << 10) | SLP_EN.
+ */
 
-static inline void *p2v(uintptr_t p) { return phys_to_virt(p); }
-
-#define SIG_RSDP "RSD PTR "
-#define SIG_FACP "FACP"
-#define PM1_SLP_EN (1 << 13)
-
-#pragma pack(push, 1)
-typedef struct
+/* RSDP (revision 1) layout first 20 bytes */
+struct rsdp1
 {
-    char signature[8];
+    char sig[8]; /* "RSD PTR " */
     uint8_t checksum;
     char oemid[6];
     uint8_t revision;
     uint32_t rsdt_address;
-    uint32_t length;
-    uint64_t xsdt_address;
-    uint8_t ext_checksum;
-    uint8_t reserved[3];
-} rsdp2_t;
+} __attribute__((packed));
 
-typedef struct
+/* Generic ACPI header present at start of RSDT/FADT/DSDT */
+struct acpi_header
 {
     char sig[4];
     uint32_t length;
@@ -39,132 +35,250 @@ typedef struct
     uint32_t oemrev;
     uint32_t creatorid;
     uint32_t creatorrev;
-} acpi_sdt_hdr_t;
+} __attribute__((packed));
 
-typedef struct
-{
-    uint8_t address_space;
-    uint8_t bit_width;
-    uint8_t bit_offset;
-    uint8_t access_size;
-    uint64_t address;
-} acpi_gas_t;
-#pragma pack(pop)
+/* We'll index into FADT by known offsets per ACPI 1.0/2.0 (32-bit fields) */
+#define FADT_DSDT_OFFSET 40         /* offset of 32-bit DSDT pointer in FADT */
+#define FADT_SMI_CMD_OFFSET 48      /* SMI_CMD port */
+#define FADT_ACPI_ENABLE_OFFSET 52  /* ACPI_ENABLE (byte) */
+#define FADT_ACPI_DISABLE_OFFSET 53 /* ACPI_DISABLE (byte) */
+#define FADT_PM1A_CNT_BLK_OFFSET 64 /* PM1a_CNT_BLK (32-bit) */
+#define FADT_PM1B_CNT_BLK_OFFSET 68 /* PM1b_CNT_BLK (32-bit) */
+#define FADT_PM1_CNT_LEN_OFFSET 89  /* PM1_CNT_LEN (byte) - typical offset, safe to read if length large */
 
-static int memcmp_simple(const void *a, const void *b, size_t n)
+/* Globals discovered */
+static uint32_t g_pm1a_cnt = 0;
+static uint32_t g_pm1b_cnt = 0;
+static uint16_t g_slp_typa = 0;
+static uint16_t g_slp_typb = 0;
+static uint16_t g_slp_en = 1U << 13; /* SLP_EN is bit 13 */
+static uint32_t g_smi_cmd = 0;
+static uint8_t g_acpi_enable = 0;
+static uint8_t g_acpi_disable = 0;
+static int g_acpi_valid = 0;
+
+/* helper: compute checksum of table at ptr of length bytes */
+static int acpi_checksum(void *ptr, size_t len)
 {
-    const unsigned char *pa = a, *pb = b;
-    for (size_t i = 0; i < n; ++i)
-        if (pa[i] != pb[i])
-            return (int)pa[i] - (int)pb[i];
-    return 0;
+    uint8_t *b = (uint8_t *)ptr;
+    uint8_t sum = 0;
+    for (size_t i = 0; i < len; ++i)
+        sum += b[i];
+    return sum == 0;
 }
 
-static int checksum_ok(const void *p, size_t n)
+/* find RSDP: search EBDA and 0xE0000..0xFFFFF as usual */
+static struct rsdp1 *find_rsdp(void)
 {
-    const uint8_t *q = (const uint8_t *)p;
-    uint8_t s = 0;
-    for (size_t i = 0; i < n; ++i)
-        s = (uint8_t)(s + q[i]);
-    return s == 0;
-}
-
-static uint32_t read_u32(const void *p)
-{
-    uint32_t v;
-    __builtin_memcpy(&v, p, sizeof(v));
-    return v;
-}
-static uint64_t read_u64(const void *p)
-{
-    uint64_t v;
-    __builtin_memcpy(&v, p, sizeof(v));
-    return v;
-}
-
-static uintptr_t find_rsdp(void)
-{
-    for (uintptr_t a = 0x000E0000; a <= 0x000FFFFF; a += 16)
+    /* 1) search 0x000E0000 .. 0x000FFFFF aligned by 16 */
+    for (uintptr_t p = 0x000E0000; p < 0x00100000; p += 16)
     {
-        void *vp = p2v(a);
-        if (!vp)
-            continue;
-        if (memcmp_simple(vp, SIG_RSDP, 8) == 0)
+        struct rsdp1 *r = (struct rsdp1 *)p;
+        if (r->sig[0] == 'R' && r->sig[1] == 'S' && r->sig[2] == 'D' && r->sig[3] == ' ' &&
+            r->sig[4] == 'P' && r->sig[5] == 'T' && r->sig[6] == 'R' && r->sig[7] == ' ')
         {
-            rsdp2_t *r = (rsdp2_t *)vp;
-            if ((r->revision >= 2 && r->length && checksum_ok(r, r->length)) || checksum_ok(r, 20))
-                return a;
+            if (acpi_checksum(r, sizeof(struct rsdp1)))
+                return r;
         }
     }
-    return 0;
-}
-
-static acpi_sdt_hdr_t *map_sdt(uintptr_t phys)
-{
-    void *vp = p2v(phys);
-    if (!vp)
-        return NULL;
-    acpi_sdt_hdr_t *h = (acpi_sdt_hdr_t *)vp;
-    if (h->length < sizeof(acpi_sdt_hdr_t) || h->length > 0x200000)
-        return NULL;
-    if (!checksum_ok(h, h->length))
-        return NULL;
-    return h;
-}
-
-static uintptr_t find_table(uintptr_t table_phys, const char *sig, int xsdt)
-{
-    acpi_sdt_hdr_t *t = map_sdt(table_phys);
-    if (!t)
-        return 0;
-
-    uint8_t *base = (uint8_t *)p2v(table_phys) + sizeof(acpi_sdt_hdr_t);
-    if (!base)
-        return 0;
-
-    if (!xsdt)
+    /* 2) EBDA: at 0x40E (word) is segment*16 */
+    uint16_t ebda_seg = *(uint16_t *)0x40E;
+    if (ebda_seg)
     {
-        int entries = (t->length - sizeof(acpi_sdt_hdr_t)) / 4;
-        for (int i = 0; i < entries; i++)
+        uintptr_t ebda = (uintptr_t)ebda_seg << 4;
+        for (uintptr_t p = ebda; p < ebda + 1024; p += 16)
         {
-            uint32_t e = read_u32(base + i * 4);
-            acpi_sdt_hdr_t *h = map_sdt((uintptr_t)e);
-            if (h && memcmp_simple(h->sig, sig, 4) == 0)
-                return (uintptr_t)e;
-        }
-    }
-    else
-    {
-        int entries = (t->length - sizeof(acpi_sdt_hdr_t)) / 8;
-        for (int i = 0; i < entries; i++)
-        {
-            uint64_t e = read_u64(base + i * 8);
-            acpi_sdt_hdr_t *h = map_sdt((uintptr_t)e);
-            if (h && memcmp_simple(h->sig, sig, 4) == 0)
-                return (uintptr_t)e;
-        }
-    }
-    return 0;
-}
-
-static int find_s5(uintptr_t dsdt_phys, uint8_t *slp_a, uint8_t *slp_b)
-{
-    acpi_sdt_hdr_t *dsdt = map_sdt(dsdt_phys);
-    if (!dsdt)
-        return -1;
-
-    uint8_t *p = (uint8_t *)p2v(dsdt_phys);
-    size_t len = dsdt->length;
-
-    for (size_t i = 0; i + 4 < len; ++i)
-    {
-        if (memcmp_simple(&p[i], "_S5_", 4) == 0)
-        {
-            size_t pos = i + 4;
-            if (pos + 6 < len)
+            struct rsdp1 *r = (struct rsdp1 *)p;
+            if (r->sig[0] == 'R' && r->sig[1] == 'S' && r->sig[2] == 'D' && r->sig[3] == ' ' &&
+                r->sig[4] == 'P' && r->sig[5] == 'T' && r->sig[6] == 'R' && r->sig[7] == ' ')
             {
-                *slp_a = p[pos + 5];
-                *slp_b = p[pos + 7];
+                if (acpi_checksum(r, sizeof(struct rsdp1)))
+                    return r;
+            }
+        }
+    }
+    return NULL;
+}
+
+/* Read RSDT (32-bit) and find FADT table pointer */
+static uint32_t find_fadt_from_rsdt(uint32_t rsdt_phys)
+{
+    struct acpi_header *rsdt = (struct acpi_header *)(uintptr_t)rsdt_phys;
+    if (!acpi_checksum(rsdt, rsdt->length))
+        return 0;
+    /* entries start at offset 36 (header) */
+    int entries = (rsdt->length - sizeof(struct acpi_header)) / 4;
+    uint32_t *entry = (uint32_t *)((uintptr_t)rsdt + sizeof(struct acpi_header));
+    for (int i = 0; i < entries; ++i)
+    {
+        struct acpi_header *hdr = (struct acpi_header *)(uintptr_t)entry[i];
+        if (hdr && hdr->sig[0] == 'F' && hdr->sig[1] == 'A' && hdr->sig[2] == 'C' && hdr->sig[3] == 'P')
+        {
+            /* verify checksum */
+            if (acpi_checksum(hdr, hdr->length))
+                return entry[i];
+        }
+    }
+    return 0;
+}
+
+/* parse package length per AML encoding (returns pkglen and advances pointer via idx) */
+static int aml_pkg_length(uint8_t *buf, size_t buf_len, size_t *idx, size_t *out_len)
+{
+    if (*idx >= buf_len)
+        return -1;
+    uint8_t byte0 = buf[*idx];
+    (*idx)++;
+    uint32_t pkglen = byte0 & 0x0F;
+    int byte_count = (byte0 >> 6) & 0x03;
+    for (int i = 0; i < byte_count; ++i)
+    {
+        if (*idx >= buf_len)
+            return -1;
+        pkglen |= ((uint32_t)buf[*idx]) << (4 + 8 * i);
+        (*idx)++;
+    }
+    *out_len = pkglen;
+    return 0;
+}
+
+/* scan DSDT for "_S5_" and extract SLP_TYPa/SLP_TYPb (returns 0 on success) */
+static int parse_s5_from_dsdt(uint32_t dsdt_phys)
+{
+    struct acpi_header *dsdt = (struct acpi_header *)(uintptr_t)dsdt_phys;
+    if (!acpi_checksum(dsdt, dsdt->length))
+        return -1;
+    uint8_t *start = (uint8_t *)((uintptr_t)dsdt + sizeof(struct acpi_header));
+    size_t len = dsdt->length - sizeof(struct acpi_header);
+
+    for (size_t i = 0; i + 4 <= len; ++i)
+    {
+        /* find ASCII "_S5_" */
+        if (start[i] == '_' && start[i + 1] == 'S' && start[i + 2] == '5' && start[i + 3] == '_')
+        {
+            /* check NameOp preceding or backslash */
+            size_t namepos = i;
+            if (namepos >= 1 && start[namepos - 1] == 0x5A)
+            {
+                /* good (NameOp 0x08/0x5A?), continue */
+            }
+            else if (namepos >= 2 && start[namepos - 2] == '\\' && start[namepos - 1] == 0x5A)
+            {
+                /* fine */
+            }
+            else
+            {
+                /* not standard, but still try */
+            }
+            size_t p = i + 4;
+            if (p >= len)
+                continue;
+            /* expect PackageOp (0x12) next (sometimes after other bytes) */
+            if (start[p] != 0x12)
+            {
+                /* not package; continue searching */
+                continue;
+            }
+            p++; /* now at pkgLength */
+            size_t pkg_index = p;
+            size_t pkglen;
+            if (aml_pkg_length(start, len, &pkg_index, &pkglen) < 0)
+                continue;
+
+            /* after pkglen, there is NumElements (1 byte) */
+            if (pkg_index >= len)
+                continue;
+            uint8_t num_elems = start[pkg_index++];
+            /* now elements follow: we need the first two numeric elements
+               elements may be prefixed by BytePrefix (0x0A) then the byte value */
+            int found = 0;
+            uint8_t val_a = 0, val_b = 0;
+            for (int el = 0; el < num_elems && pkg_index < len; ++el)
+            {
+                uint8_t prefix = start[pkg_index++];
+                if (prefix == 0x0A)
+                {
+                    /* byte prefix */
+                    if (pkg_index >= len)
+                        break;
+                    uint8_t val = start[pkg_index++];
+                    if (found == 0)
+                    {
+                        val_a = val;
+                        found++;
+                    }
+                    else if (found == 1)
+                    {
+                        val_b = val;
+                        found++;
+                        break;
+                    }
+                }
+                else if (prefix == 0x0C)
+                {
+                    /* word prefix (2 bytes) */
+                    if (pkg_index + 1 >= len)
+                        break;
+                    uint16_t v = start[pkg_index] | (start[pkg_index + 1] << 8);
+                    pkg_index += 2;
+                    if (found == 0)
+                    {
+                        val_a = v & 0xFF;
+                        found++;
+                    }
+                    else if (found == 1)
+                    {
+                        val_b = v & 0xFF;
+                        found++;
+                        break;
+                    }
+                }
+                else if (prefix == 0x0B)
+                {
+                    /* dword prefix (4 bytes) */
+                    if (pkg_index + 3 >= len)
+                        break;
+                    uint32_t v = start[pkg_index] | (start[pkg_index + 1] << 8) | (start[pkg_index + 2] << 16) | (start[pkg_index + 3] << 24);
+                    pkg_index += 4;
+                    if (found == 0)
+                    {
+                        val_a = v & 0xFF;
+                        found++;
+                    }
+                    else if (found == 1)
+                    {
+                        val_b = v & 0xFF;
+                        found++;
+                        break;
+                    }
+                }
+                else
+                {
+                    if (prefix < 0x40)
+                    {
+                        if (found == 0)
+                        {
+                            val_a = prefix;
+                            found++;
+                        }
+                        else if (found == 1)
+                        {
+                            val_b = prefix;
+                            found++;
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        /* unknown: bail out */
+                        break;
+                    }
+                }
+            }
+            if (found >= 1)
+            {
+                g_slp_typa = (uint16_t)val_a;
+                g_slp_typb = (uint16_t)val_b;
                 return 0;
             }
         }
@@ -172,206 +286,123 @@ static int find_s5(uintptr_t dsdt_phys, uint8_t *slp_a, uint8_t *slp_b)
     return -1;
 }
 
-static void io_wait(void) { outb(0x80, 0); }
-
-static void write_pm(uint64_t addr, int is_io, uint16_t value)
+/* top-level init: find RSDP -> RSDT -> FADT -> DSDT -> parse _S5_ */
+int acpi_init(void)
 {
-    if (!addr)
-        return;
-    if (is_io)
-    {
-        if (addr <= 0xFFFF)
-            outw((uint16_t)addr, value);
-        else
-        {
-            volatile uint16_t *mm = (volatile uint16_t *)p2v(addr);
-            if (mm)
-                *mm = value;
-        }
-    }
-    else
-    {
-        volatile uint16_t *mm = (volatile uint16_t *)p2v(addr);
-        if (mm)
-            *mm = value;
-    }
-}
+    struct rsdp1 *rsdp = find_rsdp();
+    if (!rsdp)
+        return -1;
+    uint32_t rsdt = rsdp->rsdt_address;
+    if (!rsdt)
+        return -1;
+    uint32_t fadt = find_fadt_from_rsdt(rsdt);
+    if (!fadt)
+        return -1;
 
-static void emulator_fallback(void)
-{
-    outw(0x604, 0x2000);
-    io_wait();
-    outw(0x4004, 0x2000);
-    io_wait();
-}
+    /* read fields from FADT by offsets (ensure within length) */
+    struct acpi_header *fh = (struct acpi_header *)(uintptr_t)fadt;
+    if (!acpi_checksum(fh, fh->length))
+        return -1;
 
-static int try_find_gas_in_fadt(uint8_t *fadt_base, uint32_t fadt_len,
-                                uint64_t *pm1a_addr, uint64_t *pm1b_addr, int *pm1_io)
-{
-    const int candidate_offsets[][2] = {
-        {76, 84},
-        {80, 88},
-        {92, 100},
-        {100, 108},
-        {116, 124},
-        {128, 136},
-        {140, 148},
-    };
-    int candidates = sizeof(candidate_offsets) / sizeof(candidate_offsets[0]);
+    /* DSDT pointer is a 32-bit field at offset FADT_DSDT_OFFSET */
+    uint32_t dsdt = *(uint32_t *)((uintptr_t)fh + FADT_DSDT_OFFSET);
+    if (!dsdt)
+        return -1;
 
-    for (int c = 0; c < candidates; ++c)
+    /* SMI_CMD */
+    g_smi_cmd = *(uint32_t *)((uintptr_t)fh + FADT_SMI_CMD_OFFSET);
+    g_acpi_enable = *(uint8_t *)((uintptr_t)fh + FADT_ACPI_ENABLE_OFFSET);
+    g_acpi_disable = *(uint8_t *)((uintptr_t)fh + FADT_ACPI_DISABLE_OFFSET);
+
+    /* PM1a/PM1b */
+    g_pm1a_cnt = *(uint32_t *)((uintptr_t)fh + FADT_PM1A_CNT_BLK_OFFSET);
+    g_pm1b_cnt = *(uint32_t *)((uintptr_t)fh + FADT_PM1B_CNT_BLK_OFFSET);
+
+    /* PM1_CNT_LEN */
+    g_acpi_valid = 0;
+    if (parse_s5_from_dsdt(dsdt) == 0)
     {
-        int off_a = candidate_offsets[c][0];
-        int off_b = candidate_offsets[c][1];
-        if ((size_t)off_a + sizeof(acpi_gas_t) <= fadt_len)
-        {
-            acpi_gas_t gas = {0};
-            __builtin_memcpy(&gas, fadt_base + off_a, sizeof(acpi_gas_t));
-            if (gas.address)
-            {
-                *pm1a_addr = gas.address;
-                *pm1_io = (gas.address_space == 0);
-            }
-        }
-        if ((size_t)off_b + sizeof(acpi_gas_t) <= fadt_len)
-        {
-            acpi_gas_t gas = {0};
-            __builtin_memcpy(&gas, fadt_base + off_b, sizeof(acpi_gas_t));
-            if (gas.address)
-            {
-                *pm1b_addr = gas.address;
-                if (!(*pm1_io) && gas.address_space == 0)
-                    *pm1_io = 1;
-            }
-        }
-        if (*pm1a_addr || *pm1b_addr)
-            return 0;
+        /* convert SLP_TYP values from 0..N into shifted values (<< 10) */
+        g_slp_typa = (g_slp_typa & 0x7) << 10;
+        g_slp_typb = (g_slp_typb & 0x7) << 10;
+        g_acpi_valid = 1;
+        return 0;
     }
     return -1;
 }
 
+/* to enable ACPI via SMI_CMD if needed (returns 0 if ACPI enabled or no-op) */
+static int acpi_enable_if_needed(void)
+{
+    if (!g_acpi_valid)
+        return -1;
+    /* read PM1a to check SCI_EN (bit 0) */
+    if (g_pm1a_cnt == 0)
+        return -1;
+    uint16_t pm1a = inw((uint16_t)g_pm1a_cnt);
+    if ((pm1a & 1) == 0)
+    {
+        if (g_smi_cmd && g_acpi_enable)
+        {
+            outb((uint16_t)g_smi_cmd, g_acpi_enable);
+            /* wait up to ~3s for SCI_EN to appear */
+            for (int i = 0; i < 300; ++i)
+            {
+                uint16_t v = inw((uint16_t)g_pm1a_cnt);
+                if (v & 1)
+                    return 0;
+                /* small delay (simple busy) */
+                for (volatile int d = 0; d < 100000; ++d)
+                    asm volatile("pause");
+            }
+            return -1;
+        }
+        else
+        {
+            /* no way to enable, but some BIOSes accept writing SLP_EN without enabling */
+            return 0;
+        }
+    }
+    return 0;
+}
+
+/* perform power off */
+void acpi_poweroff(void)
+{
+    acpi_enable_if_needed();
+
+    /* write PM1a */
+    if (g_pm1a_cnt)
+    {
+        outw((uint16_t)g_pm1a_cnt, (uint16_t)(g_slp_typa | g_slp_en));
+    }
+    /* write PM1b if present */
+    if (g_pm1b_cnt)
+    {
+        outw((uint16_t)g_pm1b_cnt, (uint16_t)(g_slp_typb | g_slp_en));
+    }
+}
+
 void power_off(void)
 {
-    emulator_fallback();
+    /* disable interrupts */
+    asm volatile("cli");
 
-    uintptr_t rsdp_phys = find_rsdp();
-    if (!rsdp_phys)
+    /* fallback - emulator ports (QEMU / Bochs / VirtualBox / Cloud Hypervisor) */
+    outw(0x604, 0x2000);  /* QEMU */
+    outw(0xB004, 0x2000); /* Bochs / old qemu */
+    outw(0x4004, 0x3400); /* VirtualBox */
+    outw(0x600, 0x34);    /* Cloud Hypervisor */
+
+    if (acpi_init() == 0)
     {
-        emulator_fallback();
-        for (;;)
-            asm volatile("hlt");
+        acpi_poweroff();
+        /* small delay to allow poweroff to take effect */
+        for (volatile int i = 0; i < 1000000; i++)
+            asm volatile("pause");
     }
 
-    rsdp2_t *rsdp = (rsdp2_t *)p2v(rsdp_phys);
-    if (!rsdp)
-    {
-        emulator_fallback();
-        for (;;)
-            asm volatile("hlt");
-    }
-
-    int use_xsdt = (rsdp->revision >= 2 && rsdp->xsdt_address != 0);
-    uintptr_t table_phys = use_xsdt ? (uintptr_t)rsdp->xsdt_address : (uintptr_t)rsdp->rsdt_address;
-    if (!table_phys)
-    {
-        emulator_fallback();
-        for (;;)
-            asm volatile("hlt");
-    }
-
-    uintptr_t fadt_phys = find_table(table_phys, SIG_FACP, use_xsdt);
-    if (!fadt_phys)
-    {
-        emulator_fallback();
-        for (;;)
-            asm volatile("hlt");
-    }
-
-    acpi_sdt_hdr_t *fadt_hdr = map_sdt(fadt_phys);
-    if (!fadt_hdr)
-    {
-        emulator_fallback();
-        for (;;)
-            asm volatile("hlt");
-    }
-
-    uint8_t *fadt_base = (uint8_t *)p2v(fadt_phys);
-    uint32_t fadt_len = fadt_hdr->length;
-
-    uint64_t dsdt_addr = 0;
-    if (fadt_len >= 140)
-    {
-        dsdt_addr = read_u64(fadt_base + 140);
-    }
-    if (!dsdt_addr)
-    {
-        if (fadt_len >= 44)
-        {
-            uint32_t d32 = read_u32(fadt_base + 40);
-            dsdt_addr = (uint64_t)d32;
-        }
-    }
-
-    uint64_t pm1a_addr = 0, pm1b_addr = 0;
-    int pm1_io = 1;
-
-    if (fadt_len >= 72)
-    {
-        uint32_t p1 = read_u32(fadt_base + 64);
-        uint32_t p2 = read_u32(fadt_base + 68);
-        if (p1)
-            pm1a_addr = p1;
-        if (p2)
-            pm1b_addr = p2;
-    }
-
-    if (!pm1a_addr && !pm1b_addr)
-    {
-        try_find_gas_in_fadt(fadt_base, fadt_len, &pm1a_addr, &pm1b_addr, &pm1_io);
-    }
-
-    if (!pm1a_addr && !pm1b_addr)
-    {
-        size_t payload_off = sizeof(acpi_sdt_hdr_t);
-        for (size_t i = payload_off; i + sizeof(acpi_gas_t) <= fadt_len; i += 4)
-        {
-            acpi_gas_t gas;
-            __builtin_memcpy(&gas, fadt_base + i, sizeof(acpi_gas_t));
-            if (gas.address && (gas.address_space == 0 || gas.address_space == 1) &&
-                gas.bit_width > 0 && gas.bit_width <= 64)
-            {
-                if (!pm1a_addr)
-                {
-                    pm1a_addr = gas.address;
-                    pm1_io = (gas.address_space == 0);
-                }
-                else if (!pm1b_addr)
-                {
-                    pm1b_addr = gas.address;
-                    if (!pm1_io && gas.address_space == 0)
-                        pm1_io = 1;
-                    break;
-                }
-            }
-        }
-    }
-
-    uint8_t s5a = 5, s5b = 0;
-    if (dsdt_addr && find_s5((uintptr_t)dsdt_addr, &s5a, &s5b) != 0)
-    {
-    }
-
-    uint16_t sleep_value = (uint16_t)((s5a & 0x7) << 10) | PM1_SLP_EN;
-
-    if (pm1a_addr)
-        write_pm(pm1a_addr, pm1_io, sleep_value);
-    if (pm1b_addr)
-        write_pm(pm1b_addr, pm1_io, sleep_value);
-
-    io_wait();
-
-    emulator_fallback();
-
+    /* final fallback: halt forever */
     for (;;)
         asm volatile("hlt");
 }
