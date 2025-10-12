@@ -47,6 +47,12 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Build kernel in iso with GRUB
 
+* [X] Added support for BIOS and UEFI (Multiboot2).
+
+* [ ] Added commands `ls`, `cd`, `pwd` for working with the file system and moving around directories.
+
+* [ ] Added graphics mode with screen resolution support.
+
 * [ ] Added sleep support to power modes.
 
 ## Iist of available commands:
