@@ -1,4 +1,3 @@
-// power/poweroff.c
 #include "../portio/portio.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -12,6 +11,14 @@
  *  - call acpi_poweroff(); it will try to enable ACPI (if needed)
  *    and write PM1x_CNT with (SLP_TYP << 10) | SLP_EN.
  */
+
+/* ACPI shutdown methods */
+enum AcpiShutdownMethod {
+    ACPI_SHUTDOWN_METHOD_S5,
+    ACPI_SHUTDOWN_METHOD_S4,
+    ACPI_SHUTDOWN_METHOD_S3,
+    ACPI_SHUTDOWN_METHOD_COUNT
+};
 
 /* RSDP (revision 1) layout first 20 bytes */
 struct rsdp1
@@ -56,6 +63,42 @@ static uint32_t g_smi_cmd = 0;
 static uint8_t g_acpi_enable = 0;
 static uint8_t g_acpi_disable = 0;
 static int g_acpi_valid = 0;
+static int shutdown_error = 0;
+static enum AcpiShutdownMethod current_method = ACPI_SHUTDOWN_METHOD_S5;
+
+static int try_shutdown_method(enum AcpiShutdownMethod method) {
+    switch (method) {
+        case ACPI_SHUTDOWN_METHOD_S5:
+            // Стандартный метод S5
+            outw((uint16_t)g_pm1a_cnt, (uint16_t)(g_slp_typa | g_slp_en));
+            return 0;
+        case ACPI_SHUTDOWN_METHOD_S4:
+            // Метод S4 (гибернация)
+            outw((uint16_t)g_pm1a_cnt, (uint16_t)(g_slp_typa | 0x04 | g_slp_en));
+            return 0;
+        case ACPI_SHUTDOWN_METHOD_S3:
+            // Метод S3 (standby)
+            outw((uint16_t)g_pm1a_cnt, (uint16_t)(g_slp_typa | 0x02 | g_slp_en));
+            return 0;
+        default:
+            return -1;
+    }
+}
+
+static void attempt_shutdown() {
+    if (current_method < ACPI_SHUTDOWN_METHOD_COUNT) {
+        if (try_shutdown_method(current_method) == 0) {
+            // Ждем некоторое время для применения выключения
+            for (volatile int i = 0; i < 1000000; i++)
+                asm volatile("pause");
+            return;
+        } else {
+            shutdown_error = 1;
+            current_method++;
+            attempt_shutdown();
+        }
+    }
+}
 
 /* helper: compute checksum of table at ptr of length bytes */
 static int acpi_checksum(void *ptr, size_t len)
@@ -366,43 +409,56 @@ static int acpi_enable_if_needed(void)
     return 0;
 }
 
-/* perform power off */
-void acpi_poweroff(void)
-{
-    acpi_enable_if_needed();
+void press_power_button() {
+    // Стандартный порт для эмуляции кнопки питания
+    const uint16_t POWER_BUTTON_PORT = 0x64;
+    
+    // Симулируем нажатие кнопки питания
+    outb(POWER_BUTTON_PORT, 0x02);  // Нажимаем кнопку
+    for (volatile int i = 0; i < 100000; i++)
+        asm volatile("pause");      // Задержка
+    outb(POWER_BUTTON_PORT, 0x00);  // Отпускаем кнопку
+}
 
-    /* write PM1a */
-    if (g_pm1a_cnt)
-    {
-        outw((uint16_t)g_pm1a_cnt, (uint16_t)(g_slp_typa | g_slp_en));
+/* perform power off */
+void acpi_poweroff() {
+    if (acpi_enable_if_needed() != 0) {
+        return;
     }
-    /* write PM1b if present */
-    if (g_pm1b_cnt)
-    {
-        outw((uint16_t)g_pm1b_cnt, (uint16_t)(g_slp_typb | g_slp_en));
+
+    // Пытаемся выполнить выключение с обработкой ошибок
+    attempt_shutdown();
+
+    // Если все методы ACPI не сработали, пробуем альтернативные порты
+    if (shutdown_error) {
+        if (g_pm1a_cnt) {
+            outw((uint16_t)g_pm1a_cnt, (uint16_t)(g_slp_typa | g_slp_en));
+        }
+        if (g_pm1b_cnt) {
+            outw((uint16_t)g_pm1b_cnt, (uint16_t)(g_slp_typb | g_slp_en));
+        }
     }
 }
 
-void power_off(void)
-{
-    /* disable interrupts */
+void power_off() {
     asm volatile("cli");
 
-    /* fallback - emulator ports (QEMU / Bochs / VirtualBox / Cloud Hypervisor) */
-    outw(0x604, 0x2000);  /* QEMU */
-    outw(0xB004, 0x2000); /* Bochs / old qemu */
-    outw(0x4004, 0x3400); /* VirtualBox */
-    outw(0x600, 0x34);    /* Cloud Hypervisor */
+    press_power_button();
 
-    if (acpi_init() == 0)
-    {
+    // Fallback - эмуляторные порты
+    outw(0x604, 0x2000);  // QEMU
+    outw(0xB004, 0x2000); // Bochs / старый QEMU
+    outw(0x4004, 0x3400); // VirtualBox
+    outw(0x600, 0x34);    // Cloud Hypervisor
+
+    if (acpi_init() == 0) {
         acpi_poweroff();
-        /* small delay to allow poweroff to take effect */
+        // Ждем некоторое время для применения выключения
         for (volatile int i = 0; i < 1000000; i++)
             asm volatile("pause");
     }
 
-    /* final fallback: halt forever */
+    // Финальный fallback: бесконечная остановка
     for (;;)
         asm volatile("hlt");
 }
