@@ -4,24 +4,7 @@
 #include "../syscall/syscall.h"
 #include "../fat16/fs.h"
 #include "../malloc/user_malloc.h"
-
-typedef struct
-{
-    void (*entry)(void);
-    const char *name;
-    size_t required_memory;
-} user_app_info_t;
-
-/* Здесь будут ваши функции */
-void user_task1(void)
-{
-    for (;;)
-    {
-        print_time();
-        print_systemup();
-        asm volatile("hlt");
-    }
-}
+#include "../libc/string.h"
 
 /* Задача-реапер: бесконечно вызывает reap_zombies(), можно вызывать каждые N тикoв */
 void zombie_reaper_task(void)
@@ -33,37 +16,176 @@ void zombie_reaper_task(void)
     }
 }
 
-void load_and_run_terminal(void)
+static int parse_path(const char *path, char *parent_dir_path, char *file_name, char *ext)
 {
-    // 1. Найти /bin
-    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
-    if (bin_idx < 0)
-        return; // нет /bin, выходим
+    if (!path || path[0] != '/')
+        return -1;
 
-    // 2. Найти файл terminal в /bin
-    fs_entry_t entry;
-    int file_idx = fs_find_in_dir("terminal", "bin", bin_idx, &entry);
-    if (file_idx < 0)
-        return; // файл не найден
+    // Копируем путь во временный буфер для модификации
+    char tmp[256];
+    strncpy(tmp, path, sizeof(tmp) - 1);
+    tmp[sizeof(tmp) - 1] = '\0';
 
-    // 3. Выделить память для файла через user_malloc
-    void *user_mem = user_malloc(entry.size);
-    if (!user_mem)
-        return; // ошибка выделения памяти
+    // Разбираем путь на токены по разделителю '/'
+    char *saveptr = NULL;
+    char *token = strtok_r(tmp, "/", &saveptr);
 
-    // 4. Прочитать файл в user_mem
-    fs_read_file_in_dir("terminal", "bin", bin_idx, user_mem, entry.size, NULL);
+    if (!token)
+        return -2; // путь "/" (пустой)
 
-    // 5. Создать задачу и передать туда файл
-    utask_create((void (*)(void))user_mem, 16384, user_mem, entry.size);
+    // Сохраняем позицию начала пути для построения родительского каталога
+    char parent_path[256] = "";
+    size_t parent_path_len = 0;
+
+    char *last_token = NULL;
+
+    // Перебираем все компоненты пути
+    while (token)
+    {
+        last_token = token; // запомним последний компонент
+        token = strtok_r(NULL, "/", &saveptr);
+
+        if (token)
+        {
+            // Если это не последний элемент – добавляем его к пути родителя с '/'
+            size_t len = strlen(last_token);
+            if (parent_path_len + len + 1 < sizeof(parent_path))
+            {
+                memcpy(parent_path + parent_path_len, last_token, len);
+                parent_path_len += len;
+                parent_path[parent_path_len] = '/';
+                parent_path_len++;
+                parent_path[parent_path_len] = '\0';
+            }
+            else
+            {
+                // Слишком длинный путь родителя
+                return -3;
+            }
+        }
+        else
+        {
+            // last_token – это имя файла (последний элемент)
+            break;
+        }
+    }
+
+    // Записываем путь родительского каталога (без завершающего '/')
+    if (parent_path_len > 0 && parent_path[parent_path_len - 1] == '/')
+        parent_path[parent_path_len - 1] = '\0';
+    else
+        parent_path[0] = '\0'; // Корень "/"
+
+    strncpy(parent_dir_path, parent_path, FS_NAME_MAX - 1);
+    parent_dir_path[FS_NAME_MAX - 1] = '\0';
+
+    // Разбиваем имя файла и расширение
+    char *dot = strchr(last_token, '.');
+    if (dot)
+    {
+        size_t name_len = dot - last_token;
+        if (name_len >= FS_NAME_MAX)
+            name_len = FS_NAME_MAX - 1;
+        strncpy(file_name, last_token, name_len);
+        file_name[name_len] = '\0';
+
+        strncpy(ext, dot + 1, FS_EXT_MAX - 1);
+        ext[FS_EXT_MAX - 1] = '\0';
+    }
+    else
+    {
+        // Нет расширения
+        strncpy(file_name, last_token, FS_NAME_MAX - 1);
+        file_name[FS_NAME_MAX - 1] = '\0';
+
+        ext[0] = '\0';
+    }
+
+    return 0;
+}
+
+void load_and_run_from_autorun(void)
+{
+    // 1. Найти директорию boot.d в корне
+    int boot_idx = fs_find_in_dir("boot.d", NULL, FS_ROOT_IDX, NULL);
+    if (boot_idx < 0)
+        return; // Нет boot.d
+
+    // 2. Найти файл autorun.rc в boot.d
+    fs_entry_t autorun_entry;
+    int autorun_idx = fs_find_in_dir("autorun", "rc", boot_idx, &autorun_entry);
+    if (autorun_idx < 0)
+        return; // Нет autorun.rc
+
+    // 3. Выделить буфер под файл ( +1 для 0 терминации )
+    size_t size = autorun_entry.size;
+
+    char *buffer = (char *)malloc(size + 1);
+    if (!buffer)
+        return; // Ошибка выделения памяти
+
+    // 4. Считать содержимое файла в buffer
+    int res = fs_read_file_in_dir("autorun", "rc", boot_idx, buffer, size, NULL);
+    if (res != 0)
+    {
+        free(buffer);
+        return;
+    }
+    buffer[size] = '\0'; // нуль-терминируем
+
+    // 5. Разбить buffer по ';'
+    char *saveptr = NULL;
+    char *token = strtok_r(buffer, ";", &saveptr);
+
+    while (token)
+    {
+        // Строки в формате "/dir/file.ext"
+        char parent_dir_name[FS_NAME_MAX];
+        char file_name[FS_NAME_MAX];
+        char ext[FS_EXT_MAX];
+
+        if (parse_path(token, parent_dir_name, file_name, ext) == 0)
+        {
+            // Найти индекс каталога parent_dir_name в корне
+            fs_entry_t parent_dir_entry;
+            int parent_idx = fs_find_in_dir(parent_dir_name, NULL, FS_ROOT_IDX, &parent_dir_entry);
+            if (parent_idx >= 0 && parent_dir_entry.is_dir)
+            {
+                // Найти файл file_name.ext в parent_idx
+                fs_entry_t file_entry;
+                int file_idx = fs_find_in_dir(file_name, ext, parent_idx, &file_entry);
+                if (file_idx >= 0)
+                {
+                    if (file_entry.size == 0)
+                    {
+                        token = strtok_r(NULL, ";", &saveptr);
+                        continue; // Пропустить пустой файл
+                    }
+                    // Выделить память для файла
+                    void *user_mem = user_malloc(file_entry.size + 1024);
+                    if (!user_mem)
+                    {
+                        break;
+                    }
+                    // Прочитать файл
+                    fs_read_file_in_dir(file_name, ext, parent_idx, user_mem, file_entry.size, NULL);
+
+                    // Запустить задачу
+                    uint64_t pid = utask_create((void (*)(void))user_mem, 0, user_mem, file_entry.size);
+                }
+            }
+        }
+
+        token = strtok_r(NULL, ";", &saveptr);
+    }
+
+    free(buffer);
 }
 
 /* Регистрация всех стартовых задач */
 void tasks_init(void)
 {
-    task_create(user_task1, 0);
-
-    load_and_run_terminal();
+    load_and_run_from_autorun();
 
     task_create(zombie_reaper_task, 0);
 }

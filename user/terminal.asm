@@ -3,11 +3,14 @@ BITS 64
 %define SYSCALL_PRINT_STRING 3
 %define SYSCALL_BACKSPACE 4
 
+%define SYSCALL_MALLOC 10
+
 %define SYSCALL_GETCHAR      30
 %define SYSCALL_SETPOSCURSOR   31
 
 %define SYSCALL_TASK_CREATE 200
 %define SYSCALL_TASK_IS_ALIVE 205
+%define SYSCALL_TASK_STOP 202
 
 %define VGA_WIDTH 80
 %define VGA_HEIGHT 25
@@ -21,7 +24,12 @@ BITS 64
 section .text
 global _start
 _start:
+    mov     rdi, 8192        ; размер буфера
+    mov     rax, SYSCALL_MALLOC
+    int     0x80
+    mov     qword [rel input_buffer_ptr], rax
     mov qword [input_len], 0
+    mov r15, 0
 
     lea rdi, [rel welcome_msg]
     mov rsi, WHITE
@@ -47,20 +55,31 @@ _start:
     je .wait_char
     cmp al, 32
     je .wait_char
+    cmp al, 0x03
+    jne .not_ctrl_c
 
+    cmp r15, 0
+    je .not_ctrl_c
+
+    mov rdi, r15
+    mov rax, SYSCALL_TASK_STOP
+    int 0x80
+    mov r15, 0
+
+.not_ctrl_c:
     cmp al, 10
     jne .not_newline
 
     ; Добавляем \0 в конец строки
     mov rbx, [input_len]
-    lea rdi, [rel input_buffer]
+    mov rdi, [rel input_buffer_ptr]
     mov byte [rdi + rbx], 0    ; конец строки
 
     call new_line
     mov qword [input_len], 0
 
     ; Вызов системного вызова для обработки строки
-    lea rdi, [rel input_buffer] ; rdi = адрес строки
+    mov rdi, [rel input_buffer_ptr] ; rdi = адрес строки
     mov rax, SYSCALL_TASK_CREATE    ; номер syscall (пример, выбери свой)
     int 0x80
     cmp rax, 0
@@ -117,7 +136,7 @@ _start:
 
     ; Сохранить символ в буфер
     mov rbx, [input_len]      ; rbx = текущее количество символов
-    lea rdi, [rel input_buffer]
+    mov rdi, [rel input_buffer_ptr]
     mov [rdi + rbx], al        ; записываем символ в буфер
 
     add qword [input_len], 1
@@ -149,7 +168,7 @@ new_line:
 
 section .bss
     input_len: resq 1
-    input_buffer: resb 4096    ; буфер на 4096 символов
+    input_buffer_ptr:  resq 1    ; буфер на 8192 символов
 
 section .data
     prompt_msg db "$: ", 0

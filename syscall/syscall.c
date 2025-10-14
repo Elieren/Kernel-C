@@ -9,39 +9,55 @@
 #include "../multitask/multitask.h"
 #include "../fat16/fs.h"
 #include "../malloc/user_malloc.h"
+#include "../time/clock/clock.h"
 
 #include <stdint.h>
 #include <stddef.h>
 
 extern uint32_t seconds;
-extern volatile task_t *syscall_caller;
 
 static char str[11];
 static char tmp[11];
 
 uint64_t load_and_run_program(const char *str)
 {
+    asm volatile("cli");
     if (!str || str[0] == '\0')
+    {
+        asm volatile("sti");
         return -1;
+    }
 
     // 1. Найти /bin
     int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
     if (bin_idx < 0)
+    {
+        asm volatile("sti");
         return 0; // нет /bin, выходим
+    }
 
     // 2. Найти файл в /bin
     fs_entry_t entry;
     int file_idx = fs_find_in_dir(str, "bin", bin_idx, &entry);
     if (file_idx < 0)
+    {
+        asm volatile("sti");
         return 0; // файл не найден
+    }
 
     if (entry.size == 0)
+    {
+        asm volatile("sti");
         return 0;
+    }
 
     // 3. Выделить память для файла через user_malloc
-    void *user_mem = user_malloc(entry.size);
+    void *user_mem = user_malloc(entry.size + 1024);
     if (!user_mem)
+    {
+        asm volatile("sti");
         return 0; // ошибка выделения памяти
+    }
 
     memset(user_mem, 0, entry.size);
 
@@ -53,36 +69,12 @@ uint64_t load_and_run_program(const char *str)
     if (pid == 0)
     {
         user_free(user_mem);
+        asm volatile("sti");
         return 0; // не удалось создать задачу
     }
 
+    asm volatile("sti");
     return pid;
-}
-
-static char *uint_to_str(uint32_t value, char *buf)
-{
-    int len = 0;
-
-    if (value == 0)
-    {
-        buf[0] = '0';
-        buf[1] = '\0';
-        return buf;
-    }
-
-    while (value > 0)
-    {
-        tmp[len++] = '0' + (value % 10);
-        value /= 10;
-    }
-
-    for (int i = 0; i < len; i++)
-    {
-        buf[i] = tmp[len - 1 - i];
-    }
-    buf[len] = '\0';
-
-    return buf;
 }
 
 uintptr_t syscall_handler(
@@ -117,7 +109,21 @@ uintptr_t syscall_handler(
         return 0;
 
     case SYSCALL_GET_TIME:
-        return (uintptr_t)uint_to_str(rdi, (char *)rsi);
+        if (rdi && rsi >= sizeof(ClockTime))
+        {
+            uint8_t *buf = (uint8_t *)(uintptr_t)rdi;
+            buf[0] = system_clock.hh;
+            buf[1] = system_clock.mm;
+            buf[2] = system_clock.ss;
+        }
+        return 0;
+
+    case SYSCALL_GET_TIME_UP:
+        return (uintptr_t)seconds;
+
+    case SYSCALL_CLEAN_SCREEN:
+        clean_screen();
+        return 0;
 
     case SYSCALL_MALLOC:
         return (uintptr_t)malloc((size_t)rdi);

@@ -5,7 +5,7 @@
 This project is an educational platform for step-by-step learning and development of basic operating system components.
 The goal is not to create a fully functional OS, but to understand how its key mechanisms work "from the inside."
 
-<img width="733" height="483" alt="Снимок экрана 2025-09-04 185453" src="https://github.com/user-attachments/assets/882c9279-e629-450b-849a-38cdbd87977c" />
+![preview](https://github.com/user-attachments/assets/122e961e-c9bc-42ac-ac0b-a995c6b8b910)
 
 ## RoadMap
 
@@ -47,7 +47,21 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Build kernel in iso with GRUB
 
-* [ ] Add cross compiler.
+* [X] Added support for BIOS and UEFI (Multiboot2).
+
+* [ ] Added commands `ls`, `cd`, `pwd` for working with the file system and moving around directories.
+
+* [ ] Added graphics mode with screen resolution support.
+
+* [ ] Added sleep support to power modes.
+
+## Iist of available commands:
+* htop - prints information about the heap
+* clear - clears the terminal
+* shutdown - system shutdown (On all virtual machines, 100% performance is guaranteed; on real hardware, 100% performance is not guaranteed.)
+* reboot - system reboot
+* help - displays a list of commands
+* time - displays the current system time and uptime
 
 ## Build and Run
 

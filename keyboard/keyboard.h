@@ -95,6 +95,9 @@
 
 #define KEY_CAPSLOCK 0x3A
 
+#define KEY_LCONTROL 0x1D
+#define KEY_RCONTROL 0xE01D
+
 char kbd_getchar(void); /* возвращает -1 если буфер пуст, иначе ASCII 0..255 */
 
 #endif

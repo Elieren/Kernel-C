@@ -8,11 +8,6 @@ BITS 64
 section .text
 global _start
 _start:
-    mov rdi, 64
-    mov rsi, 15
-    mov rdx, 0
-    mov rax, 2
-    int     0x80
 
     lea     rdi, [rel kmalloc_stats]
     mov     rax, SYSCALL_KMALLOC_STATS

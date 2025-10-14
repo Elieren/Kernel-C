@@ -12,6 +12,8 @@
 #define SYSCALL_PRINT_STRING 3
 #define SYSCALL_BACKSPACE 4
 #define SYSCALL_GET_TIME 5
+#define SYSCALL_CLEAN_SCREEN 6
+#define SYSCALL_GET_TIME_UP 7
 
 // Syscall номера для malloc
 #define SYSCALL_MALLOC 10

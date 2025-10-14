@@ -11,7 +11,7 @@ SECTIONS
 {
   . = 0x00100000;
 
-  .multiboot ALIGN(4) : { KEEP(*(.multiboot)) } :text
+  .multiboot ALIGN(8) : { KEEP(*(.multiboot)) } :text
 
   .text : {
     *(.text)
