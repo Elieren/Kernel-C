@@ -1,5 +1,8 @@
 /* kernel.c */
-#include "vga/vga.h"
+// #include "vga/vga.h"
+
+#include "vga/vga_graphics.h"
+
 #include "keyboard/keyboard.h"
 #include "portio/portio.h"
 
@@ -19,8 +22,6 @@
 #include "multitask/multitask.h"
 #include "tasks/tasks.h"
 
-// #include "user/terminal_bin.h"
-
 #include "ramdisk/ramdisk.h"
 #include "fat16/fs.h"
 
@@ -36,6 +37,12 @@
 
 #include "default_files.h"
 
+uint64_t fb_addr = 0;
+uint32_t fb_width = 0;
+uint32_t fb_height = 0;
+uint8_t fb_bpp = 0;
+uint32_t fb_pitch = 0;
+
 /* символы из link.ld */
 extern char _heap_start;
 extern char _heap_end;
@@ -45,87 +52,6 @@ uint64_t g_saved_user_rsp = 0;
 /*-------------------------------------------------------------
     Debug-функции: полностью исключаются из release сборки
 -------------------------------------------------------------*/
-#ifdef DEBUG
-static void debug_run_tests(void)
-{
-    print_char_position('X', 5, 10, WHITE, RED);
-
-    // const char *secs = sys_get_seconds_str();
-    // print_string_position(secs, 0, 20, WHITE, RED);
-
-    /* Пример: выделить 2 MiB через syscall */
-    void *p = malloc(2 * 1024 * 1024);
-    if (p)
-    {
-        char *s = (char *)p;
-        strcpy(s, "Hello from kernel heap!");
-        print_string_position(s, 50, 15, WHITE, RED);
-
-        /* расширяем до 3 MiB через syscall */
-        p = realloc(p, 3 * 1024 * 1024);
-        if (p)
-        {
-            s = (char *)p;
-            print_string_position(s, 50, 17, WHITE, RED);
-        }
-
-        /* освобождение через syscall */
-        free(p);
-    }
-
-    print_kmalloc_stats();
-}
-
-char *itoa(uint32_t num, char *str, int base)
-{
-    int i = 0;
-    if (num == 0)
-    {
-        str[i++] = '0';
-        str[i] = '\0';
-        return str;
-    }
-
-    while (num > 0)
-    {
-        int rem = num % base;
-        str[i++] = (rem > 9) ? (rem - 10) + 'A' : rem + '0';
-        num /= base;
-    }
-
-    str[i] = '\0';
-
-    // Разворачиваем строку
-    for (int j = 0; j < i / 2; j++)
-    {
-        char temp = str[j];
-        str[j] = str[i - j - 1];
-        str[i - j - 1] = temp;
-    }
-
-    return str;
-}
-
-void list_root_dir(void)
-{
-    static fs_entry_t files[FS_MAX_ENTRIES];
-    int count = fs_get_all_in_dir(files, FS_MAX_ENTRIES, FS_ROOT_IDX); // всегда корень
-    char size_buf[40];
-
-    print_string_position("Root directory:", 0, 0, RED, BLACK);
-
-    for (int i = 0; i < count; i++)
-    {
-        print_string_position(files[i].name, 0, i + 1, WHITE, BLACK);
-        if (!files[i].is_dir)
-        {
-            itoa(files[i].size, size_buf, 10);
-            print_string_position(size_buf, 22, i + 1, RED, BLACK);
-        }
-    }
-}
-
-#endif // DEBUG
 
 void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, unsigned int dat)
 {
@@ -196,6 +122,19 @@ int init_autorun(const char *autorun)
 -------------------------------------------------------------*/
 void kmain(void)
 {
+    fb_addr = 0xA0000;
+    fb_width = 1024;
+    fb_height = 768;
+    fb_bpp = 32;
+    fb_pitch = fb_width * (fb_bpp / 8);
+
+    clear_screen_graphics(255);
+    draw_pixel(0, 0, 255);
+    draw_pixel(15, 15, 255);
+    draw_pixel(30, 30, 255);
+    draw_pixel(100, 100, 255);
+    draw_pixel(1024, 768, 255);
+
     /* Инициализация прерываний и таймера */
     idt_install();
     init_system_clock();
@@ -219,19 +158,13 @@ void kmain(void)
     load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
     load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
 
-    clean_screen();
+    // clear_screen_graphics(0);
 
     scheduler_init();
     tasks_init();
 
     /* Разрешаем прерывания */
     asm volatile("sti");
-
-    /* Запуск debug-фич, если включено */
-#ifdef DEBUG
-    debug_run_tests();
-    // list_root_dir();
-#endif
 
     /* Основной бесконечный цикл ядра */
     for (;;)
