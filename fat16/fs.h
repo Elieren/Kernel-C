@@ -5,9 +5,9 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define FS_NAME_MAX 64
+#define FS_NAME_MAX 255
 #define FS_EXT_MAX 64
-#define FS_MAX_ENTRIES 512 // файлы + каталоги
+#define FS_MAX_ENTRIES 2048 // файлы + каталоги
 
 /* Индекс корневого каталога в таблице записей */
 #define FS_ROOT_IDX 0
