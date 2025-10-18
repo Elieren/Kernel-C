@@ -4,8 +4,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define BYTES_PER_SECTOR 512
-#define SECTORS_PER_CLUSTER 1
+#define BYTES_PER_SECTOR 8192
+#define SECTORS_PER_CLUSTER 64
 #define RESERVED_SECTORS 1
 #define NUM_FATS 2
 #define SECTORS_PER_FAT 32

@@ -40,6 +40,10 @@ extern kmain        ; 64-bit C entry point (link with -m64 objects)
 start:
     cli                     ; отключаем прерывания
 
+    mov dword [multiboot_ptr], ebx
+    xor edx, edx
+    mov dword [multiboot_ptr+4], edx
+
     ; --- Загружаем GDT (должен содержать 64-bit code selector в 0x08) ---
     lgdt [gdt_desc]
 
@@ -82,6 +86,7 @@ long_mode_entry:
     and rsp, -16
 
     ; вызов 64-битного kmain (собранного с -m64)
+    mov rdi, qword [rel multiboot_ptr]   ; первый аргумент: mb info pointer
     call kmain
 
 .hang64:
@@ -112,6 +117,8 @@ section .bss
 align 16
 resb 16384
 stack64_top:
+align 8
+multiboot_ptr:    resq 1    ; 8 байт для указателя
 
 ; -----------------------------------------------------------------------
 ; Простая identity map: PML4 -> PDPT -> PD (512 x 2MiB = 1GiB)

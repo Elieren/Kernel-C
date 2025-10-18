@@ -1,6 +1,7 @@
 /* kernel.c */
 // #include "vga/vga.h"
 
+#include "vga/framebuffer.h"
 #include "vga/vga_graphics.h"
 
 #include "keyboard/keyboard.h"
@@ -37,11 +38,11 @@
 
 #include "default_files.h"
 
-uint64_t fb_addr = 0;
+uintptr_t fb_addr = 0;
 uint32_t fb_width = 0;
 uint32_t fb_height = 0;
-uint8_t fb_bpp = 0;
 uint32_t fb_pitch = 0;
+uint8_t fb_bpp = 0;
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -122,18 +123,42 @@ int init_autorun(const char *autorun)
 -------------------------------------------------------------*/
 void kmain(void)
 {
-    fb_addr = 0xA0000;
-    fb_width = 1024;
-    fb_height = 768;
-    fb_bpp = 32;
-    fb_pitch = fb_width * (fb_bpp / 8);
+    uint64_t mb_addr;
+
+    /* Считать текущее содержимое RDI в mb_addr.
+       volatile — чтобы инструкция не была оптимизирована/перемещена. */
+    __asm__ volatile("mov %%rdi, %0" : "=r"(mb_addr));
+
+    struct fb_info fb;
+    if (parse_multiboot2_framebuffer(mb_addr, &fb) == 0)
+    {
+        /* Инициализируем графику */
+        fb_addr = (uintptr_t)fb.addr;
+        fb_width = fb.width;
+        fb_height = fb.height;
+        fb_bpp = fb.bpp;
+        fb_pitch = fb.pitch;
+    }
+    else
+    {
+        fb_addr = (uintptr_t)0xA0000;
+        fb_width = 640;
+        fb_height = 480;
+        fb_bpp = 32;
+        fb_pitch = fb_width * fb_bpp / 8;
+    }
 
     clear_screen_graphics(255);
-    draw_pixel(0, 0, 255);
-    draw_pixel(15, 15, 255);
-    draw_pixel(30, 30, 255);
-    draw_pixel(100, 100, 255);
-    draw_pixel(1024, 768, 255);
+    for (int i = 0; i <= 20; i++)
+    {
+        for (int x = 0; x <= 20; x++)
+        {
+            draw_pixel(x, i, 0);
+        }
+    }
+    draw_pixel(15, 15, 0);
+    draw_pixel(30, 30, 0);
+    draw_pixel(100, 100, 0);
 
     /* Инициализация прерываний и таймера */
     idt_install();
