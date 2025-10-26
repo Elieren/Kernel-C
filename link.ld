@@ -31,15 +31,10 @@ SECTIONS
     *(COMMON)
   } :data
 
-  .heap : {
+  .heap (NOLOAD) : {
+    . = ALIGN(8);
     _heap_start = .;
-    . = . + 128 * 1024 * 1024;
+    . = . + 512 * 1024 * 1024;
     _heap_end = .;
-  } :data
-
-  .user : {
-    _user_start = .;
-    . = . + 128 * 1024 * 1024;
-    _user_end = .;
   } :data
 }

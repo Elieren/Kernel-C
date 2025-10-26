@@ -24,8 +24,6 @@
 #include "ramdisk/ramdisk.h"
 #include "fat16/fs.h"
 
-#include "malloc/user_malloc.h"
-
 #include "user/terminal.h"
 #include "user/htop.h"
 #include "user/clear.h"
@@ -205,7 +203,6 @@ void kmain(void)
     /* Вычисляем размер кучи по линкер-символам */
     size_t heap_size = (size_t)((uintptr_t)&_heap_end - (uintptr_t)&_heap_start);
     malloc_init(&_heap_start, heap_size);
-    user_malloc_init();
 
     fs_init();
 
