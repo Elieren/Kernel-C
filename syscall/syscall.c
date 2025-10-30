@@ -9,6 +9,7 @@
 #include "../multitask/multitask.h"
 #include "../fat16/fs.h"
 #include "../time/clock/clock.h"
+#include "../vga/exception_handler/kprint.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -176,6 +177,9 @@ uintptr_t syscall_handler(
 
     case SYSCALL_TASK_IS_ALIVE:
         return task_is_alive((int)rdi);
+
+    case THROW_AN_EXCEPTION:
+        return kprint((uint8_t)rdi, (const char *)(uintptr_t)rsi);
 
     default:
         return (uintptr_t)-1;

@@ -12,6 +12,8 @@ BITS 64
 %define SYSCALL_TASK_IS_ALIVE 205
 %define SYSCALL_TASK_STOP 202
 
+%define THROW_AN_EXCEPTION 300
+
 %define VGA_WIDTH 80
 %define VGA_HEIGHT 25
 
@@ -83,7 +85,7 @@ _start:
     mov rax, SYSCALL_TASK_CREATE    ; номер syscall (пример, выбери свой)
     int 0x80
     cmp rax, 0
-    je .child_ended
+    je .task_create_failed
     mov r15, rax
 
     jmp .poll_child_alive
@@ -105,6 +107,49 @@ _start:
 .still_running:
     hlt
     jmp .poll_child_alive
+
+.task_create_failed:
+    ; куда записывать: notfound_msg
+    lea     rdi, [rel notfound_msg]    ; rdi -> позиция записи в notfound_msg
+
+    ; источник: error_message
+    lea     rsi, [rel error_message]   ; rsi -> позиция чтения из error_message
+.copy_error:
+    mov     al, [rsi]
+    test    al, al
+    je      .copy_name
+    mov     [rdi], al
+    inc     rsi
+    inc     rdi
+    jmp     .copy_error
+
+.copy_name:
+    ; rbx = pointer на буфер с именем программы (qword в .bss)
+    mov     rbx, [rel input_buffer_ptr]
+    test    rbx, rbx
+    je      .term_msg
+
+.copy_name_loop:
+    mov     al, [rbx]
+    test    al, al
+    je      .term_msg
+    mov     [rdi], al
+    inc     rbx
+    inc     rdi
+    jmp     .copy_name_loop
+
+.term_msg:
+    mov     byte [rdi], 10              ; newline
+    inc     rdi
+    mov     byte [rdi], 0              ; null-terminate
+
+    ; syscall THROW_AN_EXCEPTION (300) with rdi=2, rsi=pointer_to_message
+    mov     rdi, 3
+    lea     rsi, [rel notfound_msg]
+    mov     rax, THROW_AN_EXCEPTION
+    int     0x80
+
+    jmp     .child_ended
 
 .child_ended:
     lea rdi, [rel prompt_msg]
@@ -169,7 +214,9 @@ new_line:
 section .bss
     input_len: resq 1
     input_buffer_ptr:  resq 1    ; буфер на 8192 символов
+    notfound_msg: resb 256
 
 section .data
     prompt_msg db "$: ", 0
     welcome_msg db "SimpleTerm v0.1", 10, 0
+    error_message db "Command not found: ", 0
