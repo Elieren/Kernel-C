@@ -9,6 +9,6 @@ enum kprint_type
     KPRINT_NORMAL,
 };
 
-int kprint(const uint8_t type, const char *str);
+int kprint(const uint8_t type, const char *format, ...);
 
 #endif
