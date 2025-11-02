@@ -26,10 +26,20 @@ mb2_start:
     ; checksum = -(magic + arch + length)  (выражение ниже даёт 32-bit)
     dd 0x100000000 - (0xE85250D6 + 0x00000000 + (mb2_end - mb2_start))
 
-    ; --- минимальный список тэгов: конец (type=0, flags=0, size=8) ---
-    dw 0x0000                  ; tag type = 0 (end)
-    dw 0x0000                  ; flags = 0
-    dd 0x00000008              ; size = 8
+    ; --- Framebuffer (header) tag: request preferred mode ---
+    align 8
+    dw 5        ; tag type = 5 (framebuffer request in header)
+    dw 0        ; flags (0 = required; if you want optional set bit0)
+    dd 20       ; size of this tag (header + payload: 2+2+4 + 3*4 = 20)
+    dd 1024     ; width (px)  <-- поменяйте на нужную
+    dd 768      ; height (px) <-- поменяйте на нужную
+    dd 32       ; bpp (bits per pixel) <-- 32 обычно
+
+    ; --- End tag ---
+    align 8
+    dw 0
+    dw 0
+    dd 8
 
 mb2_end:
 
@@ -39,10 +49,6 @@ extern kmain        ; 64-bit C entry point (link with -m64 objects)
 
 start:
     cli                     ; отключаем прерывания
-
-    mov dword [multiboot_ptr], ebx
-    xor edx, edx
-    mov dword [multiboot_ptr+4], edx
 
     ; --- Загружаем GDT (должен содержать 64-bit code selector в 0x08) ---
     lgdt [gdt_desc]
@@ -86,7 +92,7 @@ long_mode_entry:
     and rsp, -16
 
     ; вызов 64-битного kmain (собранного с -m64)
-    mov rdi, qword [rel multiboot_ptr]   ; первый аргумент: mb info pointer
+    mov rdi, rbx
     call kmain
 
 .hang64:
@@ -115,10 +121,9 @@ gdt_desc:
 ; -----------------------------------------------------------------------
 section .bss
 align 16
-resb 16384
+stack64_bottom:
+    resb 65536           ; резервируем 64 KiB под стек
 stack64_top:
-align 8
-multiboot_ptr:    resq 1    ; 8 байт для указателя
 
 ; -----------------------------------------------------------------------
 ; Простая identity map: PML4 -> PDPT -> PD (512 x 2MiB = 1GiB)
@@ -138,7 +143,7 @@ pdpt_table:
 align 4096
 pd_table:
 %assign j 0
-%rep 512
+%rep 1024
     ; addr = j * 0x200000, flags = Present | RW | US | PS(2MiB) = 0x87
     dq j * 0x200000 + 0x087
 %assign j j + 1

@@ -35,6 +35,8 @@
 #define SYSCALL_TASK_EXIT 204
 #define SYSCALL_TASK_IS_ALIVE 205
 
+#define THROW_AN_EXCEPTION 300
+
 // Обёртки для удобства
 // Обертки для пользовательского кода
 static inline void syscall_print_char(char c, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)

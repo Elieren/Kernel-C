@@ -8,8 +8,8 @@
 #include "../keyboard/keyboard.h"
 #include "../multitask/multitask.h"
 #include "../fat16/fs.h"
-#include "../malloc/user_malloc.h"
 #include "../time/clock/clock.h"
+#include "../vga/exception_handler/kprint.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -51,8 +51,8 @@ uint64_t load_and_run_program(const char *str)
         return 0;
     }
 
-    // 3. Выделить память для файла через user_malloc
-    void *user_mem = user_malloc(entry.size + 1024);
+    // 3. Выделить память для файла через malloc
+    void *user_mem = malloc(entry.size + 1024);
     if (!user_mem)
     {
         asm volatile("sti");
@@ -68,7 +68,7 @@ uint64_t load_and_run_program(const char *str)
     uint64_t pid = utask_create((void (*)(void))user_mem, 16384, user_mem, entry.size);
     if (pid == 0)
     {
-        user_free(user_mem);
+        free(user_mem);
         asm volatile("sti");
         return 0; // не удалось создать задачу
     }
@@ -177,6 +177,9 @@ uintptr_t syscall_handler(
 
     case SYSCALL_TASK_IS_ALIVE:
         return task_is_alive((int)rdi);
+
+    case THROW_AN_EXCEPTION:
+        return kprint((uint8_t)rdi, (const char *)(uintptr_t)rsi);
 
     default:
         return (uintptr_t)-1;

@@ -7,7 +7,6 @@
 #include "../libc/string.h"
 #include "../vga/vga.h"
 #include "../syscall/syscall.h"
-#include "../malloc/user_malloc.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -290,7 +289,7 @@ static void free_task_resources(task_t *t)
 
     if (t->user_mem)
     {
-        user_free(t->user_mem);
+        free(t->user_mem);
         t->user_mem = NULL;
         t->user_mem_size = 0;
     }

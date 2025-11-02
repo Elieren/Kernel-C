@@ -3,7 +3,6 @@
 #include "../vga/vga.h"
 #include "../syscall/syscall.h"
 #include "../fat16/fs.h"
-#include "../malloc/user_malloc.h"
 #include "../libc/string.h"
 
 /* Задача-реапер: бесконечно вызывает reap_zombies(), можно вызывать каждые N тикoв */
@@ -162,7 +161,7 @@ void load_and_run_from_autorun(void)
                         continue; // Пропустить пустой файл
                     }
                     // Выделить память для файла
-                    void *user_mem = user_malloc(file_entry.size + 1024);
+                    void *user_mem = malloc(file_entry.size + 1024);
                     if (!user_mem)
                     {
                         break;

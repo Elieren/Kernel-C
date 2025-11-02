@@ -1,6 +1,6 @@
 target remote :1234
-symbol-file iso/boot/kernel
+symbol-file iso/boot/kernel.elf
+break kernel.asm:54
+break kernel.asm:55
 break kmain
-break kernel.asm:41
-break kernel.c:131
-break kernel.c:147
+break kernel.c:228

@@ -1,9 +1,5 @@
 /* kernel.c */
-// #include "vga/vga.h"
-
-#include "vga/framebuffer.h"
-#include "vga/vga_graphics.h"
-
+#include "vga/vga.h"
 #include "keyboard/keyboard.h"
 #include "portio/portio.h"
 
@@ -23,10 +19,10 @@
 #include "multitask/multitask.h"
 #include "tasks/tasks.h"
 
+// #include "user/terminal_bin.h"
+
 #include "ramdisk/ramdisk.h"
 #include "fat16/fs.h"
-
-#include "malloc/user_malloc.h"
 
 #include "user/terminal.h"
 #include "user/htop.h"
@@ -38,11 +34,8 @@
 
 #include "default_files.h"
 
-uintptr_t fb_addr = 0;
-uint32_t fb_width = 0;
-uint32_t fb_height = 0;
-uint32_t fb_pitch = 0;
-uint8_t fb_bpp = 0;
+#include "vga/mb2/mb2.h"
+#include "vga/exception_handler/kprint.h"
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -53,6 +46,87 @@ uint64_t g_saved_user_rsp = 0;
 /*-------------------------------------------------------------
     Debug-функции: полностью исключаются из release сборки
 -------------------------------------------------------------*/
+#ifdef DEBUG
+static void debug_run_tests(void)
+{
+    print_char_position('X', 5, 10, WHITE, RED);
+
+    // const char *secs = sys_get_seconds_str();
+    // print_string_position(secs, 0, 20, WHITE, RED);
+
+    /* Пример: выделить 2 MiB через syscall */
+    void *p = malloc(2 * 1024 * 1024);
+    if (p)
+    {
+        char *s = (char *)p;
+        strcpy(s, "Hello from kernel heap!");
+        print_string_position(s, 50, 15, WHITE, RED);
+
+        /* расширяем до 3 MiB через syscall */
+        p = realloc(p, 3 * 1024 * 1024);
+        if (p)
+        {
+            s = (char *)p;
+            print_string_position(s, 50, 17, WHITE, RED);
+        }
+
+        /* освобождение через syscall */
+        free(p);
+    }
+
+    print_kmalloc_stats();
+}
+
+char *itoa(uint32_t num, char *str, int base)
+{
+    int i = 0;
+    if (num == 0)
+    {
+        str[i++] = '0';
+        str[i] = '\0';
+        return str;
+    }
+
+    while (num > 0)
+    {
+        int rem = num % base;
+        str[i++] = (rem > 9) ? (rem - 10) + 'A' : rem + '0';
+        num /= base;
+    }
+
+    str[i] = '\0';
+
+    // Разворачиваем строку
+    for (int j = 0; j < i / 2; j++)
+    {
+        char temp = str[j];
+        str[j] = str[i - j - 1];
+        str[i - j - 1] = temp;
+    }
+
+    return str;
+}
+
+void list_root_dir(void)
+{
+    static fs_entry_t files[FS_MAX_ENTRIES];
+    int count = fs_get_all_in_dir(files, FS_MAX_ENTRIES, FS_ROOT_IDX); // всегда корень
+    char size_buf[40];
+
+    print_string_position("Root directory:", 0, 0, RED, BLACK);
+
+    for (int i = 0; i < count; i++)
+    {
+        print_string_position(files[i].name, 0, i + 1, WHITE, BLACK);
+        if (!files[i].is_dir)
+        {
+            itoa(files[i].size, size_buf, 10);
+            print_string_position(size_buf, 22, i + 1, RED, BLACK);
+        }
+    }
+}
+
+#endif // DEBUG
 
 void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, unsigned int dat)
 {
@@ -118,75 +192,90 @@ int init_autorun(const char *autorun)
     return 0;
 }
 
+#define SERIAL_PORT 0x3F8 // COM1
+
+static inline void serial_write(char c)
+{
+    asm volatile("outb %0, %1" : : "a"(c), "Nd"(SERIAL_PORT));
+}
+
+void serial_print(const char *s)
+{
+    while (*s)
+        serial_write(*s++);
+}
+
+void serial_print_hex(uint64_t val)
+{
+    char hex[17];
+    for (int i = 0; i < 16; i++)
+    {
+        uint8_t nibble = (val >> ((15 - i) * 4)) & 0xF;
+        hex[i] = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
+    }
+    hex[16] = 0;
+    serial_print(hex);
+}
+
 /*-------------------------------------------------------------
     Основная функция ядра
 -------------------------------------------------------------*/
-void kmain(void)
+void kmain(uint64_t mb2_addr)
 {
-    uint64_t mb_addr;
-
-    /* Считать текущее содержимое RDI в mb_addr.
-       volatile — чтобы инструкция не была оптимизирована/перемещена. */
-    __asm__ volatile("mov %%rdi, %0" : "=r"(mb_addr));
-
-    struct fb_info fb;
-    if (parse_multiboot2_framebuffer(mb_addr, &fb) == 0)
-    {
-        /* Инициализируем графику */
-        fb_addr = (uintptr_t)fb.addr;
-        fb_width = fb.width;
-        fb_height = fb.height;
-        fb_bpp = fb.bpp;
-        fb_pitch = fb.pitch;
-    }
-    else
-    {
-        fb_addr = (uintptr_t)0xA0000;
-        fb_width = 640;
-        fb_height = 480;
-        fb_bpp = 32;
-        fb_pitch = fb_width * fb_bpp / 8;
-    }
-
-    clear_screen_graphics(255);
-    for (int i = 0; i <= 20; i++)
-    {
-        for (int x = 0; x <= 20; x++)
-        {
-            draw_pixel(x, i, 0);
-        }
-    }
-    draw_pixel(15, 15, 0);
-    draw_pixel(30, 30, 0);
-    draw_pixel(100, 100, 0);
-
     /* Инициализация прерываний и таймера */
     idt_install();
     init_system_clock();
     init_timer(1000);
     outb(0x21, 0xFC); // маска прерываний
+    // mb2_parse(mb2_addr);
 
     /* Вычисляем размер кучи по линкер-символам */
     size_t heap_size = (size_t)((uintptr_t)&_heap_end - (uintptr_t)&_heap_start);
     malloc_init(&_heap_start, heap_size);
-    user_malloc_init();
 
-    fs_init();
+    uint32_t *ptr32 = (uint32_t *)mb2_addr;
+    uint32_t total_size = ptr32[0]; // первый DWORD = total_size
+    uint32_t reserved = ptr32[1];   // второй DWORD = reserved
 
-    init_autorun(autorun);
+    uint8_t *ptr = (uint8_t *)mb2_addr + 8; // теперь ptr типа uint8_t*, отдельное имя
+    while (ptr < (uint8_t *)mb2_addr + total_size)
+    {
+        mb2_tag_t *tag = (mb2_tag_t *)ptr;
+        serial_print("Tag type=");
+        serial_print_hex(tag->type);
+        serial_print(", size=");
+        serial_print_hex(tag->size);
+        serial_print("\n");
+        if (tag->type == 0)
+            break;                   // end tag
+        ptr += (tag->size + 7) & ~7; // align 8
+    }
 
-    load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
-    load_app_to_fs("bin", "htop", "bin", htop_bin, htop_bin_len);
-    load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
-    load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
-    load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
-    load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
-    load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
+    // framebuffer_info_t *fb = get_framebuffer_info();
 
-    // clear_screen_graphics(0);
+    // // Пример: пишем первый пиксель в красный цвет
+    // if (fb && fb->addr)
+    // {
+    //     uint32_t *pixel = (uint32_t *)fb->addr;
+    //     *pixel = 0x00FF0000; // ARGB: красный
+    // }
 
-    scheduler_init();
-    tasks_init();
+    // fs_init();
+
+    // init_autorun(autorun);
+
+    // load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
+    // load_app_to_fs("bin", "htop", "bin", htop_bin, htop_bin_len);
+    // load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
+    // load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
+    // load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
+    // load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
+    // load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
+
+    // clean_screen();
+
+    // scheduler_init();
+    // tasks_init();
 
     /* Разрешаем прерывания */
     asm volatile("sti");

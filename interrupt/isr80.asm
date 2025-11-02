@@ -89,3 +89,6 @@ isr80:
 
 
     iretq
+
+section .note.GNU-stack
+; empty
