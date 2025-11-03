@@ -126,29 +126,60 @@ stack64_bottom:
 stack64_top:
 
 ; -----------------------------------------------------------------------
-; Простая identity map: PML4 -> PDPT -> PD (512 x 2MiB = 1GiB)
-; Используем выровненные таблицы, создаём 512 PDE, каждое значение = base_of_2MiB_chunk + flags
-; Флаги: Present | RW | PS(2MiB) = 0x83
-; PML4 entry and PDPT entry: Present | RW = 0x03
+; Identity-map 0..4GiB (2MiB pages) через PML4->PDPT->PD0..PD3
+; - PML4[0] -> PDPT
+; - PDPT[0..3] -> PD0..PD3 (каждый PD покрывает 1GiB)
+; Флаги: PD entries = 0x087 (Present|RW|US|PS(2MiB))
+; PML4/PDPT entries = 0x007 (Present|RW|US)
 ; -----------------------------------------------------------------------
 section .data
 align 4096
 pml4_table:
-    dq pdpt_table + 0x007    ; Present | RW | US
+    dq pdpt_table + 0x007    ; PML4[0] -> PDPT (flags in low bits)
 
 align 4096
 pdpt_table:
-    dq pd_table + 0x007      ; Present | RW | US
+    dq pd_table0 + 0x007     ; PDPT[0] -> PD0 (0..1GiB)
+    dq pd_table1 + 0x007     ; PDPT[1] -> PD1 (1..2GiB)
+    dq pd_table2 + 0x007     ; PDPT[2] -> PD2 (2..3GiB)
+    dq pd_table3 + 0x007     ; PDPT[3] -> PD3 (3..4GiB)
+    ; остальные записи нулевые (по умолчанию)
 
+; PD0: maps 0x0000_0000 .. 0x3FF_FFFF (1 GiB)
 align 4096
-pd_table:
+pd_table0:
 %assign j 0
-%rep 1024
-    ; addr = j * 0x200000, flags = Present | RW | US | PS(2MiB) = 0x87
+%rep 512
     dq j * 0x200000 + 0x087
 %assign j j + 1
 %endrep
 
+; PD1: maps 0x4000_0000 .. 0x7FF_FFFF
+align 4096
+pd_table1:
+%assign j 512
+%rep 512
+    dq j * 0x200000 + 0x087
+%assign j j + 1
+%endrep
+
+; PD2: maps 0x8000_0000 .. 0xBFF_FFFF
+align 4096
+pd_table2:
+%assign j 1024
+%rep 512
+    dq j * 0x200000 + 0x087
+%assign j j + 1
+%endrep
+
+; PD3: maps 0xC000_0000 .. 0xFFF_FFFF  (сюда попадает 0xFD000000)
+align 4096
+pd_table3:
+%assign j 1536
+%rep 512
+    dq j * 0x200000 + 0x087
+%assign j j + 1
+%endrep
 
 ; -----------------------------------------------------------------------
 ; Конец

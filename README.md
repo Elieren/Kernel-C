@@ -51,7 +51,7 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [ ] Added commands `ls`, `cd`, `pwd` for working with the file system and moving around directories.
 
-* [ ] Added graphics mode with screen resolution support.
+* [x] Added graphics mode with screen resolution support.
 
 * [ ] Added sleep support to power modes.
 

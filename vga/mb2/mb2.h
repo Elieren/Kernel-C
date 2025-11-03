@@ -2,44 +2,25 @@
 #define MB2_H
 
 #include <stdint.h>
+#include <stddef.h>
 
-typedef struct mb2_tag
+typedef struct __attribute__((packed))
 {
-    uint32_t type;
-    uint32_t size;
-} __attribute__((packed)) mb2_tag_t;
+    uint32_t type; /* тип тега (например, 8 = framebuffer) */
+    uint32_t size; /* общий размер тега в байтах (включая эти 8 байт) */
+} mb2_tag_t;
 
-// Framebuffer tag (type = 5)
-typedef struct mb2_tag_framebuffer
+typedef struct
 {
-    uint32_t type;
-    uint32_t size;
-    uint64_t framebuffer_addr;
-    uint32_t framebuffer_pitch;
-    uint32_t framebuffer_width;
-    uint32_t framebuffer_height;
-    uint8_t framebuffer_bpp;
-    uint8_t framebuffer_type;
-    uint16_t reserved;
-} __attribute__((packed)) mb2_tag_framebuffer_t;
-
-typedef struct mb2_info
-{
-    uint32_t total_size;
-    uint32_t reserved;
-} __attribute__((packed)) mb2_info_t;
-
-typedef struct framebuffer_info
-{
-    uint64_t addr;
-    uint32_t pitch;
-    uint32_t width;
-    uint32_t height;
-    uint8_t bpp;
+    uint64_t addr;   /* физический адрес начала фреймбуфера */
+    uint32_t pitch;  /* количество байт в одной строке (0, если неизвестно) */
+    uint32_t width;  /* ширина экрана в пикселях */
+    uint32_t height; /* высота экрана в пикселях */
+    uint8_t bpp;     /* количество бит на пиксель (0, если неизвестно) */
+    uint8_t fb_type; /* тип фреймбуфера (например, RGB = 1, текстовый = 2 и т.п.) */
 } framebuffer_info_t;
 
-// Функции
 void mb2_parse(uint64_t mb2_addr);
 framebuffer_info_t *get_framebuffer_info(void);
 
-#endif // MB2_H
+#endif /* MB2_H */

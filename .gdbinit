@@ -4,3 +4,5 @@ break kernel.asm:54
 break kernel.asm:55
 break kmain
 break kernel.c:228
+break vga/mb2/mb2.c:71
+break vga/mb2/mb2.c:85

@@ -36,6 +36,7 @@
 
 #include "vga/mb2/mb2.h"
 #include "vga/exception_handler/kprint.h"
+#include "vga/graphics.h"
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -227,38 +228,28 @@ void kmain(uint64_t mb2_addr)
     init_system_clock();
     init_timer(1000);
     outb(0x21, 0xFC); // маска прерываний
-    // mb2_parse(mb2_addr);
+    mb2_parse(mb2_addr);
 
     /* Вычисляем размер кучи по линкер-символам */
     size_t heap_size = (size_t)((uintptr_t)&_heap_end - (uintptr_t)&_heap_start);
     malloc_init(&_heap_start, heap_size);
 
-    uint32_t *ptr32 = (uint32_t *)mb2_addr;
-    uint32_t total_size = ptr32[0]; // первый DWORD = total_size
-    uint32_t reserved = ptr32[1];   // второй DWORD = reserved
+    gfx_init(get_framebuffer_info());
 
-    uint8_t *ptr = (uint8_t *)mb2_addr + 8; // теперь ptr типа uint8_t*, отдельное имя
-    while (ptr < (uint8_t *)mb2_addr + total_size)
-    {
-        mb2_tag_t *tag = (mb2_tag_t *)ptr;
-        serial_print("Tag type=");
-        serial_print_hex(tag->type);
-        serial_print(", size=");
-        serial_print_hex(tag->size);
-        serial_print("\n");
-        if (tag->type == 0)
-            break;                   // end tag
-        ptr += (tag->size + 7) & ~7; // align 8
-    }
+    /* Очистим экран серым */
+    gfx_clear(0x00404040);
 
-    // framebuffer_info_t *fb = get_framebuffer_info();
+    /* Нарисуем диагональ белым */
+    gfx_draw_line(0, 0, 500, 500, 0x00FFFFFF);
 
-    // // Пример: пишем первый пиксель в красный цвет
-    // if (fb && fb->addr)
-    // {
-    //     uint32_t *pixel = (uint32_t *)fb->addr;
-    //     *pixel = 0x00FF0000; // ARGB: красный
-    // }
+    /* Точка */
+    gfx_draw_point(50, 50, 0x00FF0000); /* красная точка */
+
+    /* Кружок (outline) */
+    gfx_draw_circle(200, 200, 80, 0x0000FF00); /* зелёный outline */
+
+    /* Заполненный круг */
+    gfx_fill_circle(400, 200, 60, 0x000000FF); /* синий filled */
 
     // fs_init();
 
