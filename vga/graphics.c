@@ -234,6 +234,83 @@ void gfx_fill_circle(int32_t xc, int32_t yc, int32_t radius, uint32_t color)
     }
 }
 
+/* Рисует контур прямоугольника (x0,y0)-(x1,y1) */
+void gfx_draw_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
+{
+    if (!g_fb)
+        return;
+
+    /* нормализуем координаты */
+    if (x0 > x1)
+    {
+        int32_t t = x0;
+        x0 = x1;
+        x1 = t;
+    }
+    if (y0 > y1)
+    {
+        int32_t t = y0;
+        y0 = y1;
+        y1 = t;
+    }
+
+    /* если высота нулевая — рисуем горизонтальную линию */
+    if (y0 == y1)
+    {
+        draw_hline_clipped(x0, x1, y0, color);
+        return;
+    }
+
+    /* если ширина нулевая — рисуем вертикальную линию */
+    if (x0 == x1)
+    {
+        for (int32_t y = y0; y <= y1; ++y)
+            if (in_bounds(x0, y))
+                gfx_put_pixel((uint32_t)x0, (uint32_t)y, color);
+        return;
+    }
+
+    /* верх и низ */
+    draw_hline_clipped(x0, x1, y0, color);
+    draw_hline_clipped(x0, x1, y1, color);
+
+    /* левый и правый края (по пикселю) */
+    for (int32_t y = y0; y <= y1; ++y)
+    {
+        if (in_bounds(x0, y))
+            gfx_put_pixel((uint32_t)x0, (uint32_t)y, color);
+        if (in_bounds(x1, y))
+            gfx_put_pixel((uint32_t)x1, (uint32_t)y, color);
+    }
+}
+
+/* Заполняет прямоугольник (x0,y0)-(x1,y1) цветом */
+void gfx_fill_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
+{
+    if (!g_fb)
+        return;
+
+    /* нормализуем координаты */
+    if (x0 > x1)
+    {
+        int32_t t = x0;
+        x0 = x1;
+        x1 = t;
+    }
+    if (y0 > y1)
+    {
+        int32_t t = y0;
+        y0 = y1;
+        y1 = t;
+    }
+
+    /* перебираем строки и рисуем отрезки (draw_hline_clipped сам обрежет по X) */
+    for (int32_t y = y0; y <= y1; ++y)
+    {
+        draw_hline_clipped(x0, x1, y, color);
+    }
+}
+
 /* заполнить весь экран заданным цветом */
 void gfx_clear(uint32_t color)
 {
@@ -243,5 +320,52 @@ void gfx_clear(uint32_t color)
     for (uint32_t y = 0; y < h; ++y)
     {
         draw_hline_clipped(0, (int32_t)g_fb->width - 1, (int32_t)y, color);
+    }
+}
+
+void gfx_draw_glyph(const uint8_t *glyph, int x0, int y0, uint32_t color, int scale)
+{
+    if (!glyph)
+        return;
+    if (scale <= 0)
+        scale = 1;
+
+    if (scale == 1)
+    {
+        /* быстрый путь для scale == 1 */
+        for (int row = 0; row < 8; row++)
+        {
+            uint8_t line = glyph[row];
+            for (int col = 0; col < 8; col++)
+            {
+                if (line & (1u << (7 - col)))
+                {
+                    gfx_put_pixel((uint32_t)(x0 + col), (uint32_t)(y0 + row), color);
+                }
+            }
+        }
+    }
+    else
+    {
+        /* масштабируем каждый включённый пиксель в квадрат scale x scale */
+        for (int row = 0; row < 8; row++)
+        {
+            uint8_t line = glyph[row];
+            for (int col = 0; col < 8; col++)
+            {
+                if (line & (1u << (7 - col)))
+                {
+                    int base_x = x0 + col * scale;
+                    int base_y = y0 + row * scale;
+                    for (int dy = 0; dy < scale; ++dy)
+                    {
+                        for (int dx = 0; dx < scale; ++dx)
+                        {
+                            gfx_put_pixel((uint32_t)(base_x + dx), (uint32_t)(base_y + dy), color);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

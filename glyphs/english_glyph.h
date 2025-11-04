@@ -1,0 +1,634 @@
+#ifndef ENGLISH_GLYPH_H
+#define ENGLISH_GLYPH_H
+
+#include <stdint.h>
+
+// Upperscale
+
+/* glyph_A 8x8 */
+static const uint8_t glyph_A[8][1] = {
+    {0x3C},
+    {0x42},
+    {0x42},
+    {0x7E},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+};
+
+/* glyph_B 8x8 */
+static const uint8_t glyph_B[8][1] = {
+    {0x7C},
+    {0x42},
+    {0x42},
+    {0x7C},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x7C},
+};
+
+/* glyph_C 8x8 */
+static const uint8_t glyph_C[8][1] = {
+    {0x3E},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x3E},
+};
+
+/* glyph_D 8x8 */
+static const uint8_t glyph_D[8][1] = {
+    {0x7C},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x7C},
+};
+
+/* glyph_E 8x8 */
+static const uint8_t glyph_E[8][1] = {
+    {0x7E},
+    {0x40},
+    {0x40},
+    {0x7C},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x7E},
+};
+
+/* glyph_F 8x8 */
+static const uint8_t glyph_F[8][1] = {
+    {0x7E},
+    {0x40},
+    {0x40},
+    {0x7C},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x40},
+};
+
+/* glyph_G 8x8 */
+static const uint8_t glyph_G[8][1] = {
+    {0x3E},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x4E},
+    {0x42},
+    {0x42},
+    {0x3E},
+};
+
+/* glyph_H 8x8 */
+static const uint8_t glyph_H[8][1] = {
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x7E},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+};
+
+/* glyph_I 8x8 */
+static const uint8_t glyph_I[8][1] = {
+    {0x7C},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x7C},
+};
+
+/* glyph_J 8x8 */
+static const uint8_t glyph_J[8][1] = {
+    {0x7E},
+    {0x08},
+    {0x08},
+    {0x08},
+    {0x08},
+    {0x08},
+    {0x48},
+    {0x30},
+};
+
+/* glyph_K 8x8 */
+static const uint8_t glyph_K[8][1] = {
+    {0x44},
+    {0x48},
+    {0x50},
+    {0x60},
+    {0x50},
+    {0x48},
+    {0x44},
+    {0x42},
+};
+
+/* glyph_L 8x8 */
+static const uint8_t glyph_L[8][1] = {
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x40},
+    {0x7C},
+};
+
+/* glyph_M 8x8 */
+static const uint8_t glyph_M[8][1] = {
+    {0x42},
+    {0x66},
+    {0x5A},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+};
+
+/* glyph_N 8x8 */
+static const uint8_t glyph_N[8][1] = {
+    {0x42},
+    {0x62},
+    {0x52},
+    {0x4A},
+    {0x46},
+    {0x42},
+    {0x42},
+    {0x42},
+};
+
+/* glyph_O 8x8 */
+static const uint8_t glyph_O[8][1] = {
+    {0x3C},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x3C},
+};
+
+/* glyph_P 8x8 */
+static const uint8_t glyph_P[8][1] = {
+    {0x7C},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x7C},
+    {0x40},
+    {0x40},
+    {0x40},
+};
+
+/* glyph_Q 8x8 */
+static const uint8_t glyph_Q[8][1] = {
+    {0x38},
+    {0x44},
+    {0x44},
+    {0x44},
+    {0x44},
+    {0x44},
+    {0x4C},
+    {0x3E},
+};
+
+/* glyph_R 8x8 */
+static const uint8_t glyph_R[8][1] = {
+    {0x7C},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x7C},
+    {0x48},
+    {0x44},
+    {0x42},
+};
+
+/* glyph_S 8x8 */
+static const uint8_t glyph_S[8][1] = {
+    {0x3E},
+    {0x40},
+    {0x40},
+    {0x3C},
+    {0x02},
+    {0x02},
+    {0x02},
+    {0x7C},
+};
+
+/* glyph_T 8x8 */
+static const uint8_t glyph_T[8][1] = {
+    {0x7C},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x10},
+};
+
+/* glyph_U 8x8 */
+static const uint8_t glyph_U[8][1] = {
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x3C},
+};
+
+/* glyph_V 8x8 */
+static const uint8_t glyph_V[8][1] = {
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x42},
+    {0x24},
+    {0x18},
+};
+
+/* glyph_W 8x8 */
+static const uint8_t glyph_W[8][1] = {
+    {0x44},
+    {0x44},
+    {0x44},
+    {0x44},
+    {0x54},
+    {0x54},
+    {0x6C},
+    {0x44},
+};
+
+/* glyph_X 8x8 */
+static const uint8_t glyph_X[8][1] = {
+    {0x42},
+    {0x42},
+    {0x24},
+    {0x18},
+    {0x24},
+    {0x42},
+    {0x42},
+    {0x42},
+};
+
+/* glyph_Y 8x8 */
+static const uint8_t glyph_Y[8][1] = {
+    {0x44},
+    {0x44},
+    {0x44},
+    {0x44},
+    {0x38},
+    {0x10},
+    {0x10},
+    {0x10},
+};
+
+/* glyph_Z 8x8 */
+static const uint8_t glyph_Z[8][1] = {
+    {0x7E},
+    {0x02},
+    {0x04},
+    {0x08},
+    {0x10},
+    {0x20},
+    {0x40},
+    {0x7E},
+};
+
+// Lowerscale
+
+/* glyph_a 8x8 */
+static const uint8_t glyph_a[8][1] = {
+    {0x00},
+    {0x00},
+    {0x70},
+    {0x08},
+    {0x08},
+    {0x78},
+    {0x88},
+    {0x78},
+};
+
+/* glyph_b 8x8 */
+static const uint8_t glyph_b[8][1] = {
+    {0x00},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0xF0},
+    {0x88},
+    {0x88},
+    {0xF0},
+};
+
+/* glyph_c 8x8 */
+static const uint8_t glyph_c[8][1] = {
+    {0x00},
+    {0x00},
+    {0x70},
+    {0x88},
+    {0x80},
+    {0x80},
+    {0x88},
+    {0x70},
+};
+
+/* glyph_d 8x8 */
+static const uint8_t glyph_d[8][1] = {
+    {0x00},
+    {0x08},
+    {0x08},
+    {0x08},
+    {0x78},
+    {0x88},
+    {0x88},
+    {0x78},
+};
+
+/* glyph_e 8x8 */
+static const uint8_t glyph_e[8][1] = {
+    {0x00},
+    {0x00},
+    {0x70},
+    {0x88},
+    {0xF8},
+    {0x80},
+    {0x80},
+    {0x70},
+};
+
+/* glyph_f 8x8 */
+static const uint8_t glyph_f[8][1] = {
+    {0x00},
+    {0x30},
+    {0x48},
+    {0x40},
+    {0xE0},
+    {0x40},
+    {0x40},
+    {0x40},
+};
+
+/* glyph_g 8x8 */
+static const uint8_t glyph_g[8][1] = {
+    {0x00},
+    {0x00},
+    {0x78},
+    {0x88},
+    {0x88},
+    {0x78},
+    {0x08},
+    {0x70},
+};
+
+/* glyph_h 8x8 */
+static const uint8_t glyph_h[8][1] = {
+    {0x00},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0xF0},
+    {0x90},
+    {0x90},
+    {0x90},
+};
+
+/* glyph_i 8x8 */
+static const uint8_t glyph_i[8][1] = {
+    {0x00},
+    {0x80},
+    {0x00},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0x80},
+};
+
+/* glyph_j 8x8 */
+static const uint8_t glyph_j[8][1] = {
+    {0x00},
+    {0x10},
+    {0x00},
+    {0x10},
+    {0x10},
+    {0x10},
+    {0x90},
+    {0x60},
+};
+
+/* glyph_k 8x8 */
+static const uint8_t glyph_k[8][1] = {
+    {0x00},
+    {0x80},
+    {0x90},
+    {0xA0},
+    {0xC0},
+    {0xA0},
+    {0x90},
+    {0x88},
+};
+
+/* glyph_l 8x8 */
+static const uint8_t glyph_l[8][1] = {
+    {0x00},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0x80},
+};
+
+/* glyph_m 8x8 */
+static const uint8_t glyph_m[8][1] = {
+    {0x00},
+    {0x00},
+    {0xF0},
+    {0xA8},
+    {0xA8},
+    {0xA8},
+    {0xA8},
+    {0xA8},
+};
+
+/* glyph_n 8x8 */
+static const uint8_t glyph_n[8][1] = {
+    {0x00},
+    {0x00},
+    {0xF0},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x88},
+};
+
+/* glyph_o 8x8 */
+static const uint8_t glyph_o[8][1] = {
+    {0x00},
+    {0x00},
+    {0x70},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x70},
+};
+
+/* glyph_p 8x8 */
+static const uint8_t glyph_p[8][1] = {
+    {0x00},
+    {0x00},
+    {0xF0},
+    {0x88},
+    {0x88},
+    {0xF0},
+    {0x80},
+    {0x80},
+};
+
+/* glyph_q 8x8 */
+static const uint8_t glyph_q[8][1] = {
+    {0x00},
+    {0x00},
+    {0x78},
+    {0x88},
+    {0x88},
+    {0x78},
+    {0x08},
+    {0x08},
+};
+
+/* glyph_r 8x8 */
+static const uint8_t glyph_r[8][1] = {
+    {0x00},
+    {0x00},
+    {0xB0},
+    {0xC8},
+    {0x80},
+    {0x80},
+    {0x80},
+    {0x80},
+};
+
+/* glyph_s 8x8 */
+static const uint8_t glyph_s[8][1] = {
+    {0x00},
+    {0x00},
+    {0x78},
+    {0x80},
+    {0x70},
+    {0x08},
+    {0x08},
+    {0xF0},
+};
+
+/* glyph_t 8x8 */
+static const uint8_t glyph_t[8][1] = {
+    {0x00},
+    {0x40},
+    {0x40},
+    {0xE0},
+    {0x40},
+    {0x40},
+    {0x50},
+    {0x20},
+};
+
+/* glyph_u 8x8 */
+static const uint8_t glyph_u[8][1] = {
+    {0x00},
+    {0x00},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x98},
+    {0x68},
+};
+
+/* glyph_v 8x8 */
+static const uint8_t glyph_v[8][1] = {
+    {0x00},
+    {0x00},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x50},
+    {0x20},
+};
+
+/* glyph_w 8x8 */
+static const uint8_t glyph_w[8][1] = {
+    {0x00},
+    {0x00},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0xA8},
+    {0xD8},
+    {0x88},
+};
+
+/* glyph_x 8x8 */
+static const uint8_t glyph_x[8][1] = {
+    {0x00},
+    {0x00},
+    {0x88},
+    {0x88},
+    {0x70},
+    {0x88},
+    {0x88},
+    {0x88},
+};
+
+/* glyph_y 8x8 */
+static const uint8_t glyph_y[8][1] = {
+    {0x00},
+    {0x00},
+    {0x88},
+    {0x88},
+    {0x88},
+    {0x78},
+    {0x08},
+    {0x78},
+};
+
+/* glyph_z 8x8 */
+static const uint8_t glyph_z[8][1] = {
+    {0x00},
+    {0x00},
+    {0xF8},
+    {0x08},
+    {0x10},
+    {0x20},
+    {0x40},
+    {0xF8},
+};
+
+#endif

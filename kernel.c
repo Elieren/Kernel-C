@@ -38,6 +38,8 @@
 #include "vga/exception_handler/kprint.h"
 #include "vga/graphics.h"
 
+#include "vga/font.h"
+
 /* символы из link.ld */
 extern char _heap_start;
 extern char _heap_end;
@@ -127,6 +129,31 @@ void list_root_dir(void)
     }
 }
 
+#define SERIAL_PORT 0x3F8 // COM1
+
+static inline void serial_write(char c)
+{
+    asm volatile("outb %0, %1" : : "a"(c), "Nd"(SERIAL_PORT));
+}
+
+void serial_print(const char *s)
+{
+    while (*s)
+        serial_write(*s++);
+}
+
+void serial_print_hex(uint64_t val)
+{
+    char hex[17];
+    for (int i = 0; i < 16; i++)
+    {
+        uint8_t nibble = (val >> ((15 - i) * 4)) & 0xF;
+        hex[i] = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
+    }
+    hex[16] = 0;
+    serial_print(hex);
+}
+
 #endif // DEBUG
 
 void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, unsigned int dat)
@@ -193,31 +220,6 @@ int init_autorun(const char *autorun)
     return 0;
 }
 
-#define SERIAL_PORT 0x3F8 // COM1
-
-static inline void serial_write(char c)
-{
-    asm volatile("outb %0, %1" : : "a"(c), "Nd"(SERIAL_PORT));
-}
-
-void serial_print(const char *s)
-{
-    while (*s)
-        serial_write(*s++);
-}
-
-void serial_print_hex(uint64_t val)
-{
-    char hex[17];
-    for (int i = 0; i < 16; i++)
-    {
-        uint8_t nibble = (val >> ((15 - i) * 4)) & 0xF;
-        hex[i] = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
-    }
-    hex[16] = 0;
-    serial_print(hex);
-}
-
 /*-------------------------------------------------------------
     Основная функция ядра
 -------------------------------------------------------------*/
@@ -236,11 +238,11 @@ void kmain(uint64_t mb2_addr)
 
     gfx_init(get_framebuffer_info());
 
-    /* Очистим экран серым */
-    gfx_clear(0x00404040);
+    /* Очистим экран чёрный */
+    gfx_clear(0x00000000);
 
     /* Нарисуем диагональ белым */
-    gfx_draw_line(0, 0, 500, 500, 0x00FFFFFF);
+    gfx_draw_line(0, 0, 1919, 1079, 0x00FFFFFF);
 
     /* Точка */
     gfx_draw_point(50, 50, 0x00FF0000); /* красная точка */
@@ -250,6 +252,13 @@ void kmain(uint64_t mb2_addr)
 
     /* Заполненный круг */
     gfx_fill_circle(400, 200, 60, 0x000000FF); /* синий filled */
+
+    gfx_draw_rect(500, 500, 700, 800, 0x00FFA500);
+    gfx_fill_rect(800, 900, 900, 1000, 0x00FFA500);
+
+    int next_x = font_draw_text("username ", 10, 500, 0x00FF0000, 2, 2);
+    next_x = font_draw_text("$: ", next_x, 500, 0x0000FF00, 2, 2);
+    font_draw_text("Hello world!", next_x, 500, 0x00FFFFFF, 2, 2);
 
     // fs_init();
 

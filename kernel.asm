@@ -31,8 +31,8 @@ mb2_start:
     dw 5        ; tag type = 5 (framebuffer request in header)
     dw 0        ; flags (0 = required; if you want optional set bit0)
     dd 20       ; size of this tag (header + payload: 2+2+4 + 3*4 = 20)
-    dd 1024     ; width (px)  <-- поменяйте на нужную
-    dd 768      ; height (px) <-- поменяйте на нужную
+    dd 1920     ; width (px)  <-- поменяйте на нужную
+    dd 1080      ; height (px) <-- поменяйте на нужную
     dd 32       ; bpp (bits per pixel) <-- 32 обычно
 
     ; --- End tag ---
