@@ -37,7 +37,6 @@ typedef struct task_info
 void scheduler_init(void);
 /* теперь вместо pid передаём stack_size (0 = дефолт) */
 void task_create(void (*entry)(void), size_t stack_size);
-uint64_t *isr_timer_dispatch(uint64_t *regs_ptr);
 int task_list(task_info_t *buf, size_t max);
 int task_stop(int pid);
 void reap_zombies(void);

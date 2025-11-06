@@ -122,12 +122,12 @@ void kmain(uint64_t mb2_addr)
     init_system_clock();
     init_timer(1000);
     outb(0x21, 0xFC); // маска прерываний
-    mb2_parse(mb2_addr);
 
     /* Вычисляем размер кучи по линкер-символам */
     size_t heap_size = (size_t)((uintptr_t)&_heap_end - (uintptr_t)&_heap_start);
     malloc_init(&_heap_start, heap_size);
 
+    mb2_parse(mb2_addr);
     gfx_init(get_framebuffer_info());
 
     /* Очистим экран чёрный */
@@ -148,14 +148,6 @@ void kmain(uint64_t mb2_addr)
     gfx_draw_rect(500, 500, 700, 800, 0x00FFA500);
     gfx_fill_rect(800, 900, 900, 1000, 0x00FFA500);
 
-    gfx_draw_glyph((const uint8_t *)glyph_A, 100, 100, 0x00FFFFFF, 2);
-
-    gfx_put_cell(0, 0, 'A', 0x00FFFFFF);
-    gfx_put_cell(1, 0, 'B', 0x00FF0000);
-    gfx_put_cell(2, 0, 'C', 0x0000FF00);
-
-    // gfx_draw_all_from_cells();
-
     fs_init();
 
     // init_autorun(autorun);
@@ -175,6 +167,10 @@ void kmain(uint64_t mb2_addr)
 
     /* Разрешаем прерывания */
     asm volatile("sti");
+
+    gfx_put_cell(0, 0, 'A', 0x00FFFFFF);
+    gfx_put_cell(1, 0, 'B', 0x00FF0000);
+    gfx_put_cell(2, 0, 'C', 0x0000FF00);
 
     /* Основной бесконечный цикл ядра */
     for (;;)
