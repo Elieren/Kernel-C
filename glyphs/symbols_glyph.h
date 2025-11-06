@@ -3,8 +3,12 @@
 
 #include <stdint.h>
 
-/* glyph_space 8x8 */
-static const uint8_t glyph_space[8][1] = {
+/* glyph_space 8x12 */
+static const uint8_t glyph_space[12][1] = {
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
     {0x00},
     {0x00},
     {0x00},
@@ -15,51 +19,67 @@ static const uint8_t glyph_space[8][1] = {
     {0x00},
 };
 
-/* glyph_! 8x8 */
-static const uint8_t glyph_exclamation_mark[8][1] = {
-    {0x80},
-    {0x80},
-    {0x80},
-    {0x80},
-    {0x80},
-    {0x80},
+/* glyph_! 8x12 */
+static const uint8_t glyph_exclamation_mark[12][1] = {
+    {0x18},
+    {0x18},
+    {0x18},
+    {0x18},
+    {0x18},
+    {0x18},
+    {0x18},
+    {0x18},
+    {0x18},
     {0x00},
-    {0x80},
+    {0x18},
+    {0x18},
 };
 
-/* glyph_? 8x8 */
-static const uint8_t glyph_question_mark[8][1] = {
-    {0x40},
-    {0xA0},
-    {0x20},
-    {0x20},
-    {0x40},
-    {0x40},
+/* glyph_? 8x12 */
+static const uint8_t glyph_question_mark[12][1] = {
+    {0x3C},
+    {0x7E},
+    {0xE7},
+    {0xC3},
+    {0x03},
+    {0x07},
+    {0x0E},
+    {0x1C},
+    {0x18},
     {0x00},
-    {0x40},
+    {0x18},
+    {0x18},
 };
 
-/* glyph_$ 8x8 */
-static const uint8_t glyph_dollar[8][1] = {
-    {0x00},
-    {0x20},
-    {0x70},
-    {0x80},
-    {0x70},
-    {0x08},
-    {0x70},
-    {0x20},
+/* glyph_$ 8x12 */
+static const uint8_t glyph_dollar[12][1] = {
+    {0x24},
+    {0x24},
+    {0x7E},
+    {0xA5},
+    {0xA4},
+    {0xA4},
+    {0x7E},
+    {0x25},
+    {0x25},
+    {0xA5},
+    {0x7E},
+    {0x24},
 };
 
-/* glyph_: 8x8 */
-static const uint8_t glyph_colon[8][1] = {
-    {0x00},
-    {0x00},
-    {0x80},
+/* glyph_: 8x12 */
+static const uint8_t glyph_colon[12][1] = {
     {0x00},
     {0x00},
     {0x00},
-    {0x80},
+    {0x20},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x20},
+    {0x00},
     {0x00},
 };
 

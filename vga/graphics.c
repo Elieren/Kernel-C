@@ -1,9 +1,21 @@
 #include "graphics.h"
 #include <stddef.h>
 #include <string.h>
+#include "../malloc/malloc.h"
+#include "font.h"
+
+const int GLYPH_W = 8;
+const int GLYPH_H = 12;
 
 /* Внутренняя глобальная ссылка на информацию о framebuffer */
 static framebuffer_info_t *g_fb = NULL;
+
+/* глобальная видимая в ядре таблица */
+static cell_t *g_cells = NULL;
+static uint64_t g_total_cells = 0;
+static grid_t g_grid = {0, 0};
+
+/* --------------------------------------------------------------------------- */
 
 /* helper: при identity-map физический == виртуальный */
 static inline void *phys_to_virt(uint64_t phys)
@@ -11,9 +23,38 @@ static inline void *phys_to_virt(uint64_t phys)
     return (void *)(uintptr_t)phys;
 }
 
-void gfx_init(framebuffer_info_t *fb)
+static inline point_t glyph_pixel_pos(uint32_t gx, uint32_t gy,
+                                      uint32_t Sw, uint32_t Sh,
+                                      uint32_t M, uint32_t scale)
 {
-    g_fb = fb;
+    if (scale == 0)
+        scale = 1;
+    uint64_t step_x = (uint64_t)(GLYPH_W + Sw) * scale;
+    uint64_t step_y = (uint64_t)(GLYPH_H + Sh) * scale;
+    point_t p;
+    p.x = (uint32_t)((uint64_t)M + (uint64_t)gx * step_x);
+    p.y = (uint32_t)((uint64_t)M + (uint64_t)gy * step_y);
+    return p;
+}
+
+/* Индекс по координатам клетки (gx,gy) */
+static inline uint64_t cell_index(uint32_t gx, uint32_t gy)
+{
+    return (uint64_t)gy * (uint64_t)g_grid.cols + (uint64_t)gx;
+}
+
+grid_t calc_grid(uint32_t Sw, uint32_t Sh,
+                 uint32_t M)
+{
+    grid_t g;
+
+    uint32_t avail_w = g_fb->width - 2 * M;
+    uint32_t avail_h = g_fb->height - 2 * M;
+
+    g.cols = (avail_w + Sw) / (GLYPH_W + Sw);
+    g.rows = (avail_h + Sh) / (GLYPH_H + Sh);
+
+    return g;
 }
 
 /* проверка границ */
@@ -27,6 +68,73 @@ static inline bool in_bounds(int32_t x, int32_t y)
         return false;
     return true;
 }
+
+/* --------------------------------------------------------------------------- */
+
+void gfx_init(framebuffer_info_t *fb)
+{
+    g_fb = fb;
+
+    g_grid = calc_grid(2, 2, 10);
+
+    /* защита: если ноль — не аллоцируем */
+    if (g_grid.cols == 0 || g_grid.rows == 0)
+        return;
+
+    /* проверка переполнения при умножении */
+    uint64_t total = (uint64_t)g_grid.cols * (uint64_t)g_grid.rows;
+    if (total == 0)
+    {
+        return;
+    }
+
+    size_t need = total * sizeof(cell_t);
+    cell_t *buf = (cell_t *)malloc(need);
+    if (!buf)
+        return;
+
+    /* очистим (по умолчанию пробел и цвет 0) */
+    memset(buf, 0, need);
+
+    /* сохраняем в глобальную переменную */
+    g_cells = buf;
+    g_total_cells = total;
+}
+
+void gfx_put_cell(uint32_t gx, uint32_t gy, char ch, uint32_t color)
+{
+    if (!g_cells)
+        return;
+    if (gx >= g_grid.cols || gy >= g_grid.rows)
+        return;
+
+    uint64_t idx = (uint64_t)gy * g_grid.cols + gx;
+    g_cells[idx].ch = ch;
+    g_cells[idx].color = color;
+}
+
+void gfx_draw_all_from_cells(void)
+{
+    if (!g_cells)
+        return;
+
+    for (uint32_t gy = 0; gy < g_grid.rows; ++gy)
+    {
+        for (uint32_t gx = 0; gx < g_grid.cols; ++gx)
+        {
+            uint64_t idx = cell_index(gx, gy);
+            char ch = g_cells[idx].ch;
+            uint32_t color = g_cells[idx].color;
+            if (ch == 0)
+                continue; /* пустая клетка */
+            point_t p = glyph_pixel_pos(gx, gy, /*Sw*/ 2, /*Sh*/ 2, /*M*/ 10, /*scale*/ 1);
+            const uint8_t *glyph = font_get_glyph(ch);
+            gfx_draw_glyph(glyph, p.x, p.y, color, 1);
+        }
+    }
+}
+
+/* --------------------------------------------------------------------------- */
 
 /* основной writer: поддерживает 24 и 32 bpp; color — 0x00RRGGBB */
 void gfx_put_pixel(uint32_t x, uint32_t y, uint32_t color)
@@ -323,6 +431,8 @@ void gfx_clear(uint32_t color)
     }
 }
 
+/* --------------------------------------------------------------------------- */
+
 void gfx_draw_glyph(const uint8_t *glyph, int x0, int y0, uint32_t color, int scale)
 {
     if (!glyph)
@@ -333,7 +443,7 @@ void gfx_draw_glyph(const uint8_t *glyph, int x0, int y0, uint32_t color, int sc
     if (scale == 1)
     {
         /* быстрый путь для scale == 1 */
-        for (int row = 0; row < 8; row++)
+        for (int row = 0; row < 12; row++)
         {
             uint8_t line = glyph[row];
             for (int col = 0; col < 8; col++)
@@ -348,7 +458,7 @@ void gfx_draw_glyph(const uint8_t *glyph, int x0, int y0, uint32_t color, int sc
     else
     {
         /* масштабируем каждый включённый пиксель в квадрат scale x scale */
-        for (int row = 0; row < 8; row++)
+        for (int row = 0; row < 12; row++)
         {
             uint8_t line = glyph[row];
             for (int col = 0; col < 8; col++)

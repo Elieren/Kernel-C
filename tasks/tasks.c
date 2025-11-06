@@ -184,7 +184,7 @@ void load_and_run_from_autorun(void)
 /* Регистрация всех стартовых задач */
 void tasks_init(void)
 {
-    load_and_run_from_autorun();
+    // load_and_run_from_autorun();
 
     task_create(zombie_reaper_task, 0);
 }

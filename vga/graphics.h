@@ -5,6 +5,23 @@
 #include <stdbool.h>
 #include "mb2/mb2.h"
 
+typedef struct
+{
+   uint32_t cols;
+   uint32_t rows;
+} grid_t;
+
+typedef struct
+{
+   char ch;        /* код символа / индекс глифа */
+   uint32_t color; /* цвет символа (ARGB или ваш формат) */
+} cell_t;
+
+typedef struct
+{
+   uint32_t x, y;
+} point_t;
+
 /* Инициализация: передаём указатель на структуру framebuffer_info_t.
    Должна быть вызвана перед всеми остальными функциями. */
 void gfx_init(framebuffer_info_t *fb);
@@ -29,5 +46,8 @@ void gfx_fill_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t colo
 void gfx_clear(uint32_t color);
 
 void gfx_draw_glyph(const uint8_t *glyph, int x0, int y0, uint32_t color, int scale);
+
+void gfx_put_cell(uint32_t gx, uint32_t gy, char ch, uint32_t color);
+void gfx_draw_all_from_cells(void);
 
 #endif /* GRAPHICS_H */

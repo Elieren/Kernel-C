@@ -40,121 +40,13 @@
 
 #include "vga/font.h"
 
+#include "glyphs/english_glyph.h"
+
 /* символы из link.ld */
 extern char _heap_start;
 extern char _heap_end;
 
 uint64_t g_saved_user_rsp = 0;
-
-/*-------------------------------------------------------------
-    Debug-функции: полностью исключаются из release сборки
--------------------------------------------------------------*/
-#ifdef DEBUG
-static void debug_run_tests(void)
-{
-    print_char_position('X', 5, 10, WHITE, RED);
-
-    // const char *secs = sys_get_seconds_str();
-    // print_string_position(secs, 0, 20, WHITE, RED);
-
-    /* Пример: выделить 2 MiB через syscall */
-    void *p = malloc(2 * 1024 * 1024);
-    if (p)
-    {
-        char *s = (char *)p;
-        strcpy(s, "Hello from kernel heap!");
-        print_string_position(s, 50, 15, WHITE, RED);
-
-        /* расширяем до 3 MiB через syscall */
-        p = realloc(p, 3 * 1024 * 1024);
-        if (p)
-        {
-            s = (char *)p;
-            print_string_position(s, 50, 17, WHITE, RED);
-        }
-
-        /* освобождение через syscall */
-        free(p);
-    }
-
-    print_kmalloc_stats();
-}
-
-char *itoa(uint32_t num, char *str, int base)
-{
-    int i = 0;
-    if (num == 0)
-    {
-        str[i++] = '0';
-        str[i] = '\0';
-        return str;
-    }
-
-    while (num > 0)
-    {
-        int rem = num % base;
-        str[i++] = (rem > 9) ? (rem - 10) + 'A' : rem + '0';
-        num /= base;
-    }
-
-    str[i] = '\0';
-
-    // Разворачиваем строку
-    for (int j = 0; j < i / 2; j++)
-    {
-        char temp = str[j];
-        str[j] = str[i - j - 1];
-        str[i - j - 1] = temp;
-    }
-
-    return str;
-}
-
-void list_root_dir(void)
-{
-    static fs_entry_t files[FS_MAX_ENTRIES];
-    int count = fs_get_all_in_dir(files, FS_MAX_ENTRIES, FS_ROOT_IDX); // всегда корень
-    char size_buf[40];
-
-    print_string_position("Root directory:", 0, 0, RED, BLACK);
-
-    for (int i = 0; i < count; i++)
-    {
-        print_string_position(files[i].name, 0, i + 1, WHITE, BLACK);
-        if (!files[i].is_dir)
-        {
-            itoa(files[i].size, size_buf, 10);
-            print_string_position(size_buf, 22, i + 1, RED, BLACK);
-        }
-    }
-}
-
-#define SERIAL_PORT 0x3F8 // COM1
-
-static inline void serial_write(char c)
-{
-    asm volatile("outb %0, %1" : : "a"(c), "Nd"(SERIAL_PORT));
-}
-
-void serial_print(const char *s)
-{
-    while (*s)
-        serial_write(*s++);
-}
-
-void serial_print_hex(uint64_t val)
-{
-    char hex[17];
-    for (int i = 0; i < 16; i++)
-    {
-        uint8_t nibble = (val >> ((15 - i) * 4)) & 0xF;
-        hex[i] = nibble < 10 ? '0' + nibble : 'A' + (nibble - 10);
-    }
-    hex[16] = 0;
-    serial_print(hex);
-}
-
-#endif // DEBUG
 
 void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, unsigned int dat)
 {
@@ -256,11 +148,15 @@ void kmain(uint64_t mb2_addr)
     gfx_draw_rect(500, 500, 700, 800, 0x00FFA500);
     gfx_fill_rect(800, 900, 900, 1000, 0x00FFA500);
 
-    int next_x = font_draw_text("username ", 10, 500, 0x00FF0000, 2, 2);
-    next_x = font_draw_text("$: ", next_x, 500, 0x0000FF00, 2, 2);
-    font_draw_text("Hello world!", next_x, 500, 0x00FFFFFF, 2, 2);
+    gfx_draw_glyph((const uint8_t *)glyph_A, 100, 100, 0x00FFFFFF, 2);
 
-    // fs_init();
+    gfx_put_cell(0, 0, 'A', 0x00FFFFFF);
+    gfx_put_cell(1, 0, 'B', 0x00FF0000);
+    gfx_put_cell(2, 0, 'C', 0x0000FF00);
+
+    // gfx_draw_all_from_cells();
+
+    fs_init();
 
     // init_autorun(autorun);
 
@@ -274,8 +170,8 @@ void kmain(uint64_t mb2_addr)
 
     // clean_screen();
 
-    // scheduler_init();
-    // tasks_init();
+    scheduler_init();
+    tasks_init();
 
     /* Разрешаем прерывания */
     asm volatile("sti");

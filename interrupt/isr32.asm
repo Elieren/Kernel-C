@@ -19,7 +19,6 @@
 [BITS 64]
 
 global isr32
-extern timer_tick
 extern schedule_from_isr
 
 isr32:
@@ -46,9 +45,6 @@ isr32:
     ; push err_code, int_no (как у ISR в protected mode; мы используем заглушки)
     push qword 0        ; err_code
     push qword 32       ; int_no (dummy for consistent frame)
-
-    ; --- вызов C-функции для тика таймера (не трогает regs на стеке) ---
-    call timer_tick
 
     ; --- выделим 8 байт на стеке для out_slot (uint64_t) ---
     sub rsp, 8
