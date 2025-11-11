@@ -10,10 +10,19 @@ const int GLYPH_H = 12;
 /* Внутренняя глобальная ссылка на информацию о framebuffer */
 static framebuffer_info_t *g_fb = NULL;
 
-/* глобальная видимая в ядре таблица */
-static cell_t *g_cells = NULL;
+/* двойной буфер: back (заполняемый) и front (выводимый) */
+static cell_t *g_back_cells = NULL;
+static cell_t *g_front_cells = NULL;
+
+/* общее число клеток (для одного буфера) */
 static uint64_t g_total_cells = 0;
 static grid_t g_grid = {0, 0};
+
+/* курсор в клетках (используется gfx_put_string и backspace) — относится к back buffer */
+static uint32_t g_cx = 0;
+static uint32_t g_cy = 0;
+
+#define TAB_SIZE 8
 
 /* --------------------------------------------------------------------------- */
 
@@ -77,7 +86,6 @@ void gfx_init(framebuffer_info_t *fb)
 
     g_grid = calc_grid(2, 2, 10);
 
-    /* защита: если ноль — не аллоцируем */
     if (g_grid.cols == 0 || g_grid.rows == 0)
         return;
 
@@ -88,34 +96,236 @@ void gfx_init(framebuffer_info_t *fb)
         return;
     }
 
-    size_t need = total * sizeof(cell_t);
-    cell_t *buf = (cell_t *)malloc(need);
+    size_t need = (size_t)(total * sizeof(cell_t));
+
+    /* аллоцируем два буфера подряд: back + front */
+    cell_t *buf = (cell_t *)malloc(need * 2);
     if (!buf)
         return;
 
-    /* очистим (по умолчанию пробел и цвет 0) */
-    memset(buf, 0, need);
+    /* очистим оба буфера (по умолчанию пробел и цвет 0) */
+    memset(buf, 0, need * 2);
 
-    /* сохраняем в глобальную переменную */
-    g_cells = buf;
+    /* сохраняем в глобальные переменные */
+    g_back_cells = buf;
+    g_front_cells = buf + total;
     g_total_cells = total;
 }
 
-void gfx_put_cell(uint32_t gx, uint32_t gy, char ch, uint32_t color)
+// ============================ char ============================
+
+void gfx_put_char_position(uint32_t gx, uint32_t gy, char ch, uint32_t color)
 {
-    if (!g_cells)
+    if (!g_back_cells)
         return;
     if (gx >= g_grid.cols || gy >= g_grid.rows)
         return;
 
-    uint64_t idx = (uint64_t)gy * g_grid.cols + gx;
-    g_cells[idx].ch = ch;
-    g_cells[idx].color = color;
+    uint64_t idx = cell_index(gx, gy);
+    g_back_cells[idx].ch = ch;
+    g_back_cells[idx].color = color;
 }
 
+void gfx_put_char(char ch, uint32_t color)
+{
+    if (!g_back_cells)
+        return;
+    if (g_grid.cols == 0 || g_grid.rows == 0)
+        return;
+
+    /* newline: перейти на начало следующей строки */
+    if (ch == '\n')
+    {
+        g_cx = 0;
+        g_cy++;
+        if (g_cy >= g_grid.rows)
+        {
+            gfx_scroll_cells();
+
+            g_cy = g_grid.rows - 1; /* остаёмся на последней строке */
+        }
+        return;
+    }
+
+    /* записать символ в текущую позицию (в back buffer) */
+    if (g_cx < g_grid.cols && g_cy < g_grid.rows)
+    {
+        uint64_t idx = cell_index(g_cx, g_cy);
+        g_back_cells[idx].ch = ch;
+        g_back_cells[idx].color = color;
+    }
+    else
+    {
+        /* вне экрана - ничего не делаем */
+        return;
+    }
+
+    g_cx++;
+    if (g_cx >= g_grid.cols)
+    {
+        g_cx = 0;
+        g_cy++;
+        if (g_cy >= g_grid.rows)
+        {
+            gfx_scroll_cells();
+            g_cy = g_grid.rows - 1;
+        }
+    }
+
+    // gfx_update_cursor(g_cx, g_cy);
+}
+
+// ============================ string ============================
+
+void gfx_put_string_position(const char *str,
+                             uint32_t gx,
+                             uint32_t gy,
+                             uint32_t color)
+{
+    if (!g_back_cells || !str)
+        return;
+    if (g_grid.cols == 0 || g_grid.rows == 0)
+        return;
+    if (gx >= g_grid.cols || gy >= g_grid.rows)
+        return;
+
+    uint32_t col = gx;
+    uint32_t row = gy;
+    uint32_t cols = g_grid.cols;
+
+    for (size_t i = 0; str[i]; ++i)
+    {
+        char c = str[i];
+
+        if (c == '\t')
+        {
+            /* сколько пробелов до следующего кратного TAB_SIZE */
+            uint32_t spaces = TAB_SIZE - (col % TAB_SIZE);
+            for (uint32_t s = 0; s < spaces; ++s)
+            {
+                if (col >= cols)
+                    break;
+                uint64_t idx = cell_index(col, row);
+                g_back_cells[idx].ch = ' ';
+                g_back_cells[idx].color = color;
+                col++;
+            }
+        }
+        else
+        {
+            if (col >= cols)
+                break;
+            uint64_t idx = cell_index(col, row);
+            g_back_cells[idx].ch = c;
+            g_back_cells[idx].color = color;
+            col++;
+        }
+
+        if (col >= cols)
+            break;
+    }
+}
+
+void gfx_put_string(const char *str, uint32_t color)
+{
+    if (!g_back_cells || !str)
+        return;
+    if (g_grid.cols == 0 || g_grid.rows == 0)
+        return;
+
+    for (size_t i = 0; str[i]; ++i)
+    {
+        gfx_put_char(str[i], color);
+    }
+
+    // gfx_update_cursor(g_cx, g_cy);
+}
+
+// =================================================================
+
+void gfx_scroll_cells(void)
+{
+    if (!g_back_cells || g_grid.rows == 0 || g_grid.cols == 0)
+        return;
+
+    uint32_t cols = g_grid.cols;
+    uint32_t rows = g_grid.rows;
+
+    /* сдвиг вверх */
+    for (uint32_t gy = 0; gy + 1 < rows; ++gy)
+    {
+        for (uint32_t gx = 0; gx < cols; ++gx)
+        {
+            uint64_t dst = cell_index(gx, gy);
+            uint64_t src = cell_index(gx, gy + 1);
+            g_back_cells[dst] = g_back_cells[src];
+        }
+    }
+
+    /* очистить последнюю строку */
+    uint32_t last = rows - 1;
+    for (uint32_t gx = 0; gx < cols; ++gx)
+    {
+        uint64_t idx = cell_index(gx, last);
+        g_back_cells[idx].ch = 0;
+        g_back_cells[idx].color = 0;
+    }
+
+    /* поправим курсор, если он был в видимой области */
+    if (g_cy > 0)
+    {
+        --g_cy;
+    }
+    else
+    {
+        g_cx = 0;
+    }
+}
+
+/* Очистить все клетки (символ=0, цвет=0) и сбросить курсор — очищаем back buffer */
+void gfx_clear_cells(void)
+{
+    if (!g_back_cells || g_total_cells == 0)
+        return;
+
+    memset(g_back_cells, 0, (size_t)g_total_cells * sizeof(cell_t));
+    g_cx = 0;
+    g_cy = 0;
+}
+
+void gfx_backspace(void)
+{
+    if (!g_back_cells || g_grid.cols == 0 || g_grid.rows == 0)
+        return;
+
+    if (g_cx == 0)
+    {
+        if (g_cy > 0)
+        {
+            g_cy--;
+            g_cx = g_grid.cols - 1;
+        }
+        else
+        {
+            /* в самом начале - ничего стереть */
+            return;
+        }
+    }
+    else
+    {
+        g_cx--;
+    }
+
+    /* очистить текущую позицию в back buffer */
+    uint64_t idx = cell_index(g_cx, g_cy);
+    g_back_cells[idx].ch = 0;
+    g_back_cells[idx].color = 0;
+}
+
+/* Рисуем весь front buffer на экран */
 void gfx_draw_all_from_cells(void)
 {
-    if (!g_cells)
+    if (!g_front_cells)
         return;
 
     for (uint32_t gy = 0; gy < g_grid.rows; ++gy)
@@ -123,8 +333,8 @@ void gfx_draw_all_from_cells(void)
         for (uint32_t gx = 0; gx < g_grid.cols; ++gx)
         {
             uint64_t idx = cell_index(gx, gy);
-            char ch = g_cells[idx].ch;
-            uint32_t color = g_cells[idx].color;
+            char ch = g_front_cells[idx].ch;
+            uint32_t color = g_front_cells[idx].color;
             if (ch == 0)
                 continue; /* пустая клетка */
             point_t p = glyph_pixel_pos(gx, gy, /*Sw*/ 2, /*Sh*/ 2, /*M*/ 10, /*scale*/ 1);
@@ -132,6 +342,57 @@ void gfx_draw_all_from_cells(void)
             gfx_draw_glyph(glyph, p.x, p.y, color, 1);
         }
     }
+}
+
+/* helper — рисует одну клетку (фон или глиф) */
+static inline void draw_cell_at(uint32_t gx, uint32_t gy, const cell_t *c)
+{
+    point_t p = glyph_pixel_pos(gx, gy, /*Sw*/ 2, /*Sh*/ 2, /*M*/ 10, /*scale*/ 1);
+
+    const uint8_t *glyph = font_get_glyph(c->ch);
+    gfx_draw_glyph(glyph, p.x, p.y, c->color, 1);
+}
+
+/* новая реализация: только изменённые клетки */
+void gfx_present_if_changed(void)
+{
+    if (!g_back_cells || !g_front_cells)
+        return;
+
+    uint32_t cols = g_grid.cols;
+    if (cols == 0)
+        return;
+
+    /* Проходим по всем клеткам и рисуем только те, что отличаются */
+    for (uint64_t i = 0; i < g_total_cells; ++i)
+    {
+        cell_t *b = &g_back_cells[i];
+        cell_t *f = &g_front_cells[i];
+
+        if (b->ch != f->ch || b->color != f->color)
+        {
+            uint32_t gx = (uint32_t)(i % cols);
+            uint32_t gy = (uint32_t)(i / cols);
+
+            draw_cell_at(gx, gy, b);
+
+            /* обновляем front — делаем это сразу, чтобы в следующем кадре не перерисовывать */
+            f->ch = b->ch;
+            f->color = b->color;
+        }
+    }
+}
+
+/* Сразу показать без сравнения */
+void gfx_present_force(void)
+{
+    if (!g_back_cells || !g_front_cells)
+        return;
+
+    size_t bytes = (size_t)g_total_cells * sizeof(cell_t);
+    memcpy(g_front_cells, g_back_cells, bytes);
+    gfx_clear(0x00000000);
+    gfx_draw_all_from_cells();
 }
 
 /* --------------------------------------------------------------------------- */
@@ -424,6 +685,7 @@ void gfx_clear(uint32_t color)
 {
     if (!g_fb)
         return;
+
     uint32_t h = g_fb->height;
     for (uint32_t y = 0; y < h; ++y)
     {

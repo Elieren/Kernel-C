@@ -4,6 +4,9 @@
 #include "../syscall/syscall.h"
 #include "../fat16/fs.h"
 #include "../libc/string.h"
+#include "../vga/graphics.h"
+
+extern bool screen_refresh_status;
 
 /* Задача-реапер: бесконечно вызывает reap_zombies(), можно вызывать каждые N тикoв */
 void zombie_reaper_task(void)
@@ -12,6 +15,18 @@ void zombie_reaper_task(void)
     {
         reap_zombies();
         asm volatile("hlt");
+    }
+}
+
+void screen_refresh(void)
+{
+    for (;;)
+    {
+        if (screen_refresh_status)
+        {
+            gfx_present_if_changed();
+            screen_refresh_status = false;
+        }
     }
 }
 
@@ -184,7 +199,8 @@ void load_and_run_from_autorun(void)
 /* Регистрация всех стартовых задач */
 void tasks_init(void)
 {
-    // load_and_run_from_autorun();
+    load_and_run_from_autorun();
 
     task_create(zombie_reaper_task, 0);
+    task_create(screen_refresh, 0);
 }

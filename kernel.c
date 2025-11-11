@@ -133,44 +133,23 @@ void kmain(uint64_t mb2_addr)
     /* Очистим экран чёрный */
     gfx_clear(0x00000000);
 
-    /* Нарисуем диагональ белым */
-    gfx_draw_line(0, 0, 1919, 1079, 0x00FFFFFF);
-
-    /* Точка */
-    gfx_draw_point(50, 50, 0x00FF0000); /* красная точка */
-
-    /* Кружок (outline) */
-    gfx_draw_circle(200, 200, 80, 0x0000FF00); /* зелёный outline */
-
-    /* Заполненный круг */
-    gfx_fill_circle(400, 200, 60, 0x000000FF); /* синий filled */
-
-    gfx_draw_rect(500, 500, 700, 800, 0x00FFA500);
-    gfx_fill_rect(800, 900, 900, 1000, 0x00FFA500);
-
     fs_init();
 
-    // init_autorun(autorun);
+    init_autorun(autorun);
 
-    // load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
-    // load_app_to_fs("bin", "htop", "bin", htop_bin, htop_bin_len);
-    // load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
-    // load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
-    // load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
-    // load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
-    // load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
-
-    // clean_screen();
+    load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
+    load_app_to_fs("bin", "htop", "bin", htop_bin, htop_bin_len);
+    load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
+    load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
+    load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
+    load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
+    load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
 
     scheduler_init();
     tasks_init();
 
     /* Разрешаем прерывания */
     asm volatile("sti");
-
-    gfx_put_cell(0, 0, 'A', 0x00FFFFFF);
-    gfx_put_cell(1, 0, 'B', 0x00FF0000);
-    gfx_put_cell(2, 0, 'C', 0x0000FF00);
 
     /* Основной бесконечный цикл ядра */
     for (;;)

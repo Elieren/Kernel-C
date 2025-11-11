@@ -19,6 +19,19 @@ void *memset(void *s, int c, size_t n)
     return s;
 }
 
+int memcmp(const void *ptr1, const void *ptr2, size_t num)
+{
+    const unsigned char *a = (const unsigned char *)ptr1;
+    const unsigned char *b = (const unsigned char *)ptr2;
+
+    for (size_t i = 0; i < num; i++)
+    {
+        if (a[i] != b[i])
+            return (int)a[i] - (int)b[i];
+    }
+    return 0;
+}
+
 /* =================== STR =================== */
 size_t strlen(const char *s)
 {

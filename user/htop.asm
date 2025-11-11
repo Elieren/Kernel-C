@@ -5,6 +5,9 @@ BITS 64
 
 %define SYSCALL_TASK_EXIT 204
 
+%define WHITE 0x00FFFFFF
+%define BLACK 0x00000000
+
 section .text
 global _start
 _start:
@@ -113,8 +116,7 @@ print_field:
     mov     rbx, rsi           ; сохраним указатель на поле в rbx
 
     mov     rax, SYSCALL_PRINT_STRING
-    mov     rsi, fg_color
-    mov     rdx, bg_color
+    mov     rsi, WHITE
     int     0x80
 
     mov     rdi, rbx                  ; rdi = field_ptr (указатель на qword)
@@ -122,14 +124,12 @@ print_field:
     call    u64_to_dec
 
     lea     rdi, [rel numbuf_out]
-    mov     rsi, fg_color
-    mov     rdx, bg_color
+    mov     rsi, WHITE
     mov     rax, SYSCALL_PRINT_STRING
     int     0x80
 
     lea     rdi, [rel newline]
-    mov     rsi, fg_color
-    mov     rdx, bg_color
+    mov     rsi, WHITE
     mov     rax, SYSCALL_PRINT_STRING
     int     0x80
 
@@ -155,6 +155,3 @@ section .data
     lbl_num_used         db "num_used:        ", 0
     lbl_num_free         db "num_free:        ", 0
     newline              db 10, 0
-
-    fg_color     equ 15    ; белый
-    bg_color     equ 0     ; чёрный

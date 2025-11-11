@@ -121,7 +121,7 @@ void print_char(const char c,
     update_hardware_cursor(x, y);
 }
 
-// ============================ char ============================
+// ============================ string ============================
 
 void print_string_position(const char *str,
                            const unsigned int x,

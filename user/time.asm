@@ -5,6 +5,9 @@ BITS 64
 %define SYSCALL_GET_TIME_UP   7
 %define SYSCALL_TASK_EXIT     204
 
+%define WHITE 0x00FFFFFF
+%define BLACK 0x00000000
+
 section .text
 global _start
 
@@ -21,15 +24,13 @@ _start:
     call    format_clock
 
     lea     rdi, [rel cmd_time]
-    mov     rsi, 15
-    mov     rdx, 0
+    mov     rsi, WHITE
     mov     rax, SYSCALL_PRINT_STRING
     int     0x80
 
     ; --- Выводим форматированное время ---
     lea     rdi, [rel time_str]
-    mov     rsi, 15
-    mov     rdx, 0
+    mov     rsi, WHITE
     mov     rax, SYSCALL_PRINT_STRING
     int     0x80
 
@@ -43,15 +44,13 @@ _start:
     call    format_up_time
 
     lea     rdi, [rel cmd_up]
-    mov     rsi, 15
-    mov     rdx, 0
+    mov     rsi, WHITE
     mov     rax, SYSCALL_PRINT_STRING
     int     0x80
 
     ; --- Выводим uptime ---
     lea     rdi, [rel up_str]
-    mov     rsi, 15
-    mov     rdx, 0
+    mov     rsi, WHITE
     mov     rax, SYSCALL_PRINT_STRING
     int     0x80
 

@@ -2,10 +2,7 @@
 #define KEYBOARD_H
 
 #include <stdint.h>
-
-#define bool _Bool
-#define true 1
-#define false 0
+#include <stdbool.h>
 
 #define KEYBOARD_PORT 0x60
 

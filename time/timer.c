@@ -3,10 +3,10 @@
 #include "../pic.h"
 #include "clock/clock.h"
 #include "../multitask/multitask.h"
-#include "../vga/graphics.h"
 
 volatile uint16_t tick_time = 0;
 volatile uint32_t seconds = 0;
+bool screen_refresh_status = true;
 
 void timer_tick(void)
 {
@@ -20,8 +20,10 @@ void timer_tick(void)
 
     if ((tick_time % 33) == 0)
     {
-        gfx_clear(0x00000000);
-        gfx_draw_all_from_cells();
+        if (screen_refresh_status == false)
+        {
+            screen_refresh_status = true;
+        }
     }
 
     /* Посылаем EOI PIC — делаем это здесь, до возможного переключения */
