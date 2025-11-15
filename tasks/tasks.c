@@ -22,11 +22,13 @@ void screen_refresh(void)
 {
     for (;;)
     {
+        gfx_draw_all_from_cells();
         if (screen_refresh_status)
         {
-            gfx_present_if_changed();
+            gfx_update_screen();
             screen_refresh_status = false;
         }
+        asm volatile("hlt");
     }
 }
 

@@ -1,5 +1,6 @@
 #include <stddef.h>
 #include "string.h"
+#include <stdint.h>
 
 /* =================== MEM =================== */
 void *memcpy(void *dst, const void *src, size_t n)
@@ -30,6 +31,65 @@ int memcmp(const void *ptr1, const void *ptr2, size_t num)
             return (int)a[i] - (int)b[i];
     }
     return 0;
+}
+
+void *memmove(void *dst0, const void *src0, size_t n)
+{
+    if (n == 0 || dst0 == src0)
+        return dst0;
+
+    unsigned char *dst = (unsigned char *)dst0;
+    const unsigned char *src = (const unsigned char *)src0;
+
+    if (dst < src) /* копируем вперед */
+    {
+        size_t word = sizeof(uintptr_t);
+        while (n && ((uintptr_t)dst & (word - 1)))
+        {
+            *dst++ = *src++;
+            --n;
+        }
+
+        uintptr_t *dw = (uintptr_t *)dst;
+        const uintptr_t *sw = (const uintptr_t *)src;
+        while (n >= word)
+        {
+            *dw++ = *sw++;
+            n -= word;
+        }
+
+        dst = (unsigned char *)dw;
+        src = (const unsigned char *)sw;
+        while (n--)
+            *dst++ = *src++;
+    }
+    else /* dst > src — копируем назад */
+    {
+        dst += n;
+        src += n;
+
+        size_t word = sizeof(uintptr_t);
+        while (n && ((uintptr_t)dst & (word - 1)))
+        {
+            *--dst = *--src;
+            --n;
+        }
+
+        uintptr_t *dw = (uintptr_t *)dst;
+        const uintptr_t *sw = (const uintptr_t *)src;
+        while (n >= word)
+        {
+            *--dw = *--sw;
+            n -= word;
+        }
+
+        dst = (unsigned char *)dw;
+        src = (const unsigned char *)sw;
+        while (n--)
+            *--dst = *--src;
+    }
+
+    return dst0;
 }
 
 /* =================== STR =================== */

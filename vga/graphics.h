@@ -40,11 +40,11 @@ void gfx_clear_cells(void);
 void gfx_backspace(void);
 
 void gfx_draw_all_from_cells(void);
-void gfx_present_if_changed(void);
+
+void gfx_update_screen(void);
 
 /* Рисование примитивов.
-   color — 0x00RRGGBB (или 0xAARRGGBB; при bpp==24/32 используется низкие 3 байта). */
-void gfx_put_pixel(uint32_t x, uint32_t y, uint32_t color);
+color — 0x00RRGGBB (или 0xAARRGGBB; при bpp==24/32 используется низкие 3 байта). */
 void gfx_draw_point(uint32_t x, uint32_t y, uint32_t color);
 
 /* Линия: Bresenham, поддерживает любые координаты (signed). */

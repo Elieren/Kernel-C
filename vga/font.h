@@ -84,6 +84,8 @@ static const uint8_t *glyph_table[128] = {
     ['?'] = (const uint8_t *)glyph_question_mark,
     ['$'] = (const uint8_t *)glyph_dollar,
     [':'] = (const uint8_t *)glyph_colon,
+    ['.'] = (const uint8_t *)glyph_dot,
+    ['_'] = (const uint8_t *)glyph_underscore,
 };
 
 const uint8_t *font_get_glyph(char c);

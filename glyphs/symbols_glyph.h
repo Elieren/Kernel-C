@@ -83,4 +83,36 @@ static const uint8_t glyph_colon[12][1] = {
     {0x00},
 };
 
+/* glyph_. 8x12 */
+static const uint8_t glyph_dot[12][1] = {
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x18},
+    {0x18},
+};
+
+/* glyph__ 8x12 */
+static const uint8_t glyph_underscore[12][1] = {
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0x00},
+    {0xFF},
+    {0xFF},
+};
+
 #endif
