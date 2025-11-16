@@ -1,6 +1,5 @@
 // user_malloc.c — simple allocator для .user области
 #include "user_malloc.h"
-#include "../vga/vga.h"
 #include "../syscall/syscall.h"
 
 /* Конфигурация */

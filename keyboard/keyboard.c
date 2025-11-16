@@ -1,5 +1,4 @@
 #include "keyboard.h"
-#include "../vga/vga.h"
 #include "../portio/portio.h"
 #include "../pic.h"
 

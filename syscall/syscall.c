@@ -1,6 +1,5 @@
 // syscall.c
 #include "syscall.h"
-#include "../vga/vga.h"
 #include "../time/timer.h"
 #include "../malloc/malloc.h"
 #include "../power/poweroff.h"
@@ -148,7 +147,7 @@ uintptr_t syscall_handler(
     }
 
     case SYSCALL_SETPOSCURSOR:
-        update_hardware_cursor((uint8_t)rdi, (uint8_t)rsi);
+        // update_hardware_cursor((uint8_t)rdi, (uint8_t)rsi);
         return 0;
 
     case SYSCALL_POWER_OFF:

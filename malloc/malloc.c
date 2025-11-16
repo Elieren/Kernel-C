@@ -2,7 +2,6 @@
 #include "malloc.h"
 #include <stdint.h>
 #include <stddef.h>
-#include "../vga/vga.h"
 #include "../syscall/syscall.h"
 
 /* Конфигурация */
@@ -338,84 +337,4 @@ static char *u32_to_dec(uint32_t v, char *buf)
         buf[j] = tmp[i - 1 - j];
     buf[i] = '\0';
     return buf;
-}
-
-/* Печать статистики в читаемом виде.
-   Использует console_puts(const char *s) — объявлен вверху extern. */
-void print_kmalloc_stats(void)
-{
-    kmalloc_stats_t s;
-    get_kmalloc_stats(&s);
-
-    char nbuf[64];
-    const uint32_t base_x = 20; /* отступ по X (в символах) */
-    uint32_t x = base_x;
-    uint32_t y = 10; /* стартовая строка по Y — при желании измените */
-    const uint8_t fg = WHITE;
-    const uint8_t bg = BLACK;
-
-    /* Line 1: "Heap total: <bytes> bytes (<mb> MiB)" */
-    x = base_x;
-    print_string_position("Heap total: ", x, y, fg, bg);
-    x += (uint32_t)kstrlen("Heap total: ");
-    u32_to_dec((uint32_t)s.total_managed, nbuf);
-    print_string_position(nbuf, x, y, fg, bg);
-    x += (uint32_t)kstrlen(nbuf);
-    print_string_position(" bytes (", x, y, fg, bg);
-    x += (uint32_t)kstrlen(" bytes (");
-    uint32_t mb = (uint32_t)(s.total_managed / (1024 * 1024));
-    u32_to_dec(mb, nbuf);
-    print_string_position(nbuf, x, y, fg, bg);
-    x += (uint32_t)kstrlen(nbuf);
-    print_string_position(" MiB)", x, y, fg, bg);
-
-    /* next line */
-    ++y;
-
-    /* Line 2: "Used: <bytes>" */
-    x = base_x;
-    print_string_position("Used: ", x, y, fg, bg);
-    x += (uint32_t)kstrlen("Used: ");
-    u32_to_dec((uint32_t)s.used_payload, nbuf);
-    print_string_position(nbuf, x, y, fg, bg);
-
-    ++y;
-
-    /* Line 3: "Free: <bytes>" */
-    x = base_x;
-    print_string_position("Free: ", x, y, fg, bg);
-    x += (uint32_t)kstrlen("Free: ");
-    u32_to_dec((uint32_t)s.free_payload, nbuf);
-    print_string_position(nbuf, x, y, fg, bg);
-
-    ++y;
-
-    /* Line 4: "Largest free: <bytes>" */
-    x = base_x;
-    print_string_position("Largest free: ", x, y, fg, bg);
-    x += (uint32_t)kstrlen("Largest free: ");
-    u32_to_dec((uint32_t)s.largest_free, nbuf);
-    print_string_position(nbuf, x, y, fg, bg);
-
-    ++y;
-
-    /* Line 5: "Blocks: <num> (used=<u>, free=<f>)" */
-    x = base_x;
-    print_string_position("Blocks: ", x, y, fg, bg);
-    x += (uint32_t)kstrlen("Blocks: ");
-    u32_to_dec((uint32_t)s.num_blocks, nbuf);
-    print_string_position(nbuf, x, y, fg, bg);
-    x += (uint32_t)kstrlen(nbuf);
-    print_string_position(" (used=", x, y, fg, bg);
-    x += (uint32_t)kstrlen(" (used=");
-    u32_to_dec((uint32_t)s.num_used, nbuf);
-    print_string_position(nbuf, x, y, fg, bg);
-    x += (uint32_t)kstrlen(nbuf);
-    print_string_position(", free=", x, y, fg, bg);
-    x += (uint32_t)kstrlen(", free=");
-    u32_to_dec((uint32_t)s.num_free, nbuf);
-    print_string_position(nbuf, x, y, fg, bg);
-    print_string_position(")", x + (uint32_t)kstrlen(nbuf), y, fg, bg);
-
-    /* закончено — следующая полезная строка будет на y+1 */
 }

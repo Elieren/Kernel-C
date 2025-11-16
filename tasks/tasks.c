@@ -1,6 +1,5 @@
 #include "tasks.h"
 #include "../multitask/multitask.h"
-#include "../vga/vga.h"
 #include "../syscall/syscall.h"
 #include "../fat16/fs.h"
 #include "../libc/string.h"
@@ -22,7 +21,6 @@ void screen_refresh(void)
 {
     for (;;)
     {
-        gfx_draw_all_from_cells();
         if (screen_refresh_status)
         {
             gfx_update_screen();

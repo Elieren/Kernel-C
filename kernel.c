@@ -1,5 +1,4 @@
 /* kernel.c */
-#include "vga/vga.h"
 #include "keyboard/keyboard.h"
 #include "portio/portio.h"
 
@@ -18,8 +17,6 @@
 
 #include "multitask/multitask.h"
 #include "tasks/tasks.h"
-
-// #include "user/terminal_bin.h"
 
 #include "ramdisk/ramdisk.h"
 #include "fat16/fs.h"

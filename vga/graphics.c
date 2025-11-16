@@ -185,6 +185,8 @@ void gfx_put_char_position(uint32_t gx, uint32_t gy, char ch, uint32_t color)
     uint64_t idx = cell_index(gx, gy);
     g_cells[idx].ch = ch;
     g_cells[idx].color = color;
+
+    gfx_draw_all_from_cells();
 }
 
 void gfx_put_char(char ch, uint32_t color)
@@ -204,6 +206,8 @@ void gfx_put_char(char ch, uint32_t color)
             gfx_scroll_cells();     /* сдвигаем содержимое вверх */
             g_cy = g_grid.rows - 1; /* остаёмся на последней строке */
         }
+
+        gfx_draw_all_from_cells();
         return;
     }
 
@@ -217,6 +221,8 @@ void gfx_put_char(char ch, uint32_t color)
     else
     {
         /* вне экрана - ничего не делаем */
+
+        gfx_draw_all_from_cells();
         return;
     }
 
@@ -231,6 +237,8 @@ void gfx_put_char(char ch, uint32_t color)
             g_cy = g_grid.rows - 1;
         }
     }
+
+    gfx_draw_all_from_cells();
 
     // gfx_update_cursor(g_cx, g_cy);
 }
@@ -284,6 +292,8 @@ void gfx_put_string_position(const char *str,
         if (col >= cols)
             break;
     }
+
+    gfx_draw_all_from_cells();
 }
 
 void gfx_put_string(const char *str, uint32_t color)
@@ -295,8 +305,73 @@ void gfx_put_string(const char *str, uint32_t color)
 
     for (size_t i = 0; str[i]; ++i)
     {
-        gfx_put_char(str[i], color);
+        char c = str[i];
+
+        if (c == '\n')
+        {
+            g_cx = 0;
+            g_cy++;
+            if (g_cy >= g_grid.rows)
+            {
+                gfx_scroll_cells();     /* сдвигаем содержимое вверх */
+                g_cy = g_grid.rows - 1; /* остаёмся на последней строке */
+            }
+            continue; /* продолжить обработку следующего символа */
+        }
+
+        if (c == '\t')
+        {
+            int spaces = TAB_SIZE - (g_cx % TAB_SIZE);
+            for (int s = 0; s < spaces; ++s)
+            {
+                if (g_cx < g_grid.cols && g_cy < g_grid.rows)
+                {
+                    uint64_t idx = cell_index(g_cx, g_cy);
+                    g_cells[idx].ch = ' ';
+                    g_cells[idx].color = color;
+                }
+                g_cx++;
+                if (g_cx >= g_grid.cols)
+                {
+                    g_cx = 0;
+                    g_cy++;
+                    if (g_cy >= g_grid.rows)
+                    {
+                        gfx_scroll_cells();
+                        g_cy = g_grid.rows - 1;
+                    }
+                }
+            }
+            continue;
+        }
+
+        /* записать символ в текущую позицию (если в видимой области) */
+        if (g_cx < g_grid.cols && g_cy < g_grid.rows)
+        {
+            uint64_t idx = cell_index(g_cx, g_cy);
+            g_cells[idx].ch = c;
+            g_cells[idx].color = color;
+        }
+        else
+        {
+            break;
+        }
+
+        /* смещение курсора */
+        g_cx++;
+        if (g_cx >= g_grid.cols)
+        {
+            g_cx = 0;
+            g_cy++;
+            if (g_cy >= g_grid.rows)
+            {
+                gfx_scroll_cells();
+                g_cy = g_grid.rows - 1;
+            }
+        }
     }
+
+    gfx_draw_all_from_cells();
 
     // gfx_update_cursor(g_cx, g_cy);
 }
@@ -323,6 +398,8 @@ void gfx_scroll_cells(void)
     // Курсор остаётся на последней строке, в начале
     g_cy = rows - 1;
     g_cx = 0;
+
+    gfx_draw_all_from_cells();
 }
 
 void gfx_clear_cells(void)
@@ -335,6 +412,8 @@ void gfx_clear_cells(void)
     memset(g_cells, 0, (size_t)g_total_cells * sizeof(cell_t));
     g_cx = 0;
     g_cy = 0;
+
+    gfx_draw_all_from_cells();
 }
 
 void gfx_backspace(void)
@@ -364,6 +443,8 @@ void gfx_backspace(void)
     uint64_t idx = cell_index(g_cx, g_cy);
     g_cells[idx].ch = 0;
     g_cells[idx].color = 0;
+
+    gfx_draw_all_from_cells();
 }
 
 void gfx_draw_all_from_cells(void)
@@ -417,6 +498,7 @@ void gfx_update_screen(void)
     size_t size = g_fb->pitch * g_fb->height;
 
     memcpy(fb_ptr, g_backbuffer, size);
+
     asm volatile("sti");
 }
 
