@@ -5,7 +5,7 @@
 This project is an educational platform for step-by-step learning and development of basic operating system components.
 The goal is not to create a fully functional OS, but to understand how its key mechanisms work "from the inside."
 
-![preview](https://github.com/user-attachments/assets/122e961e-c9bc-42ac-ac0b-a995c6b8b910)
+![preview](https://github.com/user-attachments/assets/a9fd91aa-55d7-4d0d-838d-c53c5abbea0b)
 
 ## RoadMap
 
@@ -128,27 +128,3 @@ make clean
 ```
 
 This will remove `build/` and all build artifacts.
-
-## Syscall table
-| Code (rax)                    | arg1 (rdi) | arg2 (rsi) | arg3 (rdx) | arg4 (r10) | arg5 (r8) | arg6 (r9) |   return |
-|-------------------------------|------------|------------|------------|------------|-----------|-----------|----------|
-| (0) print_char_position       |    char    |      x     |     y      |     fg     |     bg    |           |     0    |
-| (1) print_string_position     |    *str    |      x     |     y      |     fg     |     bg    |           |     0    |
-| (2) print_char                |    char    |      fg    |     bg     |            |           |           |     0    |
-| (3) print_string              |    *str    |      fg    |     bg     |            |           |           |     0    |
-| (4) backspace                 |            |            |            |            |           |           |     0    |
-| (5) get_time                  |   value    |    *buf    |            |            |           |           |   *prt   |
-| (10) malloc                   |    size    |            |            |            |           |           |   *prt   |
-| (11) free                     |    *prt    |            |            |            |           |           |     0    |
-| (12) realloc                  |    *prt    |    size    |            |            |           |           |   *ptr   |
-| (13) get_malloc_stats         |    *prt    |            |            |            |           |           |     0    |
-| (30) get_char                 |            |            |            |            |           |           |   char   |
-| (31) set_pos_cursor           |      x     |      y     |            |            |           |           |     0    |
-| (100) power_off               |            |            |            |            |           |           |          |
-| (101) reboot_system           |            |            |            |            |           |           |          |
-| (200) task_create             |    *str    |            |            |            |           |           |   pid    |
-| (201) task_list               |    *buf    |     max    |            |            |           |           | quantity |
-| (202) task_stop               |     pid    |            |            |            |           |           |  status  |
-| (203) task_reap_zombies       |            |            |            |            |           |           |     0    |
-| (204) task_exit               |  exit_code |            |            |            |           |           |     0    |
-| (205) task_is_alive           |     pid    |            |            |            |           |           |  status  |
