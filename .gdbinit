@@ -1,9 +1,10 @@
 target remote :1234
-symbol-file iso/boot/kernel
+symbol-file iso/boot/kernel.elf
+break kernel.asm:54
+break kernel.asm:55
 break kmain
-break load_and_run_program
-break syscall/syscall.c:46
-break syscall/syscall.c:49
-break syscall/syscall.c:52
-break syscall/syscall.c:53
-break schedule_from_isr
+break kernel.c:228
+break kernel.c:287
+break isr_timer_dispatch
+break vga/mb2/mb2.c:71
+break vga/mb2/mb2.c:85

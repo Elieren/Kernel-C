@@ -17,9 +17,8 @@ BITS 64
 %define VGA_WIDTH 80
 %define VGA_HEIGHT 25
 
-%define WHITE 15
-%define BLACK 0
-%define GREY 7
+%define WHITE 0x00FFFFFF
+%define BLACK 0x00000000
 
 %define INTERNAL_SPACE 0x01
 
@@ -35,7 +34,6 @@ _start:
 
     lea rdi, [rel welcome_msg]
     mov rsi, WHITE
-    mov rdx, BLACK
     mov rax, SYSCALL_PRINT_STRING
     int 0x80
 
@@ -43,7 +41,6 @@ _start:
 
     lea rdi, [rel prompt_msg]
     mov rsi, WHITE
-    mov rdx, BLACK
     mov rax, SYSCALL_PRINT_STRING
     int 0x80
 
@@ -154,7 +151,6 @@ _start:
 .child_ended:
     lea rdi, [rel prompt_msg]
     mov rsi, WHITE
-    mov rdx, BLACK
     mov rax, SYSCALL_PRINT_STRING
     int 0x80
 
@@ -189,7 +185,6 @@ _start:
     ; Печать символа
     movzx rdi, al
     mov rsi, WHITE
-    mov rdx,  BLACK
     mov rax, SYSCALL_PRINT_CHAR
     int 0x80
 
@@ -203,7 +198,6 @@ _start:
 new_line:
     lea rdi, 10
     mov rsi, WHITE
-    mov rdx, BLACK
     mov rax, SYSCALL_PRINT_CHAR
     int 0x80
 
@@ -218,5 +212,5 @@ section .bss
 
 section .data
     prompt_msg db "$: ", 0
-    welcome_msg db "SimpleTerm v0.1", 10, 0
+    welcome_msg db "SimpleTerm v0.2", 10, 0
     error_message db "Command not found: ", 0

@@ -5,7 +5,6 @@
 #include "multitask.h"
 #include "../malloc/malloc.h"
 #include "../libc/string.h"
-#include "../vga/vga.h"
 #include "../syscall/syscall.h"
 
 #include <stdint.h>

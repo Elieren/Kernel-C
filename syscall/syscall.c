@@ -1,6 +1,5 @@
 // syscall.c
 #include "syscall.h"
-#include "../vga/vga.h"
 #include "../time/timer.h"
 #include "../malloc/malloc.h"
 #include "../power/poweroff.h"
@@ -10,6 +9,7 @@
 #include "../fat16/fs.h"
 #include "../time/clock/clock.h"
 #include "../vga/exception_handler/kprint.h"
+#include "../vga/graphics.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -89,23 +89,23 @@ uintptr_t syscall_handler(
     switch ((uint32_t)rax)
     {
     case SYSCALL_PRINT_CHAR_POSITION:
-        print_char_position((char)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint8_t)r10, (uint8_t)r8);
+        gfx_put_char_position((char)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10);
         return 0;
 
     case SYSCALL_PRINT_STRING_POSITION:
-        print_string_position((const char *)(uintptr_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint8_t)r10, (uint8_t)r8);
+        gfx_put_string_position((const char *)(uintptr_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10);
         return 0;
 
     case SYSCALL_PRINT_CHAR:
-        print_char((char)rdi, (uint8_t)rsi, (uint8_t)rdx);
+        gfx_put_char((char)rdi, (uint32_t)rsi);
         return 0;
 
     case SYSCALL_PRINT_STRING:
-        print_string((const char *)(uintptr_t)rdi, (uint8_t)rsi, (uint8_t)rdx);
+        gfx_put_string((const char *)(uintptr_t)rdi, (uint32_t)rsi);
         return 0;
 
     case SYSCALL_BACKSPACE:
-        backspace();
+        gfx_backspace();
         return 0;
 
     case SYSCALL_GET_TIME:
@@ -122,7 +122,7 @@ uintptr_t syscall_handler(
         return (uintptr_t)seconds;
 
     case SYSCALL_CLEAN_SCREEN:
-        clean_screen();
+        gfx_clear_cells();
         return 0;
 
     case SYSCALL_MALLOC:
@@ -147,7 +147,7 @@ uintptr_t syscall_handler(
     }
 
     case SYSCALL_SETPOSCURSOR:
-        update_hardware_cursor((uint8_t)rdi, (uint8_t)rsi);
+        // update_hardware_cursor((uint8_t)rdi, (uint8_t)rsi);
         return 0;
 
     case SYSCALL_POWER_OFF:

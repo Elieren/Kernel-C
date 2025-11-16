@@ -6,26 +6,7 @@
 
 volatile uint16_t tick_time = 0;
 volatile uint32_t seconds = 0;
-
-uint64_t *isr_timer_dispatch(uint64_t *regs_ptr)
-{
-    tick_time++;
-    if (tick_time >= 1000)
-    {
-        tick_time = 0;
-        seconds++;
-        clock_tick();
-    }
-
-    /* Посылаем EOI PIC — делаем это здесь, до возможного переключения */
-    pic_send_eoi(0);
-
-    /* Запускаем scheduler: он сохранит regs текущей задачи и вернёт frame следующей. */
-    uint64_t *out_regs = regs_ptr;
-    schedule_from_isr(regs_ptr, &out_regs);
-
-    return out_regs;
-}
+bool screen_refresh_status = true;
 
 void timer_tick(void)
 {
@@ -35,6 +16,14 @@ void timer_tick(void)
         tick_time = 0;
         seconds++;
         clock_tick();
+    }
+
+    if ((tick_time % 33) == 0)
+    {
+        if (screen_refresh_status == false)
+        {
+            screen_refresh_status = true;
+        }
     }
 
     /* Посылаем EOI PIC — делаем это здесь, до возможного переключения */
