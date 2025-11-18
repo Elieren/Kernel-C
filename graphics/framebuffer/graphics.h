@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "mb2/mb2.h"
+#include "../mb2/mb2.h"
 
 typedef struct
 {

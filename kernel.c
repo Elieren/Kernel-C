@@ -31,11 +31,11 @@
 
 #include "default_files.h"
 
-#include "vga/mb2/mb2.h"
-#include "vga/exception_handler/kprint.h"
-#include "vga/graphics.h"
+#include "graphics/mb2/mb2.h"
+#include "graphics/exception_handler/kprint.h"
+#include "graphics/framebuffer/graphics.h"
 
-#include "vga/font.h"
+#include "graphics/framebuffer/font.h"
 
 #include "glyphs/english_glyph.h"
 

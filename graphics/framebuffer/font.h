@@ -5,9 +5,9 @@
 
 #include "graphics.h"
 
-#include "../glyphs/english_glyph.h"
-#include "../glyphs/numbers_glyph.h"
-#include "../glyphs/symbols_glyph.h"
+#include "../../glyphs/english_glyph.h"
+#include "../../glyphs/numbers_glyph.h"
+#include "../../glyphs/symbols_glyph.h"
 
 static const uint8_t *glyph_table[128] = {
     /* Upper */

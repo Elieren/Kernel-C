@@ -8,7 +8,7 @@
 static struct idt_entry idt[IDT_ENTRIES];
 static struct idt_ptr idtp;
 
-/* Установить запись IDT для 64-bit handler */
+/* Установка записи IDT для 64-bit handler */
 void idt_set_gate(uint8_t num, void (*handler)(), uint16_t sel, uint8_t flags)
 {
     uint64_t base = (uint64_t)handler;
@@ -23,7 +23,7 @@ void idt_set_gate(uint8_t num, void (*handler)(), uint16_t sel, uint8_t flags)
 
 void idt_install(void)
 {
-    /* Переназначаем PIC (если нужно) */
+    /* Переназначаем PIC */
     pic_remap(0x20, 0x28);
 
     idtp.limit = (uint16_t)(sizeof(idt) - 1);
@@ -51,6 +51,6 @@ void idt_install(void)
     idt_set_gate(KEYBOARD, isr33, 0x08, 0x8E);
     idt_set_gate(INTERRUPT, isr80, 0x08, 0xEE);
 
-    /* Загружаем IDT через 64-bit ассм-обёртку */
+    /* Загружаем IDT через 64-bit asm-обёртку */
     lidt_load(&idtp);
 }

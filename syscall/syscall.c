@@ -8,8 +8,8 @@
 #include "../multitask/multitask.h"
 #include "../fat16/fs.h"
 #include "../time/clock/clock.h"
-#include "../vga/exception_handler/kprint.h"
-#include "../vga/graphics.h"
+#include "../graphics/exception_handler/kprint.h"
+#include "../graphics/framebuffer/graphics.h"
 
 #include <stdint.h>
 #include <stddef.h>

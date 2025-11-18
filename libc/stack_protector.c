@@ -1,7 +1,7 @@
 // libc/stack_protector.c
 #include <stdint.h>
 #include "../syscall/syscall.h"
-#include "../vga/vga.h"
+#include "../graphics/vga/vga.h"
 
 /* Глобальный guard, который GCC читает */
 uintptr_t __stack_chk_guard = 0xBAAAD00Du;

@@ -3,11 +3,11 @@
 #include "../syscall/syscall.h"
 #include "../fat16/fs.h"
 #include "../libc/string.h"
-#include "../vga/graphics.h"
+#include "../graphics/framebuffer/graphics.h"
 
 extern bool screen_refresh_status;
 
-/* Задача-реапер: бесконечно вызывает reap_zombies(), можно вызывать каждые N тикoв */
+/* Задача-реапер: бесконечно вызывает reap_zombies() */
 void zombie_reaper_task(void)
 {
     for (;;)

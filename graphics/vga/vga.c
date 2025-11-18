@@ -1,5 +1,5 @@
 #include "vga.h"
-#include "../portio/portio.h"
+#include "../../portio/portio.h"
 
 #define VGA_BUF ((uint8_t *)0xB8000)
 

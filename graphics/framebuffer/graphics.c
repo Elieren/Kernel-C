@@ -1,7 +1,7 @@
 #include "graphics.h"
 #include <stddef.h>
 #include <string.h>
-#include "../malloc/malloc.h"
+#include "../../malloc/malloc.h"
 #include "font.h"
 
 const int GLYPH_W = 8;

@@ -1,4 +1,4 @@
-#include "../graphics.h"
+#include "../framebuffer/graphics.h"
 #include "kprint.h"
 #include "../../libc/string.h"
 #include <stdarg.h>
