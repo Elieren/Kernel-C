@@ -263,15 +263,6 @@ void pci_init(void)
             pci_scan_bus(f);
         }
     }
-
-    /* Выведем короткий отчёт */
-    kprint(0, "PCI: found %d devices\n", g_pci_dev_count);
-    for (int i = 0; i < g_pci_dev_count; ++i)
-    {
-        pci_device_t *d = &g_pci_devices[i];
-        kprint(0, "PCI: %02x:%02x.%x ven=0x%04x dev=0x%04x class=0x%02x sub=0x%02x\n",
-               d->bus, d->device, d->function, d->vendor_id, d->device_id, d->class_code, d->subclass);
-    }
 }
 
 int pci_get_device_count(void)
