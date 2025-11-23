@@ -37,6 +37,15 @@
 
 #define THROW_AN_EXCEPTION 300
 
+/* Syscall номера для графики */
+#define SYSCALL_GFX_DRAW_POINT 400
+#define SYSCALL_GFX_DRAW_LINE 401
+#define SYSCALL_GFX_DRAW_CIRCLE 402
+#define SYSCALL_GFX_FILL_CIRCLE 403
+#define SYSCALL_GFX_DRAW_RECT 404
+#define SYSCALL_GFX_FILL_RECT 405
+#define SYSCALL_GFX_CLEAR 406
+
 // Обёртки для удобства
 // Обертки для пользовательского кода
 static inline void syscall_print_char(char c, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)

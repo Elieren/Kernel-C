@@ -2,53 +2,77 @@
 #include "kprint.h"
 #include "../../libc/string.h"
 #include <stdarg.h>
+#include <stddef.h>
+#include <stdint.h>
 
-// Вспомогательная функция: преобразует int в строку
-static void itoa(int value, char *str, int base)
+static void utoa_unsigned(unsigned long long value, char *out, int base)
 {
     const char digits[] = "0123456789ABCDEF";
-    char buffer[32];
-    int i = 0, j = 0;
-
-    // Проверка на валидность буфера
-    if (!str)
+    char tmp[32];
+    int pos = 0;
+    if (!out)
         return;
-
-    // Обработка отрицательных чисел
-    if (value < 0 && base == 10)
+    if (value == 0)
     {
-        if (j < 31)
-            str[j++] = '-';
-        value = -value;
+        out[0] = '0';
+        out[1] = '\0';
+        return;
     }
-
-    // Преобразование в буфер
-    do
+    while (value && pos < (int)(sizeof(tmp) - 1))
     {
-        buffer[i++] = digits[value % base];
+        tmp[pos++] = digits[value % base];
         value /= base;
-    } while (value && i < 32);
-
-    // Копирование в выходную строку с проверкой границ
-    while (i-- && j < 31)
-    {
-        str[j++] = buffer[i];
     }
-    str[j] = '\0';
+    int i = 0;
+    while (pos > 0)
+    {
+        out[i++] = tmp[--pos];
+    }
+    out[i] = '\0';
 }
 
-// Так же вспомогательная функция для форматирования
+static void itoa_signed(long long value, char *out)
+{
+    if (!out)
+        return;
+    if (value < 0)
+    {
+        *out++ = '-';
+        unsigned long long u = (unsigned long long)(-(value + 1)) + 1ULL;
+        utoa_unsigned(u, out, 10);
+    }
+    else
+    {
+        utoa_unsigned((unsigned long long)value, out, 10);
+    }
+}
+
+static void append_padded(char **pp, char *end, const char *s, int width, char pad)
+{
+    if (!pp || !end || !s)
+        return;
+    int len = 0;
+    const char *t = s;
+    while (*t++)
+        len++;
+    int padcnt = (width > len) ? (width - len) : 0;
+    while (padcnt-- > 0 && *pp < end - 1)
+    {
+        *(*pp)++ = pad;
+    }
+    for (int i = 0; i < len && *pp < end - 1; ++i)
+    {
+        *(*pp)++ = s[i];
+    }
+}
+
 static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
 {
-    char *p = buf;
-    const char *s;
-    int d;
-    char temp[32];
-
-    if (size == 0)
+    if (!buf || size == 0 || !fmt)
         return 0;
-
-    while (*fmt && p - buf < (int)(size - 1))
+    char *p = buf;
+    char *end = buf + size;
+    while (*fmt && p < end - 1)
     {
         if (*fmt != '%')
         {
@@ -57,70 +81,86 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
         }
         fmt++;
 
+        char padchar = ' ';
+        if (*fmt == '0')
+        {
+            padchar = '0';
+            fmt++;
+        }
+
+        int width = 0;
+        while (*fmt >= '0' && *fmt <= '9')
+        {
+            width = width * 10 + (*fmt - '0');
+            fmt++;
+        }
+
+        char temp[64];
         switch (*fmt)
         {
         case 's':
-            s = va_arg(args, char *);
+        {
+            const char *s = va_arg(args, const char *);
             if (!s)
-            {
                 s = "(null)";
-            }
-            while (*s && p - buf < (int)(size - 1))
-            {
-                *p++ = *s++;
-            }
-            break;
-        case 'd':
-            d = va_arg(args, int);
-            itoa(d, temp, 10); // Используем свою реализацию
-            for (int i = 0; temp[i] && p - buf < (int)(size - 1); i++)
-            {
-                *p++ = temp[i];
-            }
-            break;
-        case 'u':
-            d = va_arg(args, unsigned int);
-            itoa(d, temp, 10);
-            for (int i = 0; temp[i] && p - buf < (int)(size - 1); i++)
-            {
-                *p++ = temp[i];
-            }
-            break;
-        case 'x':
-            d = va_arg(args, int);
-            itoa(d, temp, 16);
-            for (int i = 0; temp[i] && p - buf < (int)(size - 1); i++)
-            {
-                *p++ = temp[i];
-            }
-            break;
-        case 'c':
-            *p++ = (char)va_arg(args, int);
-            break;
-        case '%':
-            *p++ = '%';
-            break;
-        default:
-            *p++ = '%';
-            *p++ = *fmt;
+            append_padded(&p, end, s, width, padchar);
             break;
         }
-        fmt++;
+        case 'd':
+        {
+            int v = va_arg(args, int);
+            itoa_signed((long long)v, temp);
+            append_padded(&p, end, temp, width, padchar);
+            break;
+        }
+        case 'u':
+        {
+            unsigned int v = va_arg(args, unsigned int);
+            utoa_unsigned((unsigned long long)v, temp, 10);
+            append_padded(&p, end, temp, width, padchar);
+            break;
+        }
+        case 'x':
+        {
+            unsigned int v = va_arg(args, unsigned int);
+            utoa_unsigned((unsigned long long)v, temp, 16);
+            append_padded(&p, end, temp, width, padchar);
+            break;
+        }
+        case 'c':
+        {
+            int ch = va_arg(args, int);
+            if (p < end - 1)
+                *p++ = (char)ch;
+            break;
+        }
+        case '%':
+            if (p < end - 1)
+                *p++ = '%';
+            break;
+        default:
+            if (p < end - 1)
+                *p++ = '%';
+            if (*fmt && p < end - 1)
+                *p++ = *fmt;
+            break;
+        }
+        if (*fmt)
+            fmt++;
     }
+
     *p = '\0';
-    return p - buf;
+    return (int)(p - buf);
 }
 
 int kprint(const uint8_t type, const char *format, ...)
 {
-    // Проверка входных данных
-    if (format == NULL)
+    if (!format)
     {
         gfx_put_string("PRINT ERROR: Format string is NULL\n", 0x00FF0000);
         return -1;
     }
 
-    // Определение цвета в зависимости от типа
     uint32_t fg = 0x00FFFFFF;
     switch (type)
     {
@@ -141,28 +181,18 @@ int kprint(const uint8_t type, const char *format, ...)
         return -1;
     }
 
-// Буфер для сформированного сообщения
-#define BUFFER_SIZE 512
-    char buffer[BUFFER_SIZE];
-
-    // Инициализация списка аргументов
+    char buffer[KPRINT_BUFFER_SIZE];
     va_list args;
     va_start(args, format);
-
-    // Форматирование строки (аналог vsprintf)
-    int result = simple_vsnprintf(buffer, BUFFER_SIZE, format, args);
-
+    int r = simple_vsnprintf(buffer, sizeof(buffer), format, args);
     va_end(args);
 
-    // Проверка на ошибку форматирования
-    if (result < 0)
+    if (r < 0)
     {
         gfx_put_string("PRINT ERROR: String formatting failed\n", 0x00FF0000);
         return -1;
     }
 
-    // Вывод отформатированного сообщения
     gfx_put_string(buffer, fg);
-
     return 0;
 }

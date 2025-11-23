@@ -1,3 +1,4 @@
 *.o
 *.asm.o
 *.c.o
+ide_disk.img

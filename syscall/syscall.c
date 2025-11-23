@@ -181,6 +181,34 @@ uintptr_t syscall_handler(
     case THROW_AN_EXCEPTION:
         return kprint((uint8_t)rdi, (const char *)(uintptr_t)rsi);
 
+    case SYSCALL_GFX_DRAW_POINT:
+        gfx_draw_point((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx);
+        return 0;
+
+    case SYSCALL_GFX_DRAW_LINE:
+        gfx_draw_line((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10, (uint32_t)r8);
+        return 0;
+
+    case SYSCALL_GFX_DRAW_CIRCLE:
+        gfx_draw_circle((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10);
+        return 0;
+
+    case SYSCALL_GFX_FILL_CIRCLE:
+        gfx_fill_circle((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10);
+        return 0;
+
+    case SYSCALL_GFX_DRAW_RECT:
+        gfx_draw_rect((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10, (uint32_t)r8);
+        return 0;
+
+    case SYSCALL_GFX_FILL_RECT:
+        gfx_fill_rect((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10, (uint32_t)r8);
+        return 0;
+
+    case SYSCALL_GFX_CLEAR:
+        gfx_clear((uint32_t)rdi);
+        return 0;
+
     default:
         return (uintptr_t)-1;
     }

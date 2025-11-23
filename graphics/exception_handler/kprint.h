@@ -1,6 +1,8 @@
 #ifndef KPRINT_H
 #define KPRINT_H
 
+#define KPRINT_BUFFER_SIZE 512
+
 enum kprint_type
 {
     KPRINT_LOG,

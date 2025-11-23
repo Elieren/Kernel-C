@@ -55,6 +55,10 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [ ] Added sleep support to power modes.
 
+* [X] Added PCI driver for working with devices.
+
+* [X] Added IDE driver for working with disks.
+
 ## Iist of available commands:
 * htop - prints information about the heap
 * clear - clears the terminal
