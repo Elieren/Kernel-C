@@ -59,6 +59,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Added IDE driver for working with disks.
 
+* [x] Support for Loading and Executing C User Programs in Kernel.
+
 ## Iist of available commands:
 * htop - prints information about the heap
 * clear - clears the terminal
