@@ -1,5 +1,4 @@
 #include "seqlock.h"
-#include <stdatomic.h>
 
 /* Писатель: начало */
 void seqlock_write_begin(seqlock_t *s)

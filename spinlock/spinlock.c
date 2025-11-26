@@ -1,6 +1,4 @@
 #include "spinlock.h"
-#include <stdatomic.h>
-#include <stdbool.h>
 
 /* Глобальный lock для fb — atomic_flag (специальный тип) */
 static atomic_flag g_fb_lock = ATOMIC_FLAG_INIT;
