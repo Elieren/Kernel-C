@@ -3,13 +3,79 @@
 #include <stdint.h>
 
 /* =================== MEM =================== */
-void *memcpy(void *dst, const void *src, size_t n)
+void *memcpy(void *dst_, const void *src_, size_t n)
 {
-    unsigned char *d = (unsigned char *)dst;
-    const unsigned char *s = (const unsigned char *)src;
-    for (size_t i = 0; i < n; ++i)
-        d[i] = s[i];
-    return dst;
+    unsigned char *dst = (unsigned char *)dst_;
+    const unsigned char *src = (const unsigned char *)src_;
+    void *ret = dst_;
+
+    if (n == 0 || dst == src)
+        return ret;
+
+#if defined(__x86_64__) || defined(__i386__)
+    /* На x86/x86_64 rep movsb очень быстрый */
+    asm volatile(
+        "rep movsb"
+        : "+D"(dst), "+S"(src), "+c"(n)
+        :
+        : "memory");
+    return ret;
+#else
+    const size_t W = sizeof(unsigned long);
+    uintptr_t dst_addr = (uintptr_t)dst;
+    uintptr_t src_addr = (uintptr_t)src;
+
+    /* Выравниваем dst по границе слова побайтно */
+    while (n > 0 && (dst_addr & (W - 1)))
+    {
+        *dst++ = *src++;
+        --n;
+        dst_addr = (uintptr_t)dst;
+        src_addr = (uintptr_t)src;
+    }
+
+    /* Если выравнивание src равно выравниванию dst, можно копировать словами */
+    if ((src_addr & (W - 1)) == (dst_addr & (W - 1)))
+    {
+        unsigned long *dw = (unsigned long *)dst;
+        const unsigned long *sw = (const unsigned long *)src;
+        size_t words = n / W;
+
+        /* Разворачивание цикла по 4 слова */
+        while (words >= 4)
+        {
+            dw[0] = sw[0];
+            dw[1] = sw[1];
+            dw[2] = sw[2];
+            dw[3] = sw[3];
+            dw += 4;
+            sw += 4;
+            words -= 4;
+        }
+        while (words--)
+        {
+            *dw++ = *sw++;
+        }
+
+        /* Обновляем указатели и оставшиеся байты */
+        dst = (unsigned char *)dw;
+        src = (const unsigned char *)sw;
+        n = n & (W - 1);
+    }
+    else
+    {
+        /* Если выравнивания не совпадают — оставляем всё побайтно.
+           Это безопасно на архитектурах с требованием выравнивания. */
+    }
+
+    /* Хвостовые байты */
+    while (n--)
+    {
+        *dst++ = *src++;
+    }
+
+    return ret;
+#endif
 }
 
 void *memset(void *s, int c, size_t n)

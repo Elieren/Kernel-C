@@ -492,14 +492,10 @@ void gfx_update_screen(void)
     if (!g_fb || !g_backbuffer)
         return;
 
-    asm volatile("cli");
-
     uint8_t *fb_ptr = (uint8_t *)phys_to_virt(g_fb->addr);
     size_t size = g_fb->pitch * g_fb->height;
 
     memcpy(fb_ptr, g_backbuffer, size);
-
-    asm volatile("sti");
 }
 
 /* --------------------------------------------------------------------------- */
