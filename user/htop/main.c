@@ -2,6 +2,17 @@ typedef unsigned long size_t;
 typedef unsigned long uint64_t;
 typedef unsigned int uint32_t;
 typedef unsigned char uint8_t;
+/* структура статистики */
+typedef struct
+{
+    size_t total_managed;
+    size_t used_payload;
+    size_t free_payload;
+    size_t largest_free;
+    size_t num_blocks;
+    size_t num_used;
+    size_t num_free;
+} kmalloc_stats_t;
 
 extern void _do_syscall_print(const char *p);
 extern void _do_syscall_kmalloc_stats(void *buf);
@@ -19,22 +30,22 @@ const char lbl_num_used[] = "num_used:        ";
 const char lbl_num_free[] = "num_free:        ";
 const char newline[] = "\n";
 
-static uint64_t kmalloc_stats[7];
+static kmalloc_stats_t kmalloc_stats;
 static char numbuf_out[32];
 
 void _start(void)
 {
     /* Запрос ядра заполнить kmalloc_stats */
-    _do_syscall_kmalloc_stats((void *)kmalloc_stats);
+    _do_syscall_kmalloc_stats(&kmalloc_stats);
 
     /* Печатаем поля в том же порядке, что в ASM */
-    print_field(lbl_total_managed, &kmalloc_stats[0]);
-    print_field(lbl_used_payload, &kmalloc_stats[1]);
-    print_field(lbl_free_payload, &kmalloc_stats[2]);
-    print_field(lbl_largest_free, &kmalloc_stats[3]);
-    print_field(lbl_num_blocks, &kmalloc_stats[4]);
-    print_field(lbl_num_used, &kmalloc_stats[5]);
-    print_field(lbl_num_free, &kmalloc_stats[6]);
+    print_field(lbl_total_managed, &kmalloc_stats.total_managed);
+    print_field(lbl_used_payload, &kmalloc_stats.used_payload);
+    print_field(lbl_free_payload, &kmalloc_stats.free_payload);
+    print_field(lbl_largest_free, &kmalloc_stats.largest_free);
+    print_field(lbl_num_blocks, &kmalloc_stats.num_blocks);
+    print_field(lbl_num_used, &kmalloc_stats.num_used);
+    print_field(lbl_num_free, &kmalloc_stats.num_free);
 
     /* Завершение задачи с кодом 0 */
     _do_syscall_exit(0);
