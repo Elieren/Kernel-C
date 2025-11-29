@@ -13,6 +13,8 @@ unsigned long _do_syscall_task_is_alive(unsigned long pid);
 void _do_syscall_task_stop(unsigned long pid);
 void _do_syscall_throw_exception(unsigned long code, const char *msg);
 void new_line(void);
+void _do_syscall_chdir(const char *path);
+unsigned long _do_syscall_getcwd(char *buf, unsigned long size);
 
 #define SYSCALL_PRINT_CHAR 2
 #define SYSCALL_PRINT_STRING 3
@@ -29,32 +31,44 @@ void new_line(void);
 
 #define THROW_AN_EXCEPTION 300
 
-#define VGA_WIDTH 80
-#define VGA_HEIGHT 25
+#define SYSCALL_CHDIR 500
+#define SYSCALL_GETCWD 501
 
 #define WHITE 0x00FFFFFF
 #define BLACK 0x00000000
 
 #define INTERNAL_SPACE 0x01
 
-const char prompt_msg[] = "$: ";
+#define DIR_BUF_SIZE 1024
+
+const char prompt_msg[] = "$ ";
 const char welcome_msg[] = "SimpleTerm v0.2";
 const char error_message[] = "Command not found: ";
 
 static uint64_t input_len = 0;
 static char *input_buffer_ptr = (char *)0;
+static char *directory_buffer_ptr = (char *)0;
 static char notfound_msg[256];
+static int res = 0;
 
 static uint64_t child_pid = 0;
 
 void _start(void)
 {
     input_buffer_ptr = (char *)_do_syscall_malloc(8192);
+    directory_buffer_ptr = (char *)_do_syscall_malloc(DIR_BUF_SIZE);
     input_len = 0;
     child_pid = 0;
 
     _do_syscall_print_string(welcome_msg, WHITE);
     new_line();
+
+    res = _do_syscall_getcwd(directory_buffer_ptr, DIR_BUF_SIZE);
+
+    if (res != -1)
+    {
+        _do_syscall_print_string(directory_buffer_ptr, WHITE);
+    }
 
     _do_syscall_print_string(prompt_msg, WHITE);
 
@@ -127,6 +141,14 @@ void _start(void)
             }
 
             input_len = 0;
+
+            res = _do_syscall_getcwd(directory_buffer_ptr, DIR_BUF_SIZE);
+
+            if (res != -1)
+            {
+                _do_syscall_print_string(directory_buffer_ptr, WHITE);
+            }
+
             _do_syscall_print_string(prompt_msg, WHITE);
 
             asm volatile("hlt");
@@ -258,4 +280,22 @@ void _do_syscall_throw_exception(unsigned long code, const char *msg)
 void new_line(void)
 {
     _do_syscall_print_char((unsigned long)10, WHITE);
+}
+
+void _do_syscall_chdir(const char *path)
+{
+    asm volatile("int $0x80"
+                 :
+                 : "a"(SYSCALL_CHDIR), "D"(path)
+                 : "rcx", "r11", "memory");
+}
+
+unsigned long _do_syscall_getcwd(char *buf, unsigned long size)
+{
+    unsigned long ret;
+    asm volatile("int $0x80"
+                 : "=a"(ret)
+                 : "a"(SYSCALL_GETCWD), "D"(buf), "S"(size)
+                 : "rcx", "r11", "memory");
+    return ret;
 }

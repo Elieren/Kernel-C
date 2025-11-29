@@ -7,7 +7,7 @@ void _start(void)
     _do_syscall_reboot();
 
     for (;;)
-        ;
+        asm volatile("hlt");
 }
 
 void _do_syscall_reboot(void)

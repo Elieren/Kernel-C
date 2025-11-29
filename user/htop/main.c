@@ -51,7 +51,7 @@ void _start(void)
     _do_syscall_exit(0);
 
     for (;;)
-        ;
+        asm volatile("hlt");
 }
 
 /* Преобразование uint64 -> десятичная строка (null-terminated). */

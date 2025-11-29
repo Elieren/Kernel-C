@@ -209,6 +209,81 @@ uintptr_t syscall_handler(
         gfx_clear((uint32_t)rdi);
         return 0;
 
+    case SYSCALL_CHDIR:
+        return (uintptr_t)sys_chdir((const char *)(uintptr_t)rdi);
+    case SYSCALL_GETCWD:
+
+        int result = sys_getcwd((char *)(uintptr_t)rdi, (size_t)rsi);
+        if (result == -1)
+        {
+            return -1;
+        }
+        else
+        {
+            return (uintptr_t)result;
+        }
+
+    case SYSCALL_GET_CWD_IDX:
+        return (uintptr_t)sys_get_cwd_idx((uint32_t *)(uintptr_t)rdi);
+
+    case SYSCALL_FS_MKDIR:
+        return (uintptr_t)fs_mkdir((const char *)(uintptr_t)rdi, (int)rsi);
+
+    case SYSCALL_FS_RMDIR:
+        return (uintptr_t)fs_rmdir((int)rdi);
+
+    case SYSCALL_FS_CREATE_FILE:
+        return (uintptr_t)fs_create_file(
+            (const char *)(uintptr_t)rdi,
+            (const char *)(uintptr_t)rsi,
+            (int)rdx,
+            (uint16_t *)(uintptr_t)r10);
+
+    case SYSCALL_FS_REMOVE_ENTRY:
+        return (uintptr_t)fs_remove_entry((int)rdi);
+
+    case SYSCALL_FS_FIND_IN_DIR:
+        return (uintptr_t)fs_find_in_dir(
+            (const char *)(uintptr_t)rdi,
+            (const char *)(uintptr_t)rsi,
+            (int)rdx,
+            (fs_entry_t *)(uintptr_t)r10);
+
+    case SYSCALL_FS_GET_ALL_IN_DIR:
+        return (uintptr_t)fs_get_all_in_dir(
+            (fs_entry_t *)(uintptr_t)rdi,
+            (int)rsi,
+            (int)rdx);
+
+    case SYSCALL_FS_READ:
+        return (uintptr_t)fs_read(
+            (uint16_t)rdi,
+            (void *)(uintptr_t)rsi,
+            (size_t)rdx);
+
+    case SYSCALL_FS_WRITE:
+        return (uintptr_t)fs_write(
+            (uint16_t)rdi,
+            (const void *)(uintptr_t)rsi,
+            (size_t)rdx);
+
+    case SYSCALL_FS_WRITE_FILE_IN_DIR:
+        return (uintptr_t)fs_write_file_in_dir(
+            (const char *)(uintptr_t)rdi,
+            (const char *)(uintptr_t)rsi,
+            (int)rdx,
+            (const void *)(uintptr_t)r10,
+            (size_t)r8);
+
+    case SYSCALL_FS_READ_FILE_IN_DIR:
+        return (uintptr_t)fs_read_file_in_dir(
+            (const char *)(uintptr_t)rdi,
+            (const char *)(uintptr_t)rsi,
+            (int)rdx,
+            (void *)(uintptr_t)r10,
+            (size_t)r8,
+            (size_t *)(uintptr_t)r9);
+
     default:
         return (uintptr_t)-1;
     }

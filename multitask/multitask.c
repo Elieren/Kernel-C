@@ -6,6 +6,7 @@
 #include "../malloc/malloc.h"
 #include "../libc/string.h"
 #include "../syscall/syscall.h"
+#include "../fat16/fs.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -106,6 +107,7 @@ void scheduler_init(void)
     init_task.kstack = NULL;
     init_task.kstack_size = 0;
     init_task.next = &init_task;
+    init_task.cwd_idx = FS_ROOT_IDX; /* корень при старте */
 
     task_ring = &init_task;
     current = NULL;
@@ -136,6 +138,8 @@ void task_create(void (*entry)(void), size_t stack_size)
     t->kstack_size = stack_size;
     t->exit_code = 0;
     t->next = NULL;
+
+    t->cwd_idx = FS_ROOT_IDX;
 
     void *kstack_top = (char *)kstack + stack_size;
     t->regs = prepare_initial_stack(entry, kstack_top);
@@ -449,6 +453,11 @@ uint64_t utask_create(void (*entry)(void), size_t stack_size, void *user_mem, si
     t->user_mem = user_mem;
     t->user_mem_size = user_mem_size;
 
+    if (current)
+        t->cwd_idx = current->cwd_idx;
+    else
+        t->cwd_idx = FS_ROOT_IDX;
+
     /* Вставляем в кольцо */
     if (!task_ring)
     {
@@ -501,4 +510,99 @@ int task_is_alive(int pid)
 
     sti();
     return 0;
+}
+
+int sys_chdir(const char *path)
+{
+    if (!path)
+        return FS_ERR_INVALID_ARG;
+    if (!current)
+        return FS_ERR_INVALID_ARG;
+    if (path[0] == '\0')
+        return FS_ERR_INVALID_ARG;
+
+    uint32_t start_idx = (uint32_t)current->cwd_idx;
+    const char *p = path;
+
+    if (p[0] == '/')
+    {
+        start_idx = FS_ROOT_IDX;
+        while (*p == '/')
+            p++;
+        if (*p == '\0')
+        {
+            current->cwd_idx = start_idx;
+            return FS_OK;
+        }
+    }
+
+    uint32_t idx = start_idx;
+    char comp[FS_NAME_MAX + 1];
+
+    while (*p)
+    {
+        size_t i = 0;
+        while (*p && *p != '/')
+        {
+            if (i >= FS_NAME_MAX)
+                return FS_ERR_INVALID_ARG;
+            comp[i++] = *p++;
+        }
+        comp[i] = '\0';
+
+        while (*p == '/')
+            p++;
+
+        if (strcmp(comp, ".") == 0)
+            continue;
+
+        if (strcmp(comp, "..") == 0)
+        {
+            int parent = fs_get_parent_idx((int)idx);
+            if (parent < 0)
+            {
+                idx = FS_ROOT_IDX;
+            }
+            else
+            {
+                idx = (uint32_t)parent;
+            }
+            continue;
+        }
+
+        fs_entry_t entry;
+        int found = fs_find_in_dir(comp, NULL, (int)idx, &entry);
+        if (found < 0)
+        {
+            return found;
+        }
+
+        if (!entry.is_dir)
+            return FS_ERR_NOT_DIR;
+
+        idx = (uint32_t)found;
+    }
+
+    current->cwd_idx = idx;
+    return FS_OK;
+}
+
+int sys_getcwd(char *buf, size_t size)
+{
+    if (!buf || !current)
+        return -1;
+    if (!fs_build_path(current->cwd_idx, buf, size))
+        return -1;
+    return (int)strlen(buf);
+}
+
+int sys_get_cwd_idx(uint32_t *out_idx)
+{
+    if (!out_idx)
+        return FS_ERR_INVALID_ARG;
+    if (!current)
+        return FS_ERR_INVALID_ARG;
+
+    *out_idx = current->cwd_idx;
+    return FS_OK;
 }

@@ -8,6 +8,7 @@ const char cmd_clear[] = "clear    - clears the terminal\n";
 const char cmd_shutdown[] = "shutdown - shutdown the system\n";
 const char cmd_reboot[] = "reboot   - reboots the system\n";
 const char cmd_time[] = "time     - displays the current system time and uptime\n";
+const char cmd_ls[] = "ls       - lists files in the current directory\n";
 
 void _start(void)
 {
@@ -16,11 +17,12 @@ void _start(void)
     _do_syscall_print(cmd_shutdown);
     _do_syscall_print(cmd_reboot);
     _do_syscall_print(cmd_time);
+    _do_syscall_print(cmd_ls);
 
     _do_syscall_exit(0);
 
     for (;;)
-        ;
+        asm volatile("hlt");
 }
 
 void _do_syscall_print(const char *p)

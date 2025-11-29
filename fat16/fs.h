@@ -71,4 +71,7 @@ int fs_write(uint16_t first_cluster, const void *buf, size_t size);
 int fs_write_file_in_dir(const char *name, const char *ext, int parent, const void *data, size_t size);
 int fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf, size_t bufsize, size_t *out_size);
 
+int fs_get_parent_idx(int idx);
+int fs_build_path(int idx, char *buf, size_t size);
+
 #endif // FS_H

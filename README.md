@@ -50,6 +50,9 @@ The goal is not to create a fully functional OS, but to understand how its key m
 * [X] Added support for BIOS and UEFI (Multiboot2).
 
 * [ ] Added commands `ls`, `cd`, `pwd` for working with the file system and moving around directories.
+  - [X] `ls`
+  - [ ] `cd`
+  - [ ] `pwd`
 
 * [x] Added graphics mode with screen resolution support.
 
@@ -66,12 +69,7 @@ The goal is not to create a fully functional OS, but to understand how its key m
 * [x] Added Seqlock for frequent reading.
 
 ## Iist of available commands:
-* htop - prints information about the heap
-* clear - clears the terminal
-* shutdown - system shutdown (On all virtual machines, 100% performance is guaranteed; on real hardware, 100% performance is not guaranteed.)
-* reboot - system reboot
-* help - displays a list of commands
-* time - displays the current system time and uptime
+To view the list of available commands, use the "help" command.
 
 ## Build and Run
 

@@ -417,3 +417,64 @@ int fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf
         *out_size = r;
     return FS_OK;
 }
+
+int fs_get_parent_idx(int idx)
+{
+    if (idx < 0 || idx >= FS_MAX_ENTRIES)
+        return FS_ERR_INVALID_ARG;
+    if (!entries[idx].used)
+        return FS_ERR_INVALID_ARG;
+    return entries[idx].parent;
+}
+
+int fs_build_path(int idx, char *buf, size_t size)
+{
+    if (!buf || size == 0)
+        return 0;
+    if (idx < 0 || idx >= FS_MAX_ENTRIES)
+        return 0;
+    if (!entries[idx].used)
+        return 0;
+
+    if (idx == FS_ROOT_IDX)
+    {
+        if (size < 2)
+            return 0;
+        buf[0] = '/';
+        buf[1] = '\0';
+        return 1;
+    }
+
+    int stack[FS_MAX_ENTRIES];
+    int top = 0;
+    int cur = idx;
+    while (cur != FS_ROOT_IDX && cur >= 0 && cur < FS_MAX_ENTRIES && entries[cur].used)
+    {
+        stack[top++] = cur;
+        int p = entries[cur].parent;
+        if (p == -1)
+            break;
+        cur = p;
+        if (top >= FS_MAX_ENTRIES)
+            break;
+    }
+
+    size_t sum = 0;
+    for (int i = 0; i < top; ++i)
+        sum += strlen(entries[stack[i]].name);
+    size_t required = sum + (size_t)top + 1;
+    if (required > size)
+        return 0;
+
+    size_t pos = 0;
+    for (int i = top - 1; i >= 0; --i)
+    {
+        buf[pos++] = '/';
+        const char *n = entries[stack[i]].name;
+        size_t ln = strlen(n);
+        memcpy(buf + pos, n, ln);
+        pos += ln;
+    }
+    buf[pos] = '\0';
+    return 1;
+}

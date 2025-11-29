@@ -26,6 +26,7 @@ typedef struct task
     struct task *znext;   /* список зомби (отдельный указатель!) */
     void *user_mem;       // указатель на .user память
     size_t user_mem_size; // размер .user памяти
+    uint32_t cwd_idx;     /* индекс директории в FS (FS_ROOT_IDX для корня) */
 } task_t;
 
 typedef struct task_info
@@ -48,5 +49,9 @@ void task_exit(int exit_code);
 uint64_t utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size);
 
 int task_is_alive(int pid);
+
+int sys_chdir(const char *path);
+int sys_getcwd(char *buf, size_t size);
+int sys_get_cwd_idx(uint32_t *out_idx);
 
 #endif

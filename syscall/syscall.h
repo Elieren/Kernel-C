@@ -46,6 +46,23 @@
 #define SYSCALL_GFX_FILL_RECT 405
 #define SYSCALL_GFX_CLEAR 406
 
+#define SYSCALL_CHDIR 500
+#define SYSCALL_GETCWD 501
+#define SYSCALL_GET_CWD_IDX 502
+
+#define SYSCALL_FS_MKDIR 600
+#define SYSCALL_FS_RMDIR 601
+#define SYSCALL_FS_CREATE_FILE 602
+#define SYSCALL_FS_REMOVE_ENTRY 603
+#define SYSCALL_FS_FIND_IN_DIR 604
+#define SYSCALL_FS_GET_ALL_IN_DIR 605
+#define SYSCALL_FS_READ 606
+#define SYSCALL_FS_WRITE 607
+#define SYSCALL_FS_WRITE_FILE_IN_DIR 608
+#define SYSCALL_FS_READ_FILE_IN_DIR 609
+#define SYSCALL_FS_GET_PARENT_IDX 610
+#define SYSCALL_FS_BUILD_PATH 611
+
 // Обёртки для удобства
 // Обертки для пользовательского кода
 static inline void syscall_print_char(char c, uint32_t x, uint32_t y, uint8_t fg, uint8_t bg)
