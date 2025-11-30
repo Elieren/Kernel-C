@@ -36,7 +36,8 @@ static inline void cli(void) { __asm__ volatile("cli" ::: "memory"); }
 static inline void sti(void) { __asm__ volatile("sti" ::: "memory"); }
 
 /* prepare_initial_stack: layout exactly matches your ISR push order */
-static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top)
+static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top, int argc,
+                                       uintptr_t argv_ptr)
 {
     /* Layout (qwords):
        0  int_no
@@ -70,21 +71,21 @@ static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top)
     sp[0] = 32; /* int_no (dummy) */
     sp[1] = 0;  /* err_code */
 
-    sp[2] = 0;  /* r15 */
-    sp[3] = 0;  /* r14 */
-    sp[4] = 0;  /* r13 */
-    sp[5] = 0;  /* r12 */
-    sp[6] = 0;  /* r11 */
-    sp[7] = 0;  /* r10 */
-    sp[8] = 0;  /* r9  */
-    sp[9] = 0;  /* r8  */
-    sp[10] = 0; /* rdi */
-    sp[11] = 0; /* rsi */
-    sp[12] = 0; /* rbp */
-    sp[13] = 0; /* rbx */
-    sp[14] = 0; /* rdx */
-    sp[15] = 0; /* rcx */
-    sp[16] = 0; /* rax */
+    sp[2] = 0;                   /* r15 */
+    sp[3] = 0;                   /* r14 */
+    sp[4] = 0;                   /* r13 */
+    sp[5] = 0;                   /* r12 */
+    sp[6] = 0;                   /* r11 */
+    sp[7] = 0;                   /* r10 */
+    sp[8] = 0;                   /* r9  */
+    sp[9] = 0;                   /* r8  */
+    sp[10] = (uint64_t)argc;     /* rdi */
+    sp[11] = (uint64_t)argv_ptr; /* rsi */
+    sp[12] = 0;                  /* rbp */
+    sp[13] = 0;                  /* rbx */
+    sp[14] = 0;                  /* rdx */
+    sp[15] = 0;                  /* rcx */
+    sp[16] = 0;                  /* rax */
 
     sp[17] = (uint64_t)entry; /* RIP */
     sp[19] = 0x202;           /* RFLAGS (IF = 1) */
@@ -142,7 +143,7 @@ void task_create(void (*entry)(void), size_t stack_size)
     t->cwd_idx = FS_ROOT_IDX;
 
     void *kstack_top = (char *)kstack + stack_size;
-    t->regs = prepare_initial_stack(entry, kstack_top);
+    t->regs = prepare_initial_stack(entry, kstack_top, 0, 0);
 
     /* Вставляем в кольцо как новый tail */
     if (!task_ring)
@@ -425,7 +426,12 @@ void task_exit(int exit_code)
     sti();
 }
 
-uint64_t utask_create(void (*entry)(void), size_t stack_size, void *user_mem, size_t user_mem_size)
+uint64_t utask_create(void (*entry)(void),
+                      size_t stack_size,
+                      void *user_mem,
+                      size_t user_mem_size,
+                      int argc,
+                      uintptr_t argv_ptr)
 {
     if (stack_size == 0)
         stack_size = KSTACK_SIZE;
@@ -446,7 +452,7 @@ uint64_t utask_create(void (*entry)(void), size_t stack_size, void *user_mem, si
     t->state = TASK_READY;
     t->kstack = kstack;
     t->kstack_size = stack_size;
-    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size);
+    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size, argc, argv_ptr);
     t->exit_code = 0;
 
     /* Сохраняем пользовательскую память */

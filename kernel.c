@@ -16,7 +16,8 @@
 #include "fat16/fs.h"
 #include "user/terminal/main_bin.h"
 #include "user/ls/main_bin.h"
-#include "user/htop/main_bin.h"
+#include "user/memstat/main_bin.h"
+#include "user/pwd/main_bin.h"
 #include "user/clear/main_bin.h"
 #include "user/shutdown/main_bin.h"
 #include "user/reboot/main_bin.h"
@@ -243,13 +244,14 @@ void kmain(uint64_t mb2_addr)
     init_autorun(autorun);
 
     load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
-    load_app_to_fs("bin", "htop", "bin", htop_bin, htop_bin_len);
+    load_app_to_fs("bin", "memstat", "bin", memstat_bin, memstat_bin_len);
     load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
     load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
     load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
     load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
     load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
     load_app_to_fs("bin", "ls", "bin", ls_bin, ls_bin_len);
+    load_app_to_fs("bin", "pwd", "bin", pwd_bin, pwd_bin_len);
 
     scheduler_init();
     tasks_init();

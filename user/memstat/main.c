@@ -14,12 +14,17 @@ typedef struct
     size_t num_free;
 } kmalloc_stats_t;
 
-extern void _do_syscall_print(const char *p);
-extern void _do_syscall_kmalloc_stats(void *buf);
-extern void _do_syscall_exit(unsigned long code);
+#define SYSCALL_PRINT_STRING 3
+#define SYSCALL_KMALLOC_STATS 13
+#define SYSCALL_TASK_EXIT 204
 
-extern void u64_to_dec(const uint64_t *value_ptr, char *out_buf);
-extern void print_field(const char *label, const uint64_t *field_ptr);
+#define WHITE 0x00FFFFFF
+
+void u64_to_dec(const uint64_t *value_ptr, char *out_buf);
+void print_field(const char *label, const uint64_t *field_ptr);
+void _do_syscall_print(const char *p);
+void _do_syscall_kmalloc_stats(void *buf);
+void _do_syscall_exit(unsigned long code);
 
 const char lbl_total_managed[] = "total_managed:   ";
 const char lbl_used_payload[] = "used_payload:    ";
@@ -100,33 +105,26 @@ void print_field(const char *label, const uint64_t *field_ptr)
 void _do_syscall_print(const char *p)
 {
     asm volatile(
-        "mov $3, %%rax\n" /* SYSCALL_PRINT_STRING */
-        "mov %0, %%rdi\n"
-        "mov $0x00FFFFFF, %%rsi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(p)
-        : "rax", "rdi", "rsi");
+        : "a"(SYSCALL_PRINT_STRING), "D"(p), "S"(WHITE)
+        : "rcx", "r11", "memory");
 }
 
 void _do_syscall_kmalloc_stats(void *buf)
 {
     asm volatile(
-        "mov $13, %%rax\n" /* SYSCALL_KMALLOC_STATS */
-        "mov %0, %%rdi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(buf)
-        : "rax", "rdi");
+        : "a"(SYSCALL_KMALLOC_STATS), "D"(buf)
+        : "rcx", "r11", "memory");
 }
 
 void _do_syscall_exit(unsigned long code)
 {
     asm volatile(
-        "mov $204, %%rax\n" /* SYSCALL_TASK_EXIT */
-        "mov %0, %%rdi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(code)
-        : "rax", "rdi");
+        : "a"(SYSCALL_TASK_EXIT), "D"(code)
+        : "rcx", "r11");
 }

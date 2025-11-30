@@ -1,6 +1,8 @@
 typedef unsigned long uint64_t;
 
-extern void _do_syscall_shutdown(void);
+#define SYSCALL_POWER_OFF 100
+
+void _do_syscall_shutdown(void);
 
 void _start(void)
 {
@@ -13,9 +15,8 @@ void _start(void)
 void _do_syscall_shutdown(void)
 {
     asm volatile(
-        "mov $100, %%rax \n" /* SYSCALL_POWER_OFF */
-        "int $0x80       \n"
+        "int $0x80"
         :
-        :
-        : "rax");
+        : "a"(SYSCALL_POWER_OFF)
+        : "rcx", "r11");
 }

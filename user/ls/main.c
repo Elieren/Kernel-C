@@ -14,6 +14,8 @@ typedef unsigned short uint16_t;
 #define SYSCALL_MALLOC 10
 #define SYSCALL_FREE 12
 
+#define SYSCALL_TASK_EXIT 204
+
 #define WHITE 0x00FFFFFF
 
 #define FS_NAME_MAX 255
@@ -37,20 +39,27 @@ char *my_strcpy(char *dst, const char *src);
 char *my_strcat(char *dst, const char *src);
 void _do_syscall_print_string(const char *p, unsigned long color);
 void *_do_syscall_malloc(unsigned long size);
-unsigned long _do_syscall_get_cwd_idx(void);
+long _do_syscall_get_cwd_idx(uint32_t *out_idx);
 void _do_syscall_free(void *ptr);
 int _do_syscall_fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent);
 void _do_syscall_exit(unsigned long code);
 
-static int idx_cwd = 0;
-static unsigned long cwd_idx = 0;
+static uint32_t cwd_idx = 0;
+static int status = 0;
 static char *buffer_ptr = (char *)0;
 
 void _start(void)
 {
     buffer_ptr = (char *)_do_syscall_malloc(BUF_SIZE);
 
-    cwd_idx = _do_syscall_get_cwd_idx();
+    status = _do_syscall_get_cwd_idx(&cwd_idx);
+    if (status == -1)
+    {
+        _do_syscall_free(buffer_ptr);
+        _do_syscall_exit(1);
+        for (;;)
+            asm volatile("hlt");
+    }
 
     int max_files = 128;
     size_t entries_size = (size_t)max_files * sizeof(fs_entry_t);
@@ -90,9 +99,18 @@ void _start(void)
         for (const char *p = label; *p && w < end - 1; ++p)
             *w++ = *p;
 
-        /* Имя (в ядре уже добавляют '/' для директорий в копии) */
+        /* Имя */
         for (const char *p = entries[i].name; *p && w < end - 1; ++p)
             *w++ = *p;
+
+        /* Расширение (если файл и есть ненулевая ext) */
+        if (!entries[i].is_dir && entries[i].ext[0] != '\0' && w < end - 2)
+        {
+            /* добавляем точку */
+            *w++ = '.';
+            for (const char *p = entries[i].ext; *p && w < end - 1; ++p)
+                *w++ = *p;
+        }
 
         /* Перевод строки */
         if (w < end - 1)
@@ -163,13 +181,13 @@ void *_do_syscall_malloc(unsigned long size)
     return ret;
 }
 
-unsigned long _do_syscall_get_cwd_idx(void)
+long _do_syscall_get_cwd_idx(uint32_t *out_idx)
 {
-    unsigned long ret;
+    long ret;
     asm volatile(
         "int $0x80"
         : "=a"(ret)
-        : "a"(SYSCALL_GET_CWD_IDX)
+        : "a"(SYSCALL_GET_CWD_IDX), "D"(out_idx)
         : "rcx", "r11", "memory");
     return ret;
 }
@@ -199,10 +217,8 @@ int _do_syscall_fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int pare
 void _do_syscall_exit(unsigned long code)
 {
     asm volatile(
-        "mov $204, %%rax\n" /* SYSCALL_TASK_EXIT */
-        "mov %0, %%rdi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(code)
-        : "rax", "rdi");
+        : "a"(SYSCALL_TASK_EXIT), "D"(code)
+        : "rcx", "r11");
 }

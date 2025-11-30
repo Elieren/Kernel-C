@@ -1,6 +1,8 @@
 typedef unsigned long uint64_t;
 
-extern void _do_syscall_reboot(void);
+#define SYSCALL_REBOOT 101
+
+void _do_syscall_reboot(void);
 
 void _start(void)
 {
@@ -13,9 +15,8 @@ void _start(void)
 void _do_syscall_reboot(void)
 {
     asm volatile(
-        "mov $101, %%rax \n" /* SYSCALL_REBOOT */
-        "int $0x80       \n"
+        "int $0x80"
         :
-        :
-        : "rax");
+        : "a"(SYSCALL_REBOOT)
+        : "rcx", "r11");
 }

@@ -137,29 +137,20 @@ void format_up_time(char *out, unsigned long total_seconds)
 void _do_syscall_print(const char *p)
 {
     asm volatile(
-        "mov %[num], %%rax\n" /* SYSCALL_PRINT_STRING */
-        "mov %0, %%rdi\n"
-        "mov %[color], %%rsi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(p),
-          [num] "i"(SYSCALL_PRINT_STRING),
-          [color] "i"(WHITE)
-        : "rax", "rdi", "rsi", "rcx", "rdx");
+        : "a"(SYSCALL_PRINT_STRING), "D"(p), "S"(WHITE)
+        : "rcx", "r11", "memory");
 }
 
 /* get_time: rax=5, rdi=buf, rsi=count */
 void _do_syscall_get_time(uint8_t *buf, unsigned long count)
 {
     asm volatile(
-        "mov %[num], %%rax\n"
-        "mov %0, %%rdi\n"
-        "mov %1, %%rsi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(buf), "r"(count),
-          [num] "i"(SYSCALL_GET_TIME)
-        : "rax", "rdi", "rsi", "rcx", "rdx");
+        : "a"(SYSCALL_GET_TIME), "D"(buf), "S"(count)
+        : "rcx", "r11", "memory");
 }
 
 /* get_time_up: rax=7 -> returns rax */
@@ -167,11 +158,10 @@ unsigned long _do_syscall_get_time_up(void)
 {
     unsigned long ret;
     asm volatile(
-        "mov %[num], %%rax\n"
-        "int $0x80\n"
+        "int $0x80"
         : "=a"(ret)
-        : [num] "i"(SYSCALL_GET_TIME_UP)
-        : "rdi", "rsi", "rcx", "rdx");
+        : "a"(SYSCALL_GET_TIME_UP)
+        : "rcx", "r11");
     return ret;
 }
 
@@ -179,11 +169,8 @@ unsigned long _do_syscall_get_time_up(void)
 void _do_syscall_exit(unsigned long code)
 {
     asm volatile(
-        "mov %[num], %%rax\n"
-        "mov %0, %%rdi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(code),
-          [num] "i"(SYSCALL_TASK_EXIT)
-        : "rax", "rdi");
+        : "a"(SYSCALL_TASK_EXIT), "D"(code)
+        : "rcx", "r11");
 }

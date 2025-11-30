@@ -13,6 +13,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 
 extern uint32_t seconds;
 
@@ -33,44 +34,114 @@ uint64_t load_and_run_program(const char *str)
     if (bin_idx < 0)
     {
         asm volatile("sti");
-        return 0; // нет /bin, выходим
+        return 0; // нет /bin
     }
+
+// Токенизация cmdline
+#define MAX_ARGC 64
+    char tmp_cmd[1024];
+    size_t cmdlen = strlen(str);
+    if (cmdlen >= sizeof(tmp_cmd))
+        cmdlen = sizeof(tmp_cmd) - 1;
+    memcpy(tmp_cmd, str, cmdlen);
+    tmp_cmd[cmdlen] = '\0';
+
+    char *argv_storage[MAX_ARGC];
+    int argc = 0;
+    char *p = tmp_cmd;
+    while (*p && argc < MAX_ARGC)
+    {
+        while (*p == ' ')
+            p++;
+        if (*p == '\0')
+            break;
+        argv_storage[argc++] = p;
+        while (*p && *p != ' ')
+            p++;
+        if (*p == '\0')
+            break;
+        *p = '\0';
+        p++;
+    }
+
+    if (argc == 0)
+    {
+        asm volatile("sti");
+        return -1;
+    }
+    const char *progname = argv_storage[0];
 
     // 2. Найти файл в /bin
     fs_entry_t entry;
-    int file_idx = fs_find_in_dir(str, "bin", bin_idx, &entry);
+    int file_idx = fs_find_in_dir(progname, "bin", bin_idx, &entry);
     if (file_idx < 0)
     {
         asm volatile("sti");
         return 0; // файл не найден
     }
-
     if (entry.size == 0)
     {
         asm volatile("sti");
         return 0;
     }
 
-    // 3. Выделить память для файла через malloc
-    void *user_mem = malloc(entry.size + 1024);
+    // 3. Выделить память для файла + хвост для argv/strings
+    size_t alloc_size = (size_t)entry.size + 2048;
+    void *user_mem = malloc(alloc_size);
     if (!user_mem)
     {
         asm volatile("sti");
-        return 0; // ошибка выделения памяти
+        return 0;
     }
-
-    memset(user_mem, 0, entry.size);
+    memset(user_mem, 0, alloc_size);
 
     // 4. Прочитать файл в user_mem
-    fs_read_file_in_dir(str, "bin", bin_idx, user_mem, entry.size, NULL);
+    fs_read_file_in_dir(progname, "bin", bin_idx, user_mem, entry.size, NULL);
 
-    // 5. Создать задачу и передать туда файл
-    uint64_t pid = utask_create((void (*)(void))user_mem, 16384, user_mem, entry.size);
+    // 5. Подготовить argv внутри user_mem: разместим массив указателей и строки
+    char *area = (char *)user_mem + entry.size;
+    size_t area_size = alloc_size - entry.size;
+    size_t used = 0;
+
+    size_t ptrs_size = (argc + 1) * sizeof(char *);
+    if (used + ptrs_size > area_size)
+    {
+        free(user_mem);
+        asm volatile("sti");
+        return 0;
+    }
+    char **argv_user = (char **)(area + used);
+    used += ptrs_size;
+
+    for (int i = 0; i < argc; ++i)
+    {
+        size_t len = strlen(argv_storage[i]) + 1;
+        if (used + len > area_size)
+        {
+            free(user_mem);
+            asm volatile("sti");
+            return 0;
+        }
+        char *dst = area + used;
+        memcpy(dst, argv_storage[i], len);
+        argv_user[i] = dst;
+        used += len;
+        /* Выравнивание на 8 байт */
+        size_t pad = (8 - (used & 7)) & 7;
+        if (pad && (used + pad <= area_size))
+            used += pad;
+    }
+    argv_user[argc] = NULL;
+
+    uintptr_t argv_user_ptr = (uintptr_t)argv_user;
+
+    // 6. Создать задачу и передать туда файл + argc/argv
+    uint64_t pid = utask_create((void (*)(void))user_mem, 16384, user_mem, alloc_size, argc, argv_user_ptr);
     if (pid == 0)
     {
         free(user_mem);
         asm volatile("sti");
-        return 0; // не удалось создать задачу
+        return 0;
     }
 
     asm volatile("sti");

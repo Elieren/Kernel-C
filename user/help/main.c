@@ -1,23 +1,32 @@
 typedef unsigned long size_t;
 
-extern void _do_syscall_print(const char *p);
-extern void _do_syscall_exit(unsigned long code);
+#define SYSCALL_PRINT_STRING 3
+#define SYSCALL_TASK_EXIT 204
 
-const char cmd_htop[] = "htop     - prints information about the heap\n";
+#define WHITE 0x00FFFFFF
+
+void _do_syscall_print(const char *p);
+void _do_syscall_exit(unsigned long code);
+
+const char cmd_memstat[] = "memstat  - prints information about the heap\n";
 const char cmd_clear[] = "clear    - clears the terminal\n";
 const char cmd_shutdown[] = "shutdown - shutdown the system\n";
 const char cmd_reboot[] = "reboot   - reboots the system\n";
 const char cmd_time[] = "time     - displays the current system time and uptime\n";
 const char cmd_ls[] = "ls       - lists files in the current directory\n";
+const char cmd_pwd[] = "pwd      - prints the current working directory\n";
+const char cmd_cd[] = "cd       - changes the current working directory\n";
 
 void _start(void)
 {
-    _do_syscall_print(cmd_htop);
+    _do_syscall_print(cmd_memstat);
     _do_syscall_print(cmd_clear);
     _do_syscall_print(cmd_shutdown);
     _do_syscall_print(cmd_reboot);
     _do_syscall_print(cmd_time);
     _do_syscall_print(cmd_ls);
+    _do_syscall_print(cmd_pwd);
+    _do_syscall_print(cmd_cd);
 
     _do_syscall_exit(0);
 
@@ -28,22 +37,17 @@ void _start(void)
 void _do_syscall_print(const char *p)
 {
     asm volatile(
-        "mov $3, %%rax\n" /* SYSCALL_PRINT_STRING */
-        "mov %0, %%rdi\n"
-        "mov $0x00FFFFFF, %%rsi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(p)
-        : "rax", "rdi", "rsi");
+        : "a"(SYSCALL_PRINT_STRING), "D"(p), "S"(WHITE)
+        : "rcx", "r11", "memory");
 }
 
 void _do_syscall_exit(unsigned long code)
 {
     asm volatile(
-        "mov $204, %%rax\n" /* SYSCALL_TASK_EXIT */
-        "mov %0, %%rdi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(code)
-        : "rax", "rdi");
+        : "a"(SYSCALL_TASK_EXIT), "D"(code)
+        : "rcx", "r11");
 }

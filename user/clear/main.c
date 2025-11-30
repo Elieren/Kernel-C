@@ -1,7 +1,10 @@
 typedef unsigned long size_t;
 
-extern void _do_syscall_clean_screen(void);
-extern void _do_syscall_exit(unsigned long code);
+#define SYSCALL_CLEAN_SCREEN 6
+#define SYSCALL_TASK_EXIT 204
+
+void _do_syscall_clean_screen(void);
+void _do_syscall_exit(unsigned long code);
 
 void _start(void)
 {
@@ -15,20 +18,17 @@ void _start(void)
 void _do_syscall_clean_screen(void)
 {
     asm volatile(
-        "mov $6, %%rax\n" /* SYSCALL_CLEAN_SCREEN */
-        "int $0x80\n"
+        "int $0x80"
         :
-        :
-        : "rax");
+        : "a"(SYSCALL_CLEAN_SCREEN)
+        : "rcx", "r11", "memory");
 }
 
 void _do_syscall_exit(unsigned long code)
 {
     asm volatile(
-        "mov $204, %%rax\n" /* SYSCALL_TASK_EXIT */
-        "mov %0, %%rdi\n"
-        "int $0x80\n"
+        "int $0x80"
         :
-        : "r"(code)
-        : "rax", "rdi");
+        : "a"(SYSCALL_TASK_EXIT), "D"(code)
+        : "rcx", "r11");
 }

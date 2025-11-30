@@ -185,7 +185,7 @@ void load_and_run_from_autorun(void)
                     fs_read_file_in_dir(file_name, ext, parent_idx, user_mem, file_entry.size, NULL);
 
                     // Запустить задачу
-                    uint64_t pid = utask_create((void (*)(void))user_mem, 0, user_mem, file_entry.size);
+                    uint64_t pid = utask_create((void (*)(void))user_mem, 0, user_mem, file_entry.size, 0, 0);
                 }
             }
         }

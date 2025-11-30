@@ -13,8 +13,9 @@ unsigned long _do_syscall_task_is_alive(unsigned long pid);
 void _do_syscall_task_stop(unsigned long pid);
 void _do_syscall_throw_exception(unsigned long code, const char *msg);
 void new_line(void);
-void _do_syscall_chdir(const char *path);
+int _do_syscall_chdir(const char *path);
 unsigned long _do_syscall_getcwd(char *buf, unsigned long size);
+int strncmp(const char *a, const char *b, size_t n);
 
 #define SYSCALL_PRINT_CHAR 2
 #define SYSCALL_PRINT_STRING 3
@@ -37,17 +38,23 @@ unsigned long _do_syscall_getcwd(char *buf, unsigned long size);
 #define WHITE 0x00FFFFFF
 #define BLACK 0x00000000
 
-#define INTERNAL_SPACE 0x01
+#define CTRL_C '\x03'  /* Ctrl+C (ETX) */
+#define BACKSPACE '\b' /* 0x08 */
+#define NEWLINE '\n'   /* 0x0A */
+#define NUL '\0'       /* 0x00 */
+#define TAB '\t'       /* 0x09 */
+#define SPACE ' '      /* 0x20 */
+#define INTERNAL_SPACE ((char)0x01)
 
 #define DIR_BUF_SIZE 1024
 
 const char prompt_msg[] = "$ ";
-const char welcome_msg[] = "SimpleTerm v0.2";
+const char welcome_msg[] = "SimpleTerm v0.3";
 const char error_message[] = "Command not found: ";
 
 static uint64_t input_len = 0;
-static char *input_buffer_ptr = (char *)0;
-static char *directory_buffer_ptr = (char *)0;
+static char *input_buffer_ptr = 0;
+static char *directory_buffer_ptr = 0;
 static char notfound_msg[256];
 static int res = 0;
 
@@ -64,25 +71,23 @@ void _start(void)
     new_line();
 
     res = _do_syscall_getcwd(directory_buffer_ptr, DIR_BUF_SIZE);
-
-    if (res != -1)
+    if (res != (unsigned long)-1)
     {
         _do_syscall_print_string(directory_buffer_ptr, WHITE);
     }
-
     _do_syscall_print_string(prompt_msg, WHITE);
 
     for (;;)
     {
         unsigned char ch = _do_syscall_getchar();
 
-        if (ch == 0 || ch == 32)
+        if (ch == NUL)
         {
             asm volatile("hlt");
             continue;
         }
 
-        if (ch == 0x03)
+        if (ch == CTRL_C)
         {
             if (child_pid != 0)
             {
@@ -92,70 +97,103 @@ void _start(void)
             continue;
         }
 
-        if (ch == 10)
+        if (ch == NEWLINE)
         {
             if (input_buffer_ptr)
-            {
                 input_buffer_ptr[input_len] = '\0';
-            }
 
             new_line();
 
-            if (input_buffer_ptr)
+            if (input_buffer_ptr && input_len > 0)
             {
-                unsigned long pid = _do_syscall_task_create(input_buffer_ptr);
-                if (pid == 0)
+                /* Проверка команды cd */
+                if (strncmp(input_buffer_ptr, "cd", 2) == 0 &&
+                    (input_buffer_ptr[2] == '\0' || input_buffer_ptr[2] == ' '))
                 {
-                    size_t i = 0;
-                    const char *s = error_message;
+                    const char *arg = input_buffer_ptr + 2;
+                    while (*arg == ' ')
+                        arg++;
 
-                    while (*s && i + 2 < sizeof notfound_msg)
-                    {
-                        notfound_msg[i++] = *s++;
-                    }
+                    if (*arg == '\0')
+                        arg = "/";
 
-                    if (input_buffer_ptr)
+                    int ch_res = _do_syscall_chdir(arg);
+                    if (ch_res != 0)
                     {
-                        const char *p = input_buffer_ptr;
+                        size_t i = 0;
+                        const char *s = "cd: failed: ";
+                        while (*s && i + 2 < sizeof notfound_msg)
+                            notfound_msg[i++] = *s++;
+                        const char *p = arg;
                         while (*p && i + 2 < sizeof notfound_msg)
-                        {
                             notfound_msg[i++] = *p++;
-                        }
+                        notfound_msg[i++] = '\n';
+                        notfound_msg[i] = '\0';
+
+                        _do_syscall_throw_exception(3, notfound_msg);
                     }
 
-                    notfound_msg[i++] = '\n';
-                    notfound_msg[i] = '\0';
-
-                    _do_syscall_throw_exception(3, notfound_msg);
+                    res = _do_syscall_getcwd(directory_buffer_ptr, DIR_BUF_SIZE);
+                    if (res != (unsigned long)-1)
+                    {
+                        _do_syscall_print_string(directory_buffer_ptr, WHITE);
+                    }
+                    _do_syscall_print_string(prompt_msg, WHITE);
                 }
                 else
                 {
-                    child_pid = pid;
-
-                    while (_do_syscall_task_is_alive(child_pid) != 0)
+                    /* Запуск внешней команды */
+                    unsigned long pid = _do_syscall_task_create(input_buffer_ptr);
+                    if (pid == 0)
                     {
-                        asm volatile("hlt");
+                        size_t i = 0;
+                        const char *s = error_message;
+                        while (*s && i + 2 < sizeof notfound_msg)
+                            notfound_msg[i++] = *s++;
+                        const char *p = input_buffer_ptr;
+                        while (*p && i + 2 < sizeof notfound_msg)
+                            notfound_msg[i++] = *p++;
+                        notfound_msg[i++] = '\n';
+                        notfound_msg[i] = '\0';
+                        _do_syscall_throw_exception(3, notfound_msg);
                     }
-                    child_pid = 0;
+                    else
+                    {
+                        child_pid = pid;
+                        while (_do_syscall_task_is_alive(child_pid) != 0)
+                        {
+                            asm volatile("hlt");
+                        }
+                        child_pid = 0;
+
+                        /* после завершения команды обновим cwd и покажем приглашение */
+                        res = _do_syscall_getcwd(directory_buffer_ptr, DIR_BUF_SIZE);
+                        if (res != (unsigned long)-1)
+                        {
+                            _do_syscall_print_string(directory_buffer_ptr, WHITE);
+                        }
+                        _do_syscall_print_string(prompt_msg, WHITE);
+                    }
                 }
+            }
+            else
+            {
+                /* пустая команда - просто показать приглашение снова */
+                res = _do_syscall_getcwd(directory_buffer_ptr, DIR_BUF_SIZE);
+                if (res != (unsigned long)-1)
+                {
+                    _do_syscall_print_string(directory_buffer_ptr, WHITE);
+                }
+                _do_syscall_print_string(prompt_msg, WHITE);
             }
 
             input_len = 0;
-
-            res = _do_syscall_getcwd(directory_buffer_ptr, DIR_BUF_SIZE);
-
-            if (res != -1)
-            {
-                _do_syscall_print_string(directory_buffer_ptr, WHITE);
-            }
-
-            _do_syscall_print_string(prompt_msg, WHITE);
-
             asm volatile("hlt");
             continue;
         }
 
-        if (ch == 8)
+        /* Backspace */
+        if (ch == BACKSPACE)
         {
             if (input_len == 0)
             {
@@ -170,13 +208,12 @@ void _start(void)
 
         if (ch == (unsigned char)INTERNAL_SPACE)
         {
-            ch = 32;
+            ch = SPACE;
         }
 
-        if (input_buffer_ptr)
+        if (input_buffer_ptr && input_len + 1 < 8192)
         {
-            input_buffer_ptr[input_len] = (char)ch;
-            input_len += 1;
+            input_buffer_ptr[input_len++] = (char)ch;
         }
 
         _do_syscall_print_char((unsigned long)ch, WHITE);
@@ -186,6 +223,23 @@ void _start(void)
 
     for (;;)
         asm volatile("hlt");
+}
+
+int strncmp(const char *a, const char *b, size_t n)
+{
+    if (n == 0)
+        return 0;
+    unsigned char ca, cb;
+    while (n--)
+    {
+        ca = (unsigned char)*a++;
+        cb = (unsigned char)*b++;
+        if (ca != cb)
+            return (ca < cb) ? -1 : 1;
+        if (ca == 0)
+            return 0;
+    }
+    return 0;
 }
 
 void _do_syscall_print_string(const char *p, unsigned long color)
@@ -282,12 +336,15 @@ void new_line(void)
     _do_syscall_print_char((unsigned long)10, WHITE);
 }
 
-void _do_syscall_chdir(const char *path)
+int _do_syscall_chdir(const char *path)
 {
-    asm volatile("int $0x80"
-                 :
-                 : "a"(SYSCALL_CHDIR), "D"(path)
-                 : "rcx", "r11", "memory");
+    long ret;
+    asm volatile(
+        "int $0x80"
+        : "=a"(ret)
+        : "a"(SYSCALL_CHDIR), "D"(path)
+        : "rcx", "r11", "memory");
+    return (int)ret;
 }
 
 unsigned long _do_syscall_getcwd(char *buf, unsigned long size)
