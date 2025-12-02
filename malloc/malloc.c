@@ -142,7 +142,6 @@ static void coalesce(block_header_t *h)
             h->next->prev = p;
         if (heap_tail == h)
             heap_tail = p;
-        h = p;
     }
 }
 

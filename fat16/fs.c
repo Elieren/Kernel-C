@@ -10,7 +10,7 @@
 #define NUM_FATS 2
 #define SECTORS_PER_FAT 32
 
-#define FAT_ENTRIES (BYTES_PER_SECTOR * SECTORS_PER_FAT)
+#define FAT_ENTRIES ((BYTES_PER_SECTOR * SECTORS_PER_FAT) / sizeof(uint16_t))
 
 typedef struct
 {
@@ -130,7 +130,7 @@ int fs_mkdir(const char *name, int parent)
     return idx;
 }
 
-/* Удалить директорию (по индексу) — только если пуста */
+/* Удалить директорию (по индексу) - только если пуста */
 int fs_rmdir(int dir_idx)
 {
     if (dir_idx <= 0 || dir_idx >= FS_MAX_ENTRIES)
@@ -154,7 +154,9 @@ int fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_
     // Проверим дубликат
     for (int i = 0; i < FS_MAX_ENTRIES; ++i)
     {
-        if (entries[i].used && entries[i].parent == parent && !entries[i].is_dir && nameeq(entries[i].name, name, FS_NAME_MAX) && nameeq(entries[i].ext, ext, FS_EXT_MAX))
+        if (entries[i].used && entries[i].parent == parent && !entries[i].is_dir &&
+            nameeq(entries[i].name, name, FS_NAME_MAX) &&
+            nameeq(entries[i].ext, ext, FS_EXT_MAX))
             return FS_ERR_EXISTS;
     }
 
@@ -163,7 +165,7 @@ int fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_
         return FS_ERR_NO_SPACE;
 
     uint16_t c = alloc_cluster();
-    if (c == 0)
+    if (c == FAT_NO_CLUSTER)
         return FS_ERR_NO_FAT_SPACE;
 
     memset(&entries[idx], 0, sizeof(fs_entry_t));
@@ -228,7 +230,8 @@ int fs_find_in_dir(const char *name, const char *ext, int parent, fs_entry_t *ou
             }
             else
             {
-                if (nameeq(entries[i].name, name, FS_NAME_MAX) && nameeq(entries[i].ext, ext ? ext : "", FS_EXT_MAX))
+                if (nameeq(entries[i].name, name, FS_NAME_MAX) &&
+                    nameeq(entries[i].ext, ext ? ext : "", FS_EXT_MAX))
                 {
                     if (out)
                         *out = entries[i];
@@ -270,7 +273,7 @@ int fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent)
     return count;
 }
 
-/* НИЗКОУРОВНЕВЫЕ ЧТЕНИЕ/ЗАПИСЬ*/
+/* НИЗКОУРОВНЕВЫЕ ЧТЕНИЕ/ЗАПИСЬ */
 int fs_read(uint16_t first_cluster, void *buf, size_t size)
 {
     if (first_cluster < 2 || first_cluster >= FAT_ENTRIES)
@@ -322,7 +325,7 @@ int fs_write(uint16_t first_cluster, const void *buf, size_t size)
             if (fat.entries[cur] == FAT_EOF)
             {
                 uint16_t nc = alloc_cluster();
-                if (nc == 0)
+                if (nc == FAT_NO_CLUSTER)
                 {
                     fat.entries[cur] = FAT_EOF;
                     return written;
@@ -363,16 +366,16 @@ int fs_write_file_in_dir(const char *name, const char *ext, int parent, const vo
     {
         int cidx = fs_create_file(name, ext, parent, &cluster);
         if (cidx < 0)
-            return FS_ERR_NO_FAT_SPACE; // ошибка создания
+            return cidx; // возвращаем код ошибки создания
         idx = cidx;
     }
     else
     {
-        // файл уже есть — освобождаем старую цепочку и выделяем новый кластер стартовый
+        // файл уже есть - освобождаем старую цепочку и выделяем новый кластер стартовый
         uint16_t old = entries[idx].first_cluster;
         free_cluster_chain(old);
         cluster = alloc_cluster();
-        if (cluster == 0)
+        if (cluster == FAT_NO_CLUSTER)
             return FS_ERR_NO_FAT_SPACE; // нет места
         entries[idx].first_cluster = cluster;
         fat.entries[cluster] = FAT_EOF;
@@ -389,7 +392,7 @@ int fs_write_file_in_dir(const char *name, const char *ext, int parent, const vo
     if (written < 0)
         return written;
 
-    if (written != size)
+    if ((size_t)written != size)
     {
         entries[idx].size = (uint32_t)written;
         return FS_ERR_PARTIAL_WRITE; // частично записано

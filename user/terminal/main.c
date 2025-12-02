@@ -156,6 +156,13 @@ void _start(void)
                         notfound_msg[i++] = '\n';
                         notfound_msg[i] = '\0';
                         _do_syscall_throw_exception(3, notfound_msg);
+
+                        res = _do_syscall_getcwd(directory_buffer_ptr, DIR_BUF_SIZE);
+                        if (res != (unsigned long)-1)
+                        {
+                            _do_syscall_print_string(directory_buffer_ptr, WHITE);
+                        }
+                        _do_syscall_print_string(prompt_msg, WHITE);
                     }
                     else
                     {

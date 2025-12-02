@@ -51,9 +51,8 @@ int remove_recursive(int dir_idx);
 void _start(int argc, char **argv)
 {
     int recursive = 0;
-    const char *target = NULL;
+    const char *orig_target = NULL;
 
-    // Парсинг аргументов
     if (argc < 2)
     {
         _do_syscall_print_string("Usage: rm [-r] <file_or_directory>\n", RED);
@@ -62,7 +61,6 @@ void _start(int argc, char **argv)
             asm volatile("hlt");
     }
 
-    // Проверяем наличие флага -r
     int arg_idx = 1;
     if (argc >= 2 && my_strcmp(argv[1], "-r") == 0)
     {
@@ -78,12 +76,10 @@ void _start(int argc, char **argv)
             asm volatile("hlt");
     }
 
-    target = argv[arg_idx];
+    orig_target = argv[arg_idx];
 
-    // Получаем текущую директорию
     uint32_t cwd_idx = 0;
-    long status = _do_syscall_get_cwd_idx(&cwd_idx);
-    if (status != 0)
+    if (_do_syscall_get_cwd_idx(&cwd_idx) != 0)
     {
         _do_syscall_print_string("Error: cannot get current directory\n", RED);
         _do_syscall_exit(1);
@@ -91,46 +87,85 @@ void _start(int argc, char **argv)
             asm volatile("hlt");
     }
 
-    // Ищем целевой файл/директорию
+    char name_buf[FS_NAME_MAX];
+    char ext_buf[FS_EXT_MAX];
+    const char *ext_ptr = (const char *)0;
+
+    size_t tlen = my_strlen(orig_target);
+    if (tlen >= FS_NAME_MAX)
+        tlen = FS_NAME_MAX - 1;
+
+    int dot_pos = -1;
+    for (int i = (int)tlen - 1; i >= 0; --i)
+    {
+        if (orig_target[i] == '.')
+        {
+            dot_pos = i;
+            break;
+        }
+    }
+
+    if (dot_pos > 0)
+    {
+        size_t namelen = (size_t)dot_pos;
+        if (namelen >= FS_NAME_MAX)
+            namelen = FS_NAME_MAX - 1;
+        for (size_t i = 0; i < namelen; ++i)
+            name_buf[i] = orig_target[i];
+        name_buf[namelen] = '\0';
+
+        size_t exlen = tlen - (size_t)dot_pos - 1;
+        if (exlen >= FS_EXT_MAX)
+            exlen = FS_EXT_MAX - 1;
+        for (size_t i = 0; i < exlen; ++i)
+            ext_buf[i] = orig_target[dot_pos + 1 + i];
+        ext_buf[exlen] = '\0';
+        ext_ptr = ext_buf;
+    }
+    else
+    {
+        size_t copylen = tlen;
+        if (copylen >= FS_NAME_MAX)
+            copylen = FS_NAME_MAX - 1;
+        for (size_t i = 0; i < copylen; ++i)
+            name_buf[i] = orig_target[i];
+        name_buf[copylen] = '\0';
+        ext_ptr = (const char *)0; /* явное: без расширения */
+    }
+
     fs_entry_t entry;
-    int found_idx = _do_syscall_fs_find_in_dir(target, (const char *)0, (int)cwd_idx, &entry);
+    int found_idx = _do_syscall_fs_find_in_dir(name_buf, ext_ptr, (int)cwd_idx, &entry);
 
     if (found_idx < 0)
     {
         _do_syscall_print_string("Error: '", RED);
-        _do_syscall_print_string(target, RED);
+        _do_syscall_print_string(orig_target, RED);
         _do_syscall_print_string("' not found\n", RED);
         _do_syscall_exit(1);
         for (;;)
             asm volatile("hlt");
     }
 
-    // Если это директория и не указан флаг -r
     if (entry.is_dir && !recursive)
     {
         _do_syscall_print_string("Error: '", RED);
-        _do_syscall_print_string(target, RED);
+        _do_syscall_print_string(orig_target, RED);
         _do_syscall_print_string("' is a directory. Use -r to remove directories\n", RED);
         _do_syscall_exit(1);
         for (;;)
             asm volatile("hlt");
     }
 
-    // Удаляем
     int result;
     if (entry.is_dir && recursive)
-    {
         result = remove_recursive(found_idx);
-    }
     else
-    {
         result = _do_syscall_fs_remove_entry(found_idx);
-    }
 
     if (result < 0)
     {
         _do_syscall_print_string("Error: cannot remove '", RED);
-        _do_syscall_print_string(target, RED);
+        _do_syscall_print_string(orig_target, RED);
         _do_syscall_print_string("'\n", RED);
         _do_syscall_exit(1);
         for (;;)
