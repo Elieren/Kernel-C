@@ -5,8 +5,6 @@ extern syscall_handler
 global isr80
 
 isr80:
-    cli
-
     ; ---- Сохраняем регистры (push в определённом порядке) ----
     push    rax
     push    rcx

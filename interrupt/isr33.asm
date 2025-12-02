@@ -5,8 +5,6 @@ global isr33
 extern keyboard_handler  ; void keyboard_handler(void);
 
 isr33:
-    cli
-
     ; сохраняем регистры
     push rax
     push rbx

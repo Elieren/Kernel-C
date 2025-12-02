@@ -23,8 +23,6 @@ extern timer_tick
 extern schedule_from_isr
 
 isr32:
-    cli
-
     ; --- Сохраняем регистры в порядке: rax, rcx, rdx, rbx, rbp, rsi, rdi, r8..r15 ---
     ; (после нескольких push'ов ниже, стек будет содержать: ... , r15, ..., rax)
     push rax
