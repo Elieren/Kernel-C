@@ -95,6 +95,27 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
             fmt++;
         }
 
+        // Обработка модификаторов длины
+        int is_long = 0;
+        int is_longlong = 0;
+
+        if (*fmt == 'l')
+        {
+            is_long = 1;
+            fmt++;
+            if (*fmt == 'l') // ll
+            {
+                is_longlong = 1;
+                fmt++;
+            }
+        }
+        else if (*fmt == 'h')
+        {
+            fmt++;
+            if (*fmt == 'h') // hh
+                fmt++;
+        }
+
         char temp[64];
         switch (*fmt)
         {
@@ -107,23 +128,55 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
             break;
         }
         case 'd':
+        case 'i':
         {
-            int v = va_arg(args, int);
-            itoa_signed((long long)v, temp);
+            long long v;
+            if (is_longlong)
+                v = va_arg(args, long long);
+            else if (is_long)
+                v = va_arg(args, long);
+            else
+                v = va_arg(args, int);
+            itoa_signed(v, temp);
             append_padded(&p, end, temp, width, padchar);
             break;
         }
         case 'u':
         {
-            unsigned int v = va_arg(args, unsigned int);
-            utoa_unsigned((unsigned long long)v, temp, 10);
+            unsigned long long v;
+            if (is_longlong)
+                v = va_arg(args, unsigned long long);
+            else if (is_long)
+                v = va_arg(args, unsigned long);
+            else
+                v = va_arg(args, unsigned int);
+            utoa_unsigned(v, temp, 10);
             append_padded(&p, end, temp, width, padchar);
             break;
         }
         case 'x':
+        case 'X':
         {
-            unsigned int v = va_arg(args, unsigned int);
-            utoa_unsigned((unsigned long long)v, temp, 16);
+            unsigned long long v;
+            if (is_longlong)
+                v = va_arg(args, unsigned long long);
+            else if (is_long)
+                v = va_arg(args, unsigned long);
+            else
+                v = va_arg(args, unsigned int);
+            utoa_unsigned(v, temp, 16);
+            append_padded(&p, end, temp, width, padchar);
+            break;
+        }
+        case 'p': // Указатель
+        {
+            void *ptr = va_arg(args, void *);
+            if (p < end - 2)
+            {
+                *p++ = '0';
+                *p++ = 'x';
+            }
+            utoa_unsigned((unsigned long long)(uintptr_t)ptr, temp, 16);
             append_padded(&p, end, temp, width, padchar);
             break;
         }

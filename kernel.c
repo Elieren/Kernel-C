@@ -165,6 +165,16 @@ void kmain(uint64_t mb2_addr)
 
 #ifdef DEBUG
 
+    uint64_t rsdp = get_rsdp_address();
+    if (rsdp != 0)
+    {
+        kprint(0, "RSDP found at physical address: 0x%016lx\n", rsdp);
+    }
+    else
+    {
+        kprint(0, "RSDP not found in Multiboot2 tags\n");
+    }
+
     int n = pci_get_device_count();
     kprint(0, "PCI devices: %d\n", n);
     for (int i = 0; i < n; ++i)

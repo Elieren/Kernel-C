@@ -22,5 +22,6 @@ typedef struct
 
 void mb2_parse(uint64_t mb2_addr);
 framebuffer_info_t *get_framebuffer_info(void);
+uint64_t get_rsdp_address(void);
 
 #endif /* MB2_H */
