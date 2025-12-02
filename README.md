@@ -49,12 +49,12 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Added support for BIOS and UEFI (Multiboot2).
 
-* [ ] Added commands `ls`, `cd`, `pwd`, `mkdir`, `rm` for working with the file system and moving around directories.
+* [X] Added commands `ls`, `cd`, `pwd`, `mkdir`, `rm` for working with the file system and moving around directories.
   - [X] `ls`
   - [X] `cd`
   - [X] `pwd`
-  - [ ] `mkdir`
-  - [ ] `rm`
+  - [X] `mkdir`
+  - [X] `rm`
 
 * [x] Added graphics mode with screen resolution support.
 

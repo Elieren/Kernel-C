@@ -17,6 +17,8 @@
 #include "user/terminal/main_bin.h"
 #include "user/ls/main_bin.h"
 #include "user/memstat/main_bin.h"
+#include "user/mkdir/main_bin.h"
+#include "user/rm/main_bin.h"
 #include "user/pwd/main_bin.h"
 #include "user/clear/main_bin.h"
 #include "user/shutdown/main_bin.h"
@@ -252,6 +254,8 @@ void kmain(uint64_t mb2_addr)
     load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
     load_app_to_fs("bin", "ls", "bin", ls_bin, ls_bin_len);
     load_app_to_fs("bin", "pwd", "bin", pwd_bin, pwd_bin_len);
+    load_app_to_fs("bin", "mkdir", "bin", mkdir_bin, mkdir_bin_len);
+    load_app_to_fs("bin", "rm", "bin", rm_bin, rm_bin_len);
 
     scheduler_init();
     tasks_init();

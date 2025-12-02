@@ -16,6 +16,8 @@ const char cmd_time[] = "time     - displays the current system time and uptime\
 const char cmd_ls[] = "ls       - lists files in the current directory\n";
 const char cmd_pwd[] = "pwd      - prints the current working directory\n";
 const char cmd_cd[] = "cd       - changes the current working directory\n";
+const char cmd_mkdir[] = "mkdir    - creates a new directory\n";
+const char cmd_rm[] = "rm       - removes a file or directory\n";
 
 void _start(void)
 {
@@ -27,6 +29,8 @@ void _start(void)
     _do_syscall_print(cmd_ls);
     _do_syscall_print(cmd_pwd);
     _do_syscall_print(cmd_cd);
+    _do_syscall_print(cmd_mkdir);
+    _do_syscall_print(cmd_rm);
 
     _do_syscall_exit(0);
 
