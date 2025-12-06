@@ -58,6 +58,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [x] Added graphics mode with screen resolution support.
 
+* [X] Added power off support for power modes via ACPI.
+
 * [ ] Added sleep support to power modes.
 
 * [X] Added PCI driver for working with devices.
