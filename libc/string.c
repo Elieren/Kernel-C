@@ -64,7 +64,7 @@ void *memcpy(void *dst_, const void *src_, size_t n)
     }
     else
     {
-        /* Если выравнивания не совпадают — оставляем всё побайтно.
+        /* Если выравнивания не совпадают - оставляем всё побайтно.
            Это безопасно на архитектурах с требованием выравнивания. */
     }
 
@@ -81,9 +81,43 @@ void *memcpy(void *dst_, const void *src_, size_t n)
 void *memset(void *s, int c, size_t n)
 {
     unsigned char *p = (unsigned char *)s;
-    for (size_t i = 0; i < n; ++i)
-        p[i] = (unsigned char)c;
-    return s;
+    unsigned char val = (unsigned char)c;
+    void *ret = s;
+
+    const size_t W = sizeof(unsigned long);
+    uintptr_t addr = (uintptr_t)p;
+
+    /* Выравниваем по границе слова побайтно */
+    while (n > 0 && (addr & (W - 1)))
+    {
+        *p++ = val;
+        --n;
+        addr = (uintptr_t)p;
+    }
+
+    /* Заполняем целыми словами */
+    if (n >= W)
+    {
+        unsigned long word = val;
+        word |= word << 8;
+        word |= word << 16;
+#ifdef __LP64__
+        word |= word << 32;
+#endif
+        unsigned long *pw = (unsigned long *)p;
+        while (n >= W)
+        {
+            *pw++ = word;
+            n -= W;
+        }
+        p = (unsigned char *)pw;
+    }
+
+    /* Оставшиеся байты */
+    while (n--)
+        *p++ = val;
+
+    return ret;
 }
 
 int memcmp(const void *ptr1, const void *ptr2, size_t num)
@@ -129,7 +163,7 @@ void *memmove(void *dst0, const void *src0, size_t n)
         while (n--)
             *dst++ = *src++;
     }
-    else /* dst > src — копируем назад */
+    else /* dst > src - копируем назад */
     {
         dst += n;
         src += n;
@@ -161,10 +195,10 @@ void *memmove(void *dst0, const void *src0, size_t n)
 /* =================== STR =================== */
 size_t strlen(const char *s)
 {
-    size_t len = 0;
-    while (*s++)
-        len++;
-    return len;
+    const char *p = s;
+    while (*p)
+        p++;
+    return p - s;
 }
 
 char *strcpy(char *dst, const char *src)
@@ -197,7 +231,7 @@ char *strcat(char *dst, const char *src)
 
 int strcmp(const char *a, const char *b)
 {
-    while (*a && (*a == *b))
+    while (*a == *b && *a != '\0')
     {
         a++;
         b++;
@@ -225,6 +259,8 @@ char *strchr(const char *s, int c)
             return (char *)s;
         s++;
     }
+    if ((char)c == '\0')
+        return (char *)s;
     return NULL;
 }
 
@@ -237,6 +273,8 @@ char *strrchr(const char *s, int c)
             last = s;
         s++;
     }
+    if ((char)c == '\0')
+        return (char *)s;
     return (char *)last;
 }
 

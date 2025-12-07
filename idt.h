@@ -8,6 +8,11 @@
 #define KEYBOARD 33
 #define INTERRUPT 0x80
 
+/* Флаги селекторов и типов */
+#define KERNEL_CODE_SEL 0x08
+#define IDT_GATE_INT 0x8E     /* interrupt gate */
+#define IDT_GATE_SYSCALL 0xEE /* syscall gate (DPL=3) */
+
 /* 64-bit IDT entry */
 struct __attribute__((packed)) idt_entry
 {

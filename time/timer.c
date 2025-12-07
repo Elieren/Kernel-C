@@ -4,9 +4,14 @@
 #include "clock/clock.h"
 #include "../multitask/multitask.h"
 
+/* PIT (Programmable Interval Timer) порты и команды */
+#define PIT_CMD_PORT 0x43
+#define PIT_COUNTER0 0x40
+#define PIT_CMD_VALUE 0x36 // Бинарный счетчик, режим 3 (квадратная волна)
+
 volatile uint16_t tick_time = 0;
 volatile uint32_t seconds = 0;
-bool screen_refresh_status = true;
+volatile bool screen_refresh_status = true;
 
 void timer_tick(void)
 {
@@ -18,23 +23,32 @@ void timer_tick(void)
         clock_tick();
     }
 
+    /* Экран обновляется каждые ~33 мс (при частоте ~30 Гц) */
     if ((tick_time % 33) == 0)
     {
-        if (screen_refresh_status == false)
-        {
-            screen_refresh_status = true;
-        }
+        screen_refresh_status = true;
     }
 
-    /* Посылаем EOI PIC — делаем это здесь, до возможного переключения */
+    /* Отправляем EOI PIC перед возможным переключением контекста */
     pic_send_eoi(0);
 }
 
 void init_timer(uint32_t frequency)
 {
-    uint32_t divisor = 1193180 / frequency;
+    if (frequency == 0 || frequency > PIT_FREQUENCY)
+    {
+        return; /* Некорректная частота */
+    }
 
-    outb(0x43, 0x36);                  // Command port
-    outb(0x40, divisor & 0xFF);        // Low byte
-    outb(0x40, (divisor >> 8) & 0xFF); // High byte
+    uint32_t divisor = PIT_FREQUENCY / frequency;
+
+    /* Ограничиваем делитель для 16-разрядного счетчика */
+    if (divisor > 0xFFFF)
+    {
+        divisor = 0xFFFF;
+    }
+
+    outb(PIT_CMD_PORT, PIT_CMD_VALUE);                    // Command port
+    outb(PIT_COUNTER0, (uint8_t)(divisor & 0xFF));        // Low byte
+    outb(PIT_COUNTER0, (uint8_t)((divisor >> 8) & 0xFF)); // High byte
 }

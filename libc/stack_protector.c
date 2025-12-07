@@ -11,9 +11,13 @@ static void __attribute__((noreturn)) kstack_panic(const char *msg)
 {
     /* Печатаем короткое сообщение красным */
     print_string_position("STACK SMASHING DETECTED", 20, 2, WHITE, RED);
-    print_string_position(msg, 20, 3, WHITE, RED);
+    if (msg)
+    {
+        print_string_position(msg, 20, 3, WHITE, RED);
+    }
     /* Глушим всё */
-    asm volatile("cli; hlt");
+    asm volatile("cli");
+    asm volatile("hlt" : : : "memory");
     __builtin_unreachable();
 }
 

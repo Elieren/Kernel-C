@@ -4,42 +4,50 @@
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <limits.h>
+
+#define TEMP_BUFFER_SIZE 64
+#define DIGIT_CHARS "0123456789ABCDEF"
 
 static void utoa_unsigned(unsigned long long value, char *out, int base)
 {
-    const char digits[] = "0123456789ABCDEF";
-    char tmp[32];
+    char tmp[TEMP_BUFFER_SIZE];
     int pos = 0;
-    if (!out)
-        return;
+
     if (value == 0)
     {
         out[0] = '0';
         out[1] = '\0';
         return;
     }
-    while (value && pos < (int)(sizeof(tmp) - 1))
+
+    while (value && pos < TEMP_BUFFER_SIZE - 1)
     {
-        tmp[pos++] = digits[value % base];
+        tmp[pos++] = DIGIT_CHARS[value % base];
         value /= base;
     }
-    int i = 0;
-    while (pos > 0)
+
+    // Разворот строки
+    for (int i = 0; i < pos; i++)
     {
-        out[i++] = tmp[--pos];
+        out[i] = tmp[pos - 1 - i];
     }
-    out[i] = '\0';
+    out[pos] = '\0';
 }
 
 static void itoa_signed(long long value, char *out)
 {
-    if (!out)
-        return;
     if (value < 0)
     {
         *out++ = '-';
-        unsigned long long u = (unsigned long long)(-(value + 1)) + 1ULL;
-        utoa_unsigned(u, out, 10);
+        if (value == LLONG_MIN)
+        {
+            utoa_unsigned((unsigned long long)(-(value + 1)) + 1ULL, out, 10);
+        }
+        else
+        {
+            utoa_unsigned((unsigned long long)(-value), out, 10);
+        }
     }
     else
     {
@@ -49,29 +57,28 @@ static void itoa_signed(long long value, char *out)
 
 static void append_padded(char **pp, char *end, const char *s, int width, char pad)
 {
-    if (!pp || !end || !s)
-        return;
-    int len = 0;
-    const char *t = s;
-    while (*t++)
-        len++;
+    int len = strlen(s);
     int padcnt = (width > len) ? (width - len) : 0;
+
     while (padcnt-- > 0 && *pp < end - 1)
     {
         *(*pp)++ = pad;
     }
-    for (int i = 0; i < len && *pp < end - 1; ++i)
+
+    while (*s && *pp < end - 1)
     {
-        *(*pp)++ = s[i];
+        *(*pp)++ = *s++;
     }
 }
 
 static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list args)
 {
-    if (!buf || size == 0 || !fmt)
+    if (size == 0 || !fmt)
         return 0;
+
     char *p = buf;
     char *end = buf + size;
+
     while (*fmt && p < end - 1)
     {
         if (*fmt != '%')
@@ -79,9 +86,10 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
             *p++ = *fmt++;
             continue;
         }
-        fmt++;
 
+        fmt++;
         char padchar = ' ';
+
         if (*fmt == '0')
         {
             padchar = '0';
@@ -96,14 +104,13 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
         }
 
         // Обработка модификаторов длины
-        int is_long = 0;
-        int is_longlong = 0;
+        int is_long = 0, is_longlong = 0;
 
         if (*fmt == 'l')
         {
             is_long = 1;
             fmt++;
-            if (*fmt == 'l') // ll
+            if (*fmt == 'l')
             {
                 is_longlong = 1;
                 fmt++;
@@ -111,45 +118,34 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
         }
         else if (*fmt == 'h')
         {
-            fmt++;
-            if (*fmt == 'h') // hh
+            fmt++; // Пропускаем 'h', используем int по умолчанию
+            if (*fmt == 'h')
                 fmt++;
         }
 
-        char temp[64];
+        char temp[TEMP_BUFFER_SIZE];
+
         switch (*fmt)
         {
         case 's':
         {
             const char *s = va_arg(args, const char *);
-            if (!s)
-                s = "(null)";
-            append_padded(&p, end, s, width, padchar);
+            append_padded(&p, end, s ? s : "(null)", width, padchar);
             break;
         }
         case 'd':
         case 'i':
         {
-            long long v;
-            if (is_longlong)
-                v = va_arg(args, long long);
-            else if (is_long)
-                v = va_arg(args, long);
-            else
-                v = va_arg(args, int);
+            long long v = is_longlong ? va_arg(args, long long) : is_long ? va_arg(args, long)
+                                                                          : va_arg(args, int);
             itoa_signed(v, temp);
             append_padded(&p, end, temp, width, padchar);
             break;
         }
         case 'u':
         {
-            unsigned long long v;
-            if (is_longlong)
-                v = va_arg(args, unsigned long long);
-            else if (is_long)
-                v = va_arg(args, unsigned long);
-            else
-                v = va_arg(args, unsigned int);
+            unsigned long long v = is_longlong ? va_arg(args, unsigned long long) : is_long ? va_arg(args, unsigned long)
+                                                                                            : va_arg(args, unsigned int);
             utoa_unsigned(v, temp, 10);
             append_padded(&p, end, temp, width, padchar);
             break;
@@ -157,34 +153,28 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
         case 'x':
         case 'X':
         {
-            unsigned long long v;
-            if (is_longlong)
-                v = va_arg(args, unsigned long long);
-            else if (is_long)
-                v = va_arg(args, unsigned long);
-            else
-                v = va_arg(args, unsigned int);
+            unsigned long long v = is_longlong ? va_arg(args, unsigned long long) : is_long ? va_arg(args, unsigned long)
+                                                                                            : va_arg(args, unsigned int);
             utoa_unsigned(v, temp, 16);
             append_padded(&p, end, temp, width, padchar);
             break;
         }
-        case 'p': // Указатель
+        case 'p':
         {
-            void *ptr = va_arg(args, void *);
             if (p < end - 2)
             {
                 *p++ = '0';
                 *p++ = 'x';
             }
+            void *ptr = va_arg(args, void *);
             utoa_unsigned((unsigned long long)(uintptr_t)ptr, temp, 16);
             append_padded(&p, end, temp, width, padchar);
             break;
         }
         case 'c':
         {
-            int ch = va_arg(args, int);
             if (p < end - 1)
-                *p++ = (char)ch;
+                *p++ = (char)va_arg(args, int);
             break;
         }
         case '%':
@@ -198,6 +188,7 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
                 *p++ = *fmt;
             break;
         }
+
         if (*fmt)
             fmt++;
     }
@@ -214,22 +205,15 @@ int kprint(const uint8_t type, const char *format, ...)
         return -1;
     }
 
-    uint32_t fg = 0x00FFFFFF;
-    switch (type)
+    uint32_t colors[] = {
+        [KPRINT_NORMAL] = 0x00FFFFFF,
+        [KPRINT_LOG] = 0x00FFFF00,
+        [KPRINT_ERROR] = 0x00FF0000,
+        [KPRINT_SUCCESS] = 0x0000FF00,
+    };
+
+    if (type >= sizeof(colors) / sizeof(colors[0]))
     {
-    case KPRINT_LOG:
-        fg = 0x00FFFF00;
-        break;
-    case KPRINT_ERROR:
-        fg = 0x00FF0000;
-        break;
-    case KPRINT_SUCCESS:
-        fg = 0x0000FF00;
-        break;
-    case KPRINT_NORMAL:
-        fg = 0x00FFFFFF;
-        break;
-    default:
         gfx_put_string("PRINT ERROR: Invalid 'kprint' argument (type)\n", 0x00FF0000);
         return -1;
     }
@@ -246,6 +230,6 @@ int kprint(const uint8_t type, const char *format, ...)
         return -1;
     }
 
-    gfx_put_string(buffer, fg);
+    gfx_put_string(buffer, colors[type]);
     return 0;
 }

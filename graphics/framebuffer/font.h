@@ -9,6 +9,10 @@
 #include "../../glyphs/numbers_glyph.h"
 #include "../../glyphs/symbols_glyph.h"
 
+/* Константы размеров глифов */
+#define FONT_GLYPH_WIDTH 8
+#define FONT_GLYPH_HEIGHT 12
+
 static const uint8_t *glyph_table[128] = {
     /* Upper */
     ['A'] = (const uint8_t *)glyph_A,

@@ -3,11 +3,11 @@
 #include "clock.h"
 #include "rtc.h"
 
-uint32_t h, m, s;
 volatile ClockTime system_clock = {0, 0, 0}; // старт с 00:00:00
 
 void init_system_clock(void)
 {
+    uint32_t h, m, s;
     read_rtc_time(&h, &m, &s);
     system_clock.hh = (uint8_t)h;
     system_clock.mm = (uint8_t)m;

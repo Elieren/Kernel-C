@@ -21,6 +21,14 @@
 /* Минимальный размер RSDP v2 */
 #define RSDP_V2_SIZE 36
 
+/* Константы для работы с RSDP */
+#define RSDP_SIGNATURE "RSD PTR "
+#define RSDP_REVISION_OFFSET 15
+#define RSDP_LENGTH_OFFSET 20
+
+/* Значения по умолчанию */
+#define DEFAULT_FB_SIZE 0x200000 /* 2 MiB */
+
 /* Глобальная структура с информацией о фреймбуфере */
 static framebuffer_info_t fb_info;
 
@@ -50,6 +58,15 @@ static inline uint64_t read_u64(const void *p)
     return v;
 }
 
+/* Вычисление контрольной суммы */
+static inline uint8_t calc_checksum(const uint8_t *data, size_t len)
+{
+    uint8_t sum = 0;
+    for (size_t i = 0; i < len; i++)
+        sum += data[i];
+    return sum;
+}
+
 /* Проверка валидности RSDP по сигнатуре и контрольной сумме */
 static int validate_rsdp(const uint8_t *rsdp_data, size_t size)
 {
@@ -58,34 +75,25 @@ static int validate_rsdp(const uint8_t *rsdp_data, size_t size)
         return 0;
 
     /* Проверяем сигнатуру "RSD PTR " */
-    if (memcmp(rsdp_data, "RSD PTR ", 8) != 0)
+    if (memcmp(rsdp_data, RSDP_SIGNATURE, 8) != 0)
         return 0;
 
     /* Проверяем контрольную сумму для первых 20 байт (RSDP v1) */
-    uint8_t sum = 0;
-    for (size_t i = 0; i < RSDP_V1_SIZE; i++)
-        sum += rsdp_data[i];
-
-    if (sum != 0)
+    if (calc_checksum(rsdp_data, RSDP_V1_SIZE) != 0)
         return 0;
 
     /* Если есть RSDP v2, проверяем расширенную контрольную сумму */
     if (size >= RSDP_V2_SIZE)
     {
-        uint8_t revision = rsdp_data[15];
+        uint8_t revision = rsdp_data[RSDP_REVISION_OFFSET];
         if (revision >= 2)
         {
             /* Читаем длину из offset 20 (4 байта) */
-            uint32_t length;
-            memcpy(&length, rsdp_data + 20, sizeof(length));
+            uint32_t length = read_u32(rsdp_data + RSDP_LENGTH_OFFSET);
 
-            if (length >= RSDP_V2_SIZE && length <= size)
+            if (length >= RSDP_V2_SIZE && length <= size && length <= 4096)
             {
-                sum = 0;
-                for (uint32_t i = 0; i < length; i++)
-                    sum += rsdp_data[i];
-
-                if (sum != 0)
+                if (calc_checksum(rsdp_data, length) != 0)
                     return 0;
             }
         }
@@ -94,16 +102,84 @@ static int validate_rsdp(const uint8_t *rsdp_data, size_t size)
     return 1; /* RSDP валиден */
 }
 
+/* Обработка ACPI тегов */
+static void process_acpi_tag(uint8_t *payload, size_t payload_len,
+                             size_t min_size, int is_new_version)
+{
+    /* Используем только если RSDP v2 не был найден (для ACPI_OLD) */
+    if ((!is_new_version && g_rsdp_phys_addr != 0) || payload_len < min_size)
+        return;
+
+    /* Валидируем RSDP */
+    if (validate_rsdp(payload, payload_len))
+    {
+        g_rsdp_phys_addr = (uint64_t)(uintptr_t)payload;
+    }
+}
+
+static void process_framebuffer_tag(uint8_t *payload, size_t payload_len)
+{
+    /* Современный формат: 64-битный адрес + pitch + width + height + bpp + тип */
+    if (payload_len >= MB2_FB_PAYLOAD_MODERN)
+    {
+        uint64_t addr64 = read_u64(payload + 0);
+        uint32_t pitch = read_u32(payload + 8);
+        uint32_t width = read_u32(payload + 12);
+        uint32_t height = read_u32(payload + 16);
+
+        uint8_t bpp = 0;
+        uint8_t fbtype = 0;
+        memcpy(&bpp, payload + 20, 1);
+        memcpy(&fbtype, payload + 21, 1);
+
+        fb_info.addr = addr64;
+        fb_info.pitch = pitch;
+        fb_info.width = width;
+        fb_info.height = height;
+        fb_info.bpp = bpp;
+        fb_info.fb_type = fbtype;
+    }
+    /* Старый формат: 32-битный адрес + pitch + width + height */
+    else if (payload_len >= MB2_FB_PAYLOAD_LEGACY)
+    {
+        uint32_t addr32 = read_u32(payload + 0);
+        uint32_t pitch = read_u32(payload + 4);
+        uint32_t width = read_u32(payload + 8);
+        uint32_t height = read_u32(payload + 12);
+
+        fb_info.addr = (uint64_t)addr32;
+        fb_info.pitch = pitch;
+        fb_info.width = width;
+        fb_info.height = height;
+        fb_info.bpp = 0;
+        fb_info.fb_type = 0;
+    }
+    else if (payload_len >= MB2_FB_PAYLOAD_MINIMAL)
+    {
+        uint64_t addr64 = read_u64(payload + 0);
+        fb_info.addr = addr64;
+        fb_info.pitch = 0;
+        fb_info.width = 0;
+        fb_info.height = 0;
+        fb_info.bpp = 0;
+        fb_info.fb_type = 0;
+    }
+    /* Иначе данных недостаточно - игнорируем */
+}
+
 /* Функция вычисляет примерный размер фреймбуфера в байтах.
    Если высота неизвестна - возвращает минимум 2 МиБ. */
 uint64_t fb_calc_size(const framebuffer_info_t *fb)
 {
-    if (!fb || fb->addr == 0)
-        return 0;
+    if (!fb)
+        return DEFAULT_FB_SIZE;
 
     /* Если неизвестен pitch (байт на строку) или высота - возвращаем 2 МиБ */
     if (fb->pitch == 0 || fb->height == 0)
-        return 0x200000;
+        return DEFAULT_FB_SIZE;
+
+    if (fb->height > UINT64_MAX / fb->pitch)
+        return DEFAULT_FB_SIZE;
 
     /* Общий объём памяти, занимаемой изображением */
     uint64_t bytes = (uint64_t)fb->pitch * (uint64_t)fb->height;
@@ -111,7 +187,7 @@ uint64_t fb_calc_size(const framebuffer_info_t *fb)
     /* Округляем вверх до ближайшего кратного 2 МиБ */
     uint64_t rounded = (bytes + 0x1FFFFF) & ~((uint64_t)0x1FFFFF);
     if (rounded == 0)
-        rounded = 0x200000;
+        rounded = DEFAULT_FB_SIZE;
 
     return rounded;
 }
@@ -133,7 +209,6 @@ void mb2_parse(uint64_t mb2_addr)
 
     /* Первые 8 байт: общий размер и резерв */
     uint32_t total_size = read_u32(base + 0);
-    uint32_t reserved = read_u32(base + 4);
 
     /* Проверяем корректность размера */
     if (total_size < MB2_TAG_HDR_SIZE)
@@ -146,21 +221,26 @@ void mb2_parse(uint64_t mb2_addr)
     while (ptr + MB2_TAG_HDR_SIZE <= end)
     {
         /* Читаем заголовок тега */
-        mb2_tag_t tag;
-        memcpy(&tag, ptr, sizeof(tag));
+        uint32_t tag_type = read_u32(ptr);
+        uint32_t tag_size = read_u32(ptr + 4);
 
         /* Проверяем корректность размера тега */
-        if (tag.size < MB2_TAG_HDR_SIZE)
+        if (tag_size < MB2_TAG_HDR_SIZE)
             break;
 
         /* Вычисляем смещение к следующему тегу, с выравниванием */
-        size_t aligned_size = align_up8((size_t)tag.size);
+        size_t aligned_size = align_up8((size_t)tag_size);
         uint8_t *next = ptr + aligned_size;
-        if (next > end)
-            break; /* повреждённая структура - выходим */
+
+        if (next > end || next <= ptr)
+            break; /* повреждённая структура или переполнение - выходим */
+
+        /* Полезная нагрузка идёт сразу после 8-байтного заголовка */
+        uint8_t *payload = ptr + MB2_TAG_HDR_SIZE;
+        size_t payload_len = (size_t)tag_size - MB2_TAG_HDR_SIZE;
 
         /* Обрабатываем тег по типу */
-        switch (tag.type)
+        switch (tag_type)
         {
         /* Тег конца списка - выходим */
         case MB2_TAG_TYPE_END:
@@ -168,122 +248,18 @@ void mb2_parse(uint64_t mb2_addr)
 
         /* Тег с информацией о framebuffer */
         case MB2_TAG_TYPE_FRAMEBUFFER:
-        {
-            /* Полезная нагрузка идёт сразу после 8-байтного заголовка */
-            uint8_t *payload = ptr + MB2_TAG_HDR_SIZE;
-            size_t payload_len = (size_t)tag.size - MB2_TAG_HDR_SIZE;
-
-            /* Современный формат: 64-битный адрес + pitch + width + height + bpp + тип */
-            if (payload_len >= MB2_FB_PAYLOAD_MODERN)
-            {
-                uint64_t addr64 = read_u64(payload + 0);
-                uint32_t pitch = read_u32(payload + 8);
-                uint32_t width = read_u32(payload + 12);
-                uint32_t height = read_u32(payload + 16);
-
-                uint8_t bpp = 0;
-                uint8_t fbtype = 0;
-                memcpy(&bpp, payload + 20, 1);
-                memcpy(&fbtype, payload + 21, 1);
-
-                fb_info.addr = addr64;
-                fb_info.pitch = pitch;
-                fb_info.width = width;
-                fb_info.height = height;
-                fb_info.bpp = bpp;
-                fb_info.fb_type = fbtype;
-            }
-
-            /* Старый формат: 32-битный адрес + pitch + width + height */
-            else if (payload_len >= MB2_FB_PAYLOAD_LEGACY)
-            {
-                uint32_t addr32 = read_u32(payload + 0);
-                uint32_t pitch = read_u32(payload + 4);
-                uint32_t width = read_u32(payload + 8);
-                uint32_t height = read_u32(payload + 12);
-
-                fb_info.addr = (uint64_t)addr32;
-                fb_info.pitch = pitch;
-                fb_info.width = width;
-                fb_info.height = height;
-                fb_info.bpp = 0;
-                fb_info.fb_type = 0;
-            }
-
-            /* Минимальный вариант: адрес + pitch + width */
-            else if (payload_len >= 12)
-            {
-                uint32_t addr32 = read_u32(payload + 0);
-                uint32_t pitch = read_u32(payload + 4);
-                uint32_t width = read_u32(payload + 8);
-
-                fb_info.addr = (uint64_t)addr32;
-                fb_info.pitch = pitch;
-                fb_info.width = width;
-                fb_info.height = 0;
-                fb_info.bpp = 0;
-                fb_info.fb_type = 0;
-            }
-
-            /* Ещё более сокращённый вариант: только 64-битный адрес */
-            else if (payload_len >= 8)
-            {
-                uint64_t addr64 = read_u64(payload + 0);
-                fb_info.addr = addr64;
-                fb_info.pitch = 0;
-                fb_info.width = 0;
-                fb_info.height = 0;
-                fb_info.bpp = 0;
-                fb_info.fb_type = 0;
-            }
-
-            /* Иначе данных недостаточно - игнорируем */
+            process_framebuffer_tag(payload, payload_len);
             break;
-        }
 
         /* Тег ACPI v2.0+ (RSDP v2) - предпочтительный */
         case MB2_TAG_TYPE_ACPI_NEW:
-        {
-            uint8_t *payload = ptr + MB2_TAG_HDR_SIZE;
-            size_t payload_len = (size_t)tag.size - MB2_TAG_HDR_SIZE;
-
-            /* Проверяем, что данных достаточно для RSDP v2 */
-            if (payload_len >= RSDP_V2_SIZE)
-            {
-                /* Валидируем RSDP */
-                if (validate_rsdp(payload, payload_len))
-                {
-                    /* Сохраняем физический адрес RSDP
-                       (в Multiboot2 это копия структуры в памяти загрузчика,
-                        но мы можем использовать её виртуальный адрес как физический,
-                        так как используем identity mapping) */
-                    g_rsdp_phys_addr = (uint64_t)(uintptr_t)payload;
-                }
-            }
+            process_acpi_tag(payload, payload_len, RSDP_V2_SIZE, 1);
             break;
-        }
 
         /* Тег ACPI v1.0 (RSDP v1) - используется если v2 не найден */
         case MB2_TAG_TYPE_ACPI_OLD:
-        {
-            /* Используем только если RSDP v2 не был найден */
-            if (g_rsdp_phys_addr == 0)
-            {
-                uint8_t *payload = ptr + MB2_TAG_HDR_SIZE;
-                size_t payload_len = (size_t)tag.size - MB2_TAG_HDR_SIZE;
-
-                /* Проверяем, что данных достаточно для RSDP v1 */
-                if (payload_len >= RSDP_V1_SIZE)
-                {
-                    /* Валидируем RSDP */
-                    if (validate_rsdp(payload, payload_len))
-                    {
-                        g_rsdp_phys_addr = (uint64_t)(uintptr_t)payload;
-                    }
-                }
-            }
+            process_acpi_tag(payload, payload_len, RSDP_V1_SIZE, 0);
             break;
-        }
 
         /* Все прочие теги игнорируем */
         default:

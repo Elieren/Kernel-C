@@ -2,24 +2,18 @@
 #include "../../portio/portio.h"
 
 #define VGA_BUF ((uint8_t *)0xB8000)
-
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
-
 #define VGA_CTRL 0x3D4
 #define VGA_DATA 0x3D5
 #define CURSOR_HIGH 0x0E
 #define CURSOR_LOW 0x0F
-
 #define TAB_SIZE 8
-
-char time_str[9];
-char time_up[9];
 
 uint8_t x;
 uint8_t y;
 
-uint8_t make_color(const uint8_t fore, const uint8_t back)
+static inline uint8_t make_color(const uint8_t fore, const uint8_t back)
 {
     return (back << 4) | (fore & 0x0F);
 }
@@ -36,10 +30,11 @@ void clean_screen(void)
 
     x = 0;
     y = 0;
+    update_hardware_cursor(0, 0);
 }
 
 // простая функция прокрутки экрана
-void scroll_screen()
+void scroll_screen(void)
 {
     uint16_t *vid = (uint16_t *)VGA_BUF;
 
@@ -97,6 +92,7 @@ void print_char(const char c,
             scroll_screen();
             y = VGA_HEIGHT - 1;
         }
+        update_hardware_cursor(x, y);
         return;
     }
 
@@ -129,6 +125,10 @@ void print_string_position(const char *str,
                            const uint8_t fore,
                            const uint8_t back)
 {
+    // проверка границ экрана
+    if (x >= VGA_WIDTH || y >= VGA_HEIGHT)
+        return;
+
     uint8_t *vid = VGA_BUF;
     unsigned int offset = (y * VGA_WIDTH + x) * 2;
     uint8_t color = make_color(fore, back);

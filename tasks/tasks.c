@@ -30,6 +30,25 @@ void screen_refresh(void)
     }
 }
 
+static void trim_string(char *str)
+{
+    if (!str)
+        return;
+
+    char *start = str;
+    while (*start && (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r'))
+        start++;
+
+    char *end = start + strlen(start) - 1;
+    while (end >= start && (*end == ' ' || *end == '\t' || *end == '\n' || *end == '\r'))
+        end--;
+
+    if (start != str)
+        memmove(str, start, end - start + 2);
+
+    str[end - start + 1] = '\0';
+}
+
 static int parse_path(const char *path, char *parent_dir_path, char *file_name, char *ext)
 {
     if (!path || path[0] != '/')
@@ -50,22 +69,20 @@ static int parse_path(const char *path, char *parent_dir_path, char *file_name, 
     // Сохраняем позицию начала пути для построения родительского каталога
     char parent_path[256] = "";
     size_t parent_path_len = 0;
-
     char *last_token = NULL;
 
     // Перебираем все компоненты пути
     while (token)
     {
-        last_token = token; // запомним последний компонент
-        token = strtok_r(NULL, "/", &saveptr);
+        char *next_token = strtok_r(NULL, "/", &saveptr);
 
-        if (token)
+        if (next_token)
         {
-            // Если это не последний элемент – добавляем его к пути родителя с '/'
-            size_t len = strlen(last_token);
+            // Если это не последний элемент - добавляем его к пути родителя с '/'
+            size_t len = strlen(token);
             if (parent_path_len + len + 1 < sizeof(parent_path))
             {
-                memcpy(parent_path + parent_path_len, last_token, len);
+                memcpy(parent_path + parent_path_len, token, len);
                 parent_path_len += len;
                 parent_path[parent_path_len] = '/';
                 parent_path_len++;
@@ -79,10 +96,17 @@ static int parse_path(const char *path, char *parent_dir_path, char *file_name, 
         }
         else
         {
-            // last_token – это имя файла (последний элемент)
+            // last_token - это имя файла (последний элемент)
+            last_token = token;
             break;
         }
+
+        token = next_token;
     }
+
+    // Гарантируем, что last_token установлен
+    if (!last_token)
+        return -2;
 
     // Записываем путь родительского каталога (без завершающего '/')
     if (parent_path_len > 0 && parent_path[parent_path_len - 1] == '/')
@@ -133,6 +157,8 @@ void load_and_run_from_autorun(void)
 
     // 3. Выделить буфер под файл ( +1 для 0 терминации )
     size_t size = autorun_entry.size;
+    if (size == 0)
+        return;
 
     char *buffer = (char *)malloc(size + 1);
     if (!buffer)
@@ -153,6 +179,14 @@ void load_and_run_from_autorun(void)
 
     while (token)
     {
+        trim_string(token);
+
+        if (*token == '\0')
+        {
+            token = strtok_r(NULL, ";", &saveptr);
+            continue;
+        }
+
         // Строки в формате "/dir/file.ext"
         char parent_dir_name[FS_NAME_MAX];
         char file_name[FS_NAME_MAX];
@@ -177,15 +211,19 @@ void load_and_run_from_autorun(void)
                     }
                     // Выделить память для файла
                     void *user_mem = malloc(file_entry.size + 1024);
-                    if (!user_mem)
+                    if (user_mem)
                     {
-                        break;
+                        // Прочитать файл
+                        if (fs_read_file_in_dir(file_name, ext, parent_idx, user_mem, file_entry.size, NULL) == 0)
+                        {
+                            // Запустить задачу
+                            utask_create((void (*)(void))user_mem, 0, user_mem, file_entry.size, 0, 0);
+                        }
+                        else
+                        {
+                            free(user_mem);
+                        }
                     }
-                    // Прочитать файл
-                    fs_read_file_in_dir(file_name, ext, parent_idx, user_mem, file_entry.size, NULL);
-
-                    // Запустить задачу
-                    uint64_t pid = utask_create((void (*)(void))user_mem, 0, user_mem, file_entry.size, 0, 0);
                 }
             }
         }

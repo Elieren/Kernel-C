@@ -1,6 +1,5 @@
 #include "reboot.h"
 #include "../portio/portio.h"
-#include <stdint.h>
 
 static inline void wait_kbc(void)
 {

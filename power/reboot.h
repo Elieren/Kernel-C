@@ -1,8 +1,6 @@
 #ifndef REBOOT_H
 #define REBOOT_H
 
-#include <stdint.h>
-
 /**
  * reboot_system — перезагрузка системы.
  *

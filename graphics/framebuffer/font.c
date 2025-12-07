@@ -1,14 +1,12 @@
 #include "font.h"
-
 #include <stddef.h>
 
 /* Возвращает глиф для ASCII, или glyph_space если не найден */
 const uint8_t *font_get_glyph(char c)
 {
     unsigned char uc = (unsigned char)c;
-    if (uc < 128 && glyph_table[uc])
+    if (uc < 128 && glyph_table[uc] != NULL)
         return glyph_table[uc];
-    /* Если для символа нет глифа — возвращаем пробел */
     return (const uint8_t *)glyph_space;
 }
 
@@ -16,29 +14,27 @@ const uint8_t *font_get_glyph(char c)
 void font_register_glyph(char c, const uint8_t *glyph)
 {
     unsigned char uc = (unsigned char)c;
-    if (uc < 128)
+    if (uc < 128 && glyph != NULL)
         glyph_table[uc] = glyph;
 }
 
 void font_draw_char(char c, int x, int y, uint32_t color, int scale)
 {
-    const uint8_t *glyph = font_get_glyph(c);
-    if (!glyph)
+    if (scale <= 0)
         return;
+
+    const uint8_t *glyph = font_get_glyph(c);
     gfx_draw_glyph(glyph, x, y, color, scale);
 }
 
 int font_draw_text(const char *s, int x, int y, uint32_t color, int scale, int spacing)
 {
-    if (!s)
-        return 0;
-    if (scale <= 0)
-        scale = 1;
-    if (spacing < 0)
+    if (!s || !*s || scale <= 0 || spacing < 0)
+    {
+        if (!s || scale <= 0)
+            return x;
         spacing = 0;
-
-    const int GLYPH_W = 8;  /* полная ширина глифа */
-    const int GLYPH_H = 12; /* полная высота глифа */
+    }
 
     int xpos = x;
     const char *p = s;
@@ -47,22 +43,15 @@ int font_draw_text(const char *s, int x, int y, uint32_t color, int scale, int s
     {
         if (*p == '\n')
         {
-            /* переход на следующую строку по полной высоте глифа */
-            y += GLYPH_H * scale;
+            y += FONT_GLYPH_HEIGHT * scale;
             xpos = x;
-            ++p;
-            continue;
         }
-
-        const uint8_t *glyph = font_get_glyph(*p);
-        if (glyph)
+        else
         {
-            /* Рисуем глиф целиком в текущей позиции (никакой "left" и "width" не используется) */
+            const uint8_t *glyph = font_get_glyph(*p);
             gfx_draw_glyph(glyph, xpos, y, color, scale);
+            xpos += FONT_GLYPH_WIDTH * scale + spacing;
         }
-
-        /* В любом случае сдвигаемся на полную ширину глифа + spacing */
-        xpos += GLYPH_W * scale + spacing;
         ++p;
     }
 

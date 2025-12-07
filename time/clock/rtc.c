@@ -35,6 +35,9 @@ void read_rtc_time(uint32_t *hour, uint32_t *minute, uint32_t *second)
     uint8_t hh = cmos_read(0x04);
     uint8_t regB = cmos_read(0x0B);
 
+    // Сохраняем PM бит до обработки
+    uint8_t is_pm = hh & 0x80;
+
     // Если данные в BCD-формате, сконвертировать
     if (!(regB & 0x04))
     {
@@ -47,13 +50,13 @@ void read_rtc_time(uint32_t *hour, uint32_t *minute, uint32_t *second)
         hh &= 0x7F; // сбросить бит PM, если был
     }
 
-    // Если в 12-часовом режиме и установлен PM (бит7=1) — добавить 12
-    if (!(regB & 0x02) && (cmos_read(0x04) & 0x80))
+    // Если в 12-часовом режиме и установлен PM - добавить 12
+    if (!(regB & 0x02) && is_pm)
     {
         hh = (hh + 12) % 24;
     }
 
-    // *** здесь добавляем смещение часового пояса ***
+    // Добавляем смещение часового пояса
     hh = (uint8_t)((hh + TIMEZONE_OFFSET + 24) % 24);
 
     *hour = hh;

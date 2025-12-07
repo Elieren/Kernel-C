@@ -1,6 +1,6 @@
 #include "ramdisk.h"
 
-static uint8_t ramdisk[RAMDISK_SIZE] = {0};
+static uint8_t ramdisk[RAMDISK_SIZE];
 
 uint8_t *ramdisk_base(void)
 {

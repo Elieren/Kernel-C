@@ -11,6 +11,9 @@ static struct idt_ptr idtp;
 /* Установка записи IDT для 64-bit handler */
 void idt_set_gate(uint8_t num, void (*handler)(), uint16_t sel, uint8_t flags)
 {
+    if (num >= IDT_ENTRIES)
+        return;
+
     uint64_t base = (uint64_t)handler;
     idt[num].offset_low = (uint16_t)(base & 0xFFFF);
     idt[num].selector = sel;
@@ -29,8 +32,8 @@ void idt_install(void)
     idtp.limit = (uint16_t)(sizeof(idt) - 1);
     idtp.base = (uint64_t)&idt; /* 64-bit адрес */
 
-    /* Массив указателей на stubs — удобно для цикла */
-    void (*stubs[32])() = {
+    /* Массив указателей на stubs - удобно для цикла */
+    static const void (*stubs[32])() = {
         isr_stub_0, isr_stub_1, isr_stub_2, isr_stub_3,
         isr_stub_4, isr_stub_5, isr_stub_6, isr_stub_7,
         isr_stub_8, isr_stub_9, isr_stub_10, isr_stub_11,
@@ -43,13 +46,13 @@ void idt_install(void)
     /* CPU exceptions */
     for (int i = 0; i < 32; ++i)
     {
-        idt_set_gate(i, stubs[i], 0x08, 0x8E);
+        idt_set_gate(i, stubs[i], KERNEL_CODE_SEL, IDT_GATE_INT);
     }
 
     /* IRQ handlers (timer, keyboard) и системный вызов (DPL=3 -> 0xEE) */
-    idt_set_gate(TIMER, isr32, 0x08, 0x8E);
-    idt_set_gate(KEYBOARD, isr33, 0x08, 0x8E);
-    idt_set_gate(INTERRUPT, isr80, 0x08, 0xEE);
+    idt_set_gate(TIMER, isr32, KERNEL_CODE_SEL, IDT_GATE_INT);
+    idt_set_gate(KEYBOARD, isr33, KERNEL_CODE_SEL, IDT_GATE_INT);
+    idt_set_gate(INTERRUPT, isr80, KERNEL_CODE_SEL, IDT_GATE_SYSCALL);
 
     /* Загружаем IDT через 64-bit asm-обёртку */
     lidt_load(&idtp);
