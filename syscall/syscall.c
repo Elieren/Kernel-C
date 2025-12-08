@@ -148,31 +148,38 @@ uint64_t load_and_run_program(const char *str)
     return pid;
 }
 
-uintptr_t syscall_handler(
-    uint64_t rax, // syscall number
-    uint64_t rdi,
-    uint64_t rsi,
-    uint64_t rdx,
-    uint64_t r10,
-    uint64_t r8,
-    uint64_t r9)
+struct syscall_regs
 {
-    switch ((uint32_t)rax)
+    uint64_t rax;
+    uint64_t rdi;
+    uint64_t rsi;
+    uint64_t rdx;
+    uint64_t r10;
+    uint64_t r8;
+    uint64_t r9;
+};
+
+uintptr_t syscall_handler(const struct syscall_regs *regs)
+{
+    switch ((uint32_t)regs->rax)
     {
     case SYSCALL_PRINT_CHAR_POSITION:
-        gfx_put_char_position((char)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10);
+        gfx_put_char_position((char)regs->rdi, (uint32_t)regs->rsi,
+                              (uint32_t)regs->rdx, (uint32_t)regs->r10);
         return 0;
 
     case SYSCALL_PRINT_STRING_POSITION:
-        gfx_put_string_position((const char *)(uintptr_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10);
+        gfx_put_string_position((const char *)(uintptr_t)regs->rdi,
+                                (uint32_t)regs->rsi, (uint32_t)regs->rdx,
+                                (uint32_t)regs->r10);
         return 0;
 
     case SYSCALL_PRINT_CHAR:
-        gfx_put_char((char)rdi, (uint32_t)rsi);
+        gfx_put_char((char)regs->rdi, (uint32_t)regs->rsi);
         return 0;
 
     case SYSCALL_PRINT_STRING:
-        gfx_put_string((const char *)(uintptr_t)rdi, (uint32_t)rsi);
+        gfx_put_string((const char *)(uintptr_t)regs->rdi, (uint32_t)regs->rsi);
         return 0;
 
     case SYSCALL_BACKSPACE:
@@ -180,9 +187,9 @@ uintptr_t syscall_handler(
         return 0;
 
     case SYSCALL_GET_TIME:
-        if (rdi && rsi >= sizeof(ClockTime))
+        if (regs->rdi && regs->rsi >= sizeof(ClockTime))
         {
-            uint8_t *buf = (uint8_t *)(uintptr_t)rdi;
+            uint8_t *buf = (uint8_t *)(uintptr_t)regs->rdi;
             buf[0] = system_clock.hh;
             buf[1] = system_clock.mm;
             buf[2] = system_clock.ss;
@@ -197,18 +204,18 @@ uintptr_t syscall_handler(
         return 0;
 
     case SYSCALL_MALLOC:
-        return (uintptr_t)malloc((size_t)rdi);
+        return (uintptr_t)malloc((size_t)regs->rdi);
 
     case SYSCALL_FREE:
-        free((void *)(uintptr_t)rdi);
+        free((void *)(uintptr_t)regs->rdi);
         return 0;
 
     case SYSCALL_REALLOC:
-        return (uintptr_t)realloc((void *)(uintptr_t)rdi, (size_t)rsi);
+        return (uintptr_t)realloc((void *)(uintptr_t)regs->rdi, (size_t)regs->rsi);
 
     case SYSCALL_KMALLOC_STATS:
-        if (rdi)
-            get_kmalloc_stats((void *)(uintptr_t)rdi);
+        if (regs->rdi)
+            get_kmalloc_stats((void *)(uintptr_t)regs->rdi);
         return 0;
 
     case SYSCALL_GETCHAR:
@@ -218,7 +225,7 @@ uintptr_t syscall_handler(
     }
 
     case SYSCALL_SETPOSCURSOR:
-        // update_hardware_cursor((uint8_t)rdi, (uint8_t)rsi);
+        // update_hardware_cursor((uint8_t)regs->rdi, (uint8_t)regs->rsi);
         return 0;
 
     case SYSCALL_POWER_OFF:
@@ -230,130 +237,130 @@ uintptr_t syscall_handler(
         return 0;
 
     case SYSCALL_TASK_CREATE:
-        return load_and_run_program((const char *)(uintptr_t)rdi);
+        return load_and_run_program((const char *)(uintptr_t)regs->rdi);
 
     case SYSCALL_TASK_LIST:
-        return (uintptr_t)task_list((void *)(uintptr_t)rdi, (size_t)rsi);
+        return (uintptr_t)task_list((void *)(uintptr_t)regs->rdi, (size_t)regs->rsi);
 
     case SYSCALL_TASK_STOP:
-        return (uintptr_t)task_stop((int)rdi);
+        return (uintptr_t)task_stop((int)regs->rdi);
 
     case SYSCALL_REAP_ZOMBIES:
         reap_zombies();
         return 0;
 
     case SYSCALL_TASK_EXIT:
-        task_exit((int)rdi);
+        task_exit((int)regs->rdi);
         return 0;
 
     case SYSCALL_TASK_IS_ALIVE:
-        return task_is_alive((int)rdi);
+        return task_is_alive((int)regs->rdi);
 
     case THROW_AN_EXCEPTION:
-        return kprint((uint8_t)rdi, (const char *)(uintptr_t)rsi);
+        return kprint((uint8_t)regs->rdi, (const char *)(uintptr_t)regs->rsi);
 
     case SYSCALL_GFX_DRAW_POINT:
-        gfx_draw_point((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx);
+        gfx_draw_point((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx);
         return 0;
 
     case SYSCALL_GFX_DRAW_LINE:
-        gfx_draw_line((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10, (uint32_t)r8);
+        gfx_draw_line((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
+                      (uint32_t)regs->r10, (uint32_t)regs->r8);
         return 0;
 
     case SYSCALL_GFX_DRAW_CIRCLE:
-        gfx_draw_circle((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10);
+        gfx_draw_circle((uint32_t)regs->rdi, (uint32_t)regs->rsi,
+                        (uint32_t)regs->rdx, (uint32_t)regs->r10);
         return 0;
 
     case SYSCALL_GFX_FILL_CIRCLE:
-        gfx_fill_circle((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10);
+        gfx_fill_circle((uint32_t)regs->rdi, (uint32_t)regs->rsi,
+                        (uint32_t)regs->rdx, (uint32_t)regs->r10);
         return 0;
 
     case SYSCALL_GFX_DRAW_RECT:
-        gfx_draw_rect((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10, (uint32_t)r8);
+        gfx_draw_rect((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
+                      (uint32_t)regs->r10, (uint32_t)regs->r8);
         return 0;
 
     case SYSCALL_GFX_FILL_RECT:
-        gfx_fill_rect((uint32_t)rdi, (uint32_t)rsi, (uint32_t)rdx, (uint32_t)r10, (uint32_t)r8);
+        gfx_fill_rect((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
+                      (uint32_t)regs->r10, (uint32_t)regs->r8);
         return 0;
 
     case SYSCALL_GFX_CLEAR:
-        gfx_clear((uint32_t)rdi);
+        gfx_clear((uint32_t)regs->rdi);
         return 0;
 
     case SYSCALL_CHDIR:
-        return (uintptr_t)sys_chdir((const char *)(uintptr_t)rdi);
-    case SYSCALL_GETCWD:
+        return (uintptr_t)sys_chdir((const char *)(uintptr_t)regs->rdi);
 
-        int result = sys_getcwd((char *)(uintptr_t)rdi, (size_t)rsi);
-        if (result == -1)
-        {
-            return -1;
-        }
-        else
-        {
-            return (uintptr_t)result;
-        }
+    case SYSCALL_GETCWD:
+    {
+        int result = sys_getcwd((char *)(uintptr_t)regs->rdi, (size_t)regs->rsi);
+        return (result == -1) ? -1 : (uintptr_t)result;
+    }
 
     case SYSCALL_GET_CWD_IDX:
-        return (uintptr_t)sys_get_cwd_idx((uint32_t *)(uintptr_t)rdi);
+        return (uintptr_t)sys_get_cwd_idx((uint32_t *)(uintptr_t)regs->rdi);
 
     case SYSCALL_FS_MKDIR:
-        return (uintptr_t)fs_mkdir((const char *)(uintptr_t)rdi, (int)rsi);
+        return (uintptr_t)fs_mkdir((const char *)(uintptr_t)regs->rdi, (int)regs->rsi);
 
     case SYSCALL_FS_RMDIR:
-        return (uintptr_t)fs_rmdir((int)rdi);
+        return (uintptr_t)fs_rmdir((int)regs->rdi);
 
     case SYSCALL_FS_CREATE_FILE:
         return (uintptr_t)fs_create_file(
-            (const char *)(uintptr_t)rdi,
-            (const char *)(uintptr_t)rsi,
-            (int)rdx,
-            (uint16_t *)(uintptr_t)r10);
+            (const char *)(uintptr_t)regs->rdi,
+            (const char *)(uintptr_t)regs->rsi,
+            (int)regs->rdx,
+            (uint16_t *)(uintptr_t)regs->r10);
 
     case SYSCALL_FS_REMOVE_ENTRY:
-        return (uintptr_t)fs_remove_entry((int)rdi);
+        return (uintptr_t)fs_remove_entry((int)regs->rdi);
 
     case SYSCALL_FS_FIND_IN_DIR:
         return (uintptr_t)fs_find_in_dir(
-            (const char *)(uintptr_t)rdi,
-            (const char *)(uintptr_t)rsi,
-            (int)rdx,
-            (fs_entry_t *)(uintptr_t)r10);
+            (const char *)(uintptr_t)regs->rdi,
+            (const char *)(uintptr_t)regs->rsi,
+            (int)regs->rdx,
+            (fs_entry_t *)(uintptr_t)regs->r10);
 
     case SYSCALL_FS_GET_ALL_IN_DIR:
         return (uintptr_t)fs_get_all_in_dir(
-            (fs_entry_t *)(uintptr_t)rdi,
-            (int)rsi,
-            (int)rdx);
+            (fs_entry_t *)(uintptr_t)regs->rdi,
+            (int)regs->rsi,
+            (int)regs->rdx);
 
     case SYSCALL_FS_READ:
         return (uintptr_t)fs_read(
-            (uint16_t)rdi,
-            (void *)(uintptr_t)rsi,
-            (size_t)rdx);
+            (uint16_t)regs->rdi,
+            (void *)(uintptr_t)regs->rsi,
+            (size_t)regs->rdx);
 
     case SYSCALL_FS_WRITE:
         return (uintptr_t)fs_write(
-            (uint16_t)rdi,
-            (const void *)(uintptr_t)rsi,
-            (size_t)rdx);
+            (uint16_t)regs->rdi,
+            (const void *)(uintptr_t)regs->rsi,
+            (size_t)regs->rdx);
 
     case SYSCALL_FS_WRITE_FILE_IN_DIR:
         return (uintptr_t)fs_write_file_in_dir(
-            (const char *)(uintptr_t)rdi,
-            (const char *)(uintptr_t)rsi,
-            (int)rdx,
-            (const void *)(uintptr_t)r10,
-            (size_t)r8);
+            (const char *)(uintptr_t)regs->rdi,
+            (const char *)(uintptr_t)regs->rsi,
+            (int)regs->rdx,
+            (const void *)(uintptr_t)regs->r10,
+            (size_t)regs->r8);
 
     case SYSCALL_FS_READ_FILE_IN_DIR:
         return (uintptr_t)fs_read_file_in_dir(
-            (const char *)(uintptr_t)rdi,
-            (const char *)(uintptr_t)rsi,
-            (int)rdx,
-            (void *)(uintptr_t)r10,
-            (size_t)r8,
-            (size_t *)(uintptr_t)r9);
+            (const char *)(uintptr_t)regs->rdi,
+            (const char *)(uintptr_t)regs->rsi,
+            (int)regs->rdx,
+            (void *)(uintptr_t)regs->r10,
+            (size_t)regs->r8,
+            (size_t *)(uintptr_t)regs->r9);
 
     default:
         return (uintptr_t)-1;
