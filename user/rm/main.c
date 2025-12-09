@@ -58,7 +58,7 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("Usage: rm [-r] <file_or_directory>\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     int arg_idx = 1;
@@ -73,7 +73,7 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("Error: no file or directory specified\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     orig_target = argv[arg_idx];
@@ -84,7 +84,7 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("Error: cannot get current directory\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     char name_buf[FS_NAME_MAX];
@@ -143,7 +143,7 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("' not found\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     if (entry.is_dir && !recursive)
@@ -153,7 +153,7 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("' is a directory. Use -r to remove directories\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     int result;
@@ -169,12 +169,12 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("'\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     _do_syscall_exit(0);
     for (;;)
-        asm volatile("hlt");
+        asm volatile("pause");
 }
 
 // Рекурсивное удаление директории

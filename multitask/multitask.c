@@ -1,4 +1,4 @@
-// multitask64.c
+// multitask.c
 // Простая вытесняемая мультизадачность для long mode (x86_64).
 #include "multitask.h"
 #include "../malloc/malloc.h"
@@ -7,6 +7,7 @@
 #include "../fat16/fs.h"
 #include <stdint.h>
 #include <stddef.h>
+#include "../tss/tss.h"
 
 #define USER_CS ((uint64_t)0x18 | 3) /* 0x1B */
 #define USER_SS ((uint64_t)0x20 | 3) /* 0x23 */
@@ -32,8 +33,12 @@ static inline void cli(void) { __asm__ volatile("cli" ::: "memory"); }
 static inline void sti(void) { __asm__ volatile("sti" ::: "memory"); }
 
 /* prepare_initial_stack: layout exactly matches your ISR push order */
-static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top, int argc,
-                                       uintptr_t argv_ptr, int user_mode)
+static uint64_t *prepare_initial_stack(void (*entry)(void),
+                                       void *kstack_top,
+                                       void *user_stack_top,
+                                       int argc,
+                                       uintptr_t argv_ptr,
+                                       int user_mode)
 {
     const int FRAME_QWORDS = 22;
     uint64_t *sp = (uint64_t *)kstack_top;
@@ -57,20 +62,20 @@ static uint64_t *prepare_initial_stack(void (*entry)(void), void *kstack_top, in
     sp[14] = 0;                  /* rdx */
     sp[15] = 0;                  /* rcx */
     sp[16] = 0;                  /* rax */
-    sp[17] = (uint64_t)entry;    /* RIP */
-    sp[19] = 0x202;              /* RFLAGS (IF = 1) */
+    sp[17] = (uint64_t)entry;    /* rip */
+    sp[19] = 0x202;              /* rflags (IF=1) */
 
     if (user_mode)
     {
-        sp[18] = USER_CS; /* User CS */
-        sp[20] = (uint64_t)kstack_top;
-        sp[21] = USER_SS; /* User SS */
+        sp[18] = USER_CS;
+        sp[20] = (uint64_t)user_stack_top;
+        sp[21] = USER_SS;
     }
     else
     {
-        sp[18] = 0x08; /* Kernel CS */
+        sp[18] = 0x08;
         sp[20] = (uint64_t)kstack_top;
-        sp[21] = 0x10; /* Kernel SS */
+        sp[21] = 0x10;
     }
 
     return sp;
@@ -91,6 +96,9 @@ void scheduler_init(void)
     task_ring = &init_task;
     current = NULL;
     next_pid = 1;
+
+    /* Инициализируем TSS */
+    tss_init();
 }
 
 /* Создаёт kernel-thread */
@@ -120,7 +128,12 @@ void task_create(void (*entry)(void), size_t stack_size)
     t->cwd_idx = FS_ROOT_IDX;
 
     void *kstack_top = (char *)kstack + stack_size;
-    t->regs = prepare_initial_stack(entry, kstack_top, 0, 0, 0);
+    t->regs = prepare_initial_stack(entry,
+                                    kstack_top,
+                                    kstack_top, /* kernel uses kstack */
+                                    0,
+                                    0,
+                                    0); /* kernel mode */
 
     /* Вставляем в кольцо как новый tail */
     cli();
@@ -166,6 +179,8 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
         init_task.state = TASK_RUNNING;
         current = &init_task;
         g_syscall_kstack_top = (uint64_t)current->kstack + current->kstack_size;
+        /* Обновляем TSS */
+        tss_update_rsp0(g_syscall_kstack_top);
     }
     else
     {
@@ -186,6 +201,8 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
         *out_regs_ptr = current->regs;
         current->state = TASK_RUNNING;
         g_syscall_kstack_top = (uint64_t)current->kstack + current->kstack_size;
+        /* Обновляем TSS */
+        tss_update_rsp0(g_syscall_kstack_top);
         return;
     }
 
@@ -193,6 +210,8 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
     current->state = TASK_RUNNING;
     *out_regs_ptr = current->regs;
     g_syscall_kstack_top = (uint64_t)current->kstack + current->kstack_size;
+    /* Обновляем TSS */
+    tss_update_rsp0(g_syscall_kstack_top);
 }
 
 task_t *get_current_task(void) { return current; }
@@ -408,11 +427,20 @@ uint64_t utask_create(void (*entry)(void),
     t->state = TASK_READY;
     t->kstack = kstack;
     t->kstack_size = stack_size;
-    t->regs = prepare_initial_stack(entry, (char *)kstack + stack_size, argc, argv_ptr, 0);
-    t->exit_code = 0;
-
     t->user_mem = user_mem;
     t->user_mem_size = user_mem_size;
+
+    void *user_stack_top = (char *)user_mem + user_mem_size;
+    void *kstack_top = (char *)kstack + stack_size;
+
+    /* Передаём user_mode=1 и user_stack_top */
+    t->regs = prepare_initial_stack(entry,
+                                    kstack_top,
+                                    user_stack_top,
+                                    argc,
+                                    argv_ptr,
+                                    1); /* ← User mode! */
+    t->exit_code = 0;
 
     if (current)
         t->cwd_idx = current->cwd_idx;
@@ -439,14 +467,10 @@ uint64_t utask_create(void (*entry)(void),
 int task_is_alive(int pid)
 {
     if (pid < 0)
-    {
         return 0;
-    }
 
     if (pid == 0)
-    {
         return 1;
-    }
 
     reap_zombies_internal();
 

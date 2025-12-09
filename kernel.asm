@@ -1,4 +1,4 @@
-; kernel.asm — 32-bit start -> switch to long mode -> call kmain (64-bit)
+; kernel.asm - 32-bit start -> switch to long mode -> call kmain (64-bit)
 ; Assemble with: nasm -f elf64 kernel.asm -o build/kernel.asm.o
 
 [BITS 32]
@@ -44,13 +44,15 @@ mb2_start:
 mb2_end:
 
 global start
-; extern syscall_stub
-extern kmain        ; 64-bit C entry point (link with -m64 objects)
+global gdt
+global tss_buffer
+global stack64_top
+extern kmain
 
 start:
-    cli                     ; отключаем прерывания
+    cli
 
-    ; --- Загружаем GDT (должен содержать 64-bit code selector в 0x08) ---
+    ; --- Загружаем GDT (содержит 64-bit code selector в 0x08) ---
     lgdt [gdt_desc]
 
     ; --- Включаем PAE (CR4.PAE = 1) ---
@@ -58,14 +60,14 @@ start:
     bts eax, 5
     mov cr4, eax
 
-    ; --- Устанавливаем CR3 = адрес pml4_table (низкие 32 бита достаточно, мы в low memory) ---
+    ; --- Устанавливаем CR3 = адрес pml4_table ---
     mov eax, pml4_table
     mov cr3, eax
 
     ; --- Включаем LME через MSR IA32_EFER (0xC0000080) ---
     mov ecx, 0xC0000080
     rdmsr
-    bts eax, 8              ; set EFER.LME
+    bts eax, 8
     wrmsr
 
     ; --- Включаем paging (CR0.PG = 1) ---
@@ -73,7 +75,7 @@ start:
     bts eax, 31
     mov cr0, eax
 
-    ; --- Far jump в 64-bit код: CS = 0x08 (GDT entry 1) ---
+    ; --- Far jump в 64-bit код ---
     jmp 0x08:long_mode_entry
 
 ; -----------------------------------------------------------------------
@@ -81,8 +83,7 @@ start:
 ; -----------------------------------------------------------------------
 [BITS 64]
 long_mode_entry:
-    ; CS уже изменён через far jump. Настроим другие сегменты.
-    mov ax, 0x10            ; 0x10 — селектор data дескриптора в GDT
+    mov ax, 0x10
     mov ds, ax
     mov es, ax
     mov ss, ax
@@ -100,9 +101,7 @@ long_mode_entry:
     jmp .hang64
 
 ; -----------------------------------------------------------------------
-; GDT (в 32-bit режиме нужно выполнить lgdt, чтобы selector 0x08 был валиден)
-; GDT: null, 64-bit code (L=1), 64-bit data
-; Значения дескрипторов заданы в виде QWORD'ов (little-endian)
+; GDT с поддержкой Ring 3 и TSS
 ; -----------------------------------------------------------------------
 align 8
 gdt:
@@ -111,7 +110,11 @@ gdt:
     dq 0x00AF92000000FFFF     ; 0x10: Kernel Data (L=1, DPL=0)
     dq 0x00AFFA000000FFFF     ; 0x18: User Code (L=1, DPL=3)
     dq 0x00AFF2000000FFFF     ; 0x20: User Data (L=1, DPL=3)
+    ; TSS descriptor (64-bit требует 2 записи)
+    dq 0x0000000000000000     ; 0x28: TSS lower 8 bytes (будет заполнен далее)
+    dq 0x0000000000000000     ; 0x30: TSS upper 8 bytes
 gdt_end:
+
 gdt_desc:
     dw gdt_end - gdt - 1
     dq gdt
@@ -126,11 +129,15 @@ stack64_bottom:
 stack64_top:
 
 ; -----------------------------------------------------------------------
-; Identity-map 0..4GiB (2MiB pages) через PML4->PDPT->PD0..PD3
-; - PML4[0] -> PDPT
-; - PDPT[0..3] -> PD0..PD3 (каждый PD покрывает 1GiB)
-; Флаги: PD entries = 0x087 (Present|RW|US|PS(2MiB))
-; PML4/PDPT entries = 0x007 (Present|RW|US)
+; TSS структура и её адрес (будет инициализирована в C коде)
+; -----------------------------------------------------------------------
+section .bss
+align 16
+tss_buffer:
+    resb 104  ; размер TSS в 64-bit режиме
+
+; -----------------------------------------------------------------------
+; Identity-map 0..4GiB (2MiB pages)
 ; -----------------------------------------------------------------------
 section .data
 align 4096

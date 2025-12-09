@@ -83,7 +83,7 @@ void _start(void)
 
         if (ch == NUL)
         {
-            asm volatile("hlt");
+            asm volatile("pause");
             continue;
         }
 
@@ -169,7 +169,7 @@ void _start(void)
                         child_pid = pid;
                         while (_do_syscall_task_is_alive(child_pid) != 0)
                         {
-                            asm volatile("hlt");
+                            asm volatile("pause");
                         }
                         child_pid = 0;
 
@@ -195,7 +195,7 @@ void _start(void)
             }
 
             input_len = 0;
-            asm volatile("hlt");
+            asm volatile("pause");
             continue;
         }
 
@@ -204,12 +204,12 @@ void _start(void)
         {
             if (input_len == 0)
             {
-                asm volatile("hlt");
+                asm volatile("pause");
                 continue;
             }
             input_len -= 1;
             _do_syscall_backspace();
-            asm volatile("hlt");
+            asm volatile("pause");
             continue;
         }
 
@@ -225,11 +225,11 @@ void _start(void)
 
         _do_syscall_print_char((unsigned long)ch, WHITE);
 
-        asm volatile("hlt");
+        asm volatile("pause");
     }
 
     for (;;)
-        asm volatile("hlt");
+        asm volatile("pause");
 }
 
 int strncmp(const char *a, const char *b, size_t n)

@@ -58,7 +58,7 @@ void _start(void)
         _do_syscall_free(buffer_ptr);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     int max_files = 128;
@@ -69,7 +69,7 @@ void _start(void)
         _do_syscall_free(buffer_ptr);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     int count = _do_syscall_fs_get_all_in_dir(entries, max_files, (int)cwd_idx);
@@ -79,7 +79,7 @@ void _start(void)
         _do_syscall_free(buffer_ptr);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     char *w = buffer_ptr;
@@ -132,7 +132,7 @@ void _start(void)
     _do_syscall_exit(0);
 
     for (;;)
-        asm volatile("hlt");
+        asm volatile("pause");
 }
 
 size_t my_strlen(const char *s)

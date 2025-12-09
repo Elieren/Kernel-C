@@ -9,7 +9,7 @@ void _start(void)
     _do_syscall_shutdown();
 
     for (;;)
-        asm volatile("hlt");
+        asm volatile("pause");
 }
 
 void _do_syscall_shutdown(void)

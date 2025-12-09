@@ -74,6 +74,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [x] RSDP search and validation system added.
 
+* [X] Added user mode.
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 

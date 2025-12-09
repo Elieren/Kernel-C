@@ -25,7 +25,7 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("Usage: mkdir <directory_name>\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     // Получаем индекс текущей директории
@@ -36,7 +36,7 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("Error: cannot get current directory\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     // Создаём директорию
@@ -50,12 +50,12 @@ void _start(int argc, char **argv)
         _do_syscall_print_string("'\n", RED);
         _do_syscall_exit(1);
         for (;;)
-            asm volatile("hlt");
+            asm volatile("pause");
     }
 
     _do_syscall_exit(0);
     for (;;)
-        asm volatile("hlt");
+        asm volatile("pause");
 }
 
 void _do_syscall_print_string(const char *p, unsigned long color)

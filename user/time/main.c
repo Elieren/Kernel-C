@@ -52,7 +52,7 @@ void _start(void)
     _do_syscall_exit(0);
 
     for (;;)
-        asm volatile("hlt");
+        asm volatile("pause");
 }
 
 /* ------------------------------
