@@ -34,7 +34,5 @@ SECTIONS
   .heap (NOLOAD) : {
     . = ALIGN(8);
     _heap_start = .;
-    . = . + 512 * 1024 * 1024;
-    _heap_end = .;
   } :data
 }

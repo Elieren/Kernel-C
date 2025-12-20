@@ -6,10 +6,11 @@
 #define MB2_TAG_HDR_SIZE 8 /* Размер заголовка тега Multiboot2 (type + size) */
 #define MB2_TAG_ALIGN 8    /* Каждый тег выровнен по 8 байт */
 
-#define MB2_TAG_TYPE_END 0         /* Тип тега "конец списка" */
-#define MB2_TAG_TYPE_FRAMEBUFFER 8 /* Тип тега "framebuffer" */
-#define MB2_TAG_TYPE_ACPI_OLD 14   /* RSDP v1 (ACPI 1.0) */
-#define MB2_TAG_TYPE_ACPI_NEW 15   /* RSDP v2 (ACPI 2.0+) */
+#define MB2_TAG_TYPE_END 0           /* Тип тега "конец списка" */
+#define MB2_TAG_TYPE_BASIC_MEMINFO 4 /* Basic Memory Information */
+#define MB2_TAG_TYPE_FRAMEBUFFER 8   /* Тип тега "framebuffer" */
+#define MB2_TAG_TYPE_ACPI_OLD 14     /* RSDP v1 (ACPI 1.0) */
+#define MB2_TAG_TYPE_ACPI_NEW 15     /* RSDP v2 (ACPI 2.0+) */
 
 /* Возможные минимальные размеры полезной нагрузки тега framebuffer */
 #define MB2_FB_PAYLOAD_MINIMAL 8
@@ -34,6 +35,9 @@ static framebuffer_info_t fb_info;
 
 /* Глобальная переменная для хранения физического адреса RSDP */
 static uint64_t g_rsdp_phys_addr = 0;
+
+/* Глобальная переменная для хранения размера памяти */
+static uint64_t g_total_memory = 0;
 
 /* Вспомогательная функция - выравнивает значение вверх до 8 байт */
 static inline size_t align_up8(size_t x)
@@ -192,6 +196,19 @@ uint64_t fb_calc_size(const framebuffer_info_t *fb)
     return rounded;
 }
 
+/* Обработка тега информации о памяти */
+static void process_meminfo_tag(uint8_t *payload, size_t payload_len)
+{
+    if (payload_len < 8) /* Нужно минимум 8 байт (mem_lower + mem_upper) */
+        return;
+
+    uint32_t mem_lower = read_u32(payload + 0); /* в KiB, обычно 640 */
+    uint32_t mem_upper = read_u32(payload + 4); /* в KiB, остальная память */
+
+    /* Общий размер в байтах: lower всегда малый, поэтому используем upper */
+    g_total_memory = (uint64_t)mem_upper * 1024 + (uint64_t)mem_lower * 1024;
+}
+
 /* Основная функция разбора структуры Multiboot2 */
 void mb2_parse(uint64_t mb2_addr)
 {
@@ -251,6 +268,10 @@ void mb2_parse(uint64_t mb2_addr)
             process_framebuffer_tag(payload, payload_len);
             break;
 
+        case MB2_TAG_TYPE_BASIC_MEMINFO:
+            process_meminfo_tag(payload, payload_len);
+            break;
+
         /* Тег ACPI v2.0+ (RSDP v2) - предпочтительный */
         case MB2_TAG_TYPE_ACPI_NEW:
             process_acpi_tag(payload, payload_len, RSDP_V2_SIZE, 1);
@@ -281,4 +302,10 @@ framebuffer_info_t *get_framebuffer_info(void)
 uint64_t get_rsdp_address(void)
 {
     return g_rsdp_phys_addr;
+}
+
+/* Возвращает общий размер ОЗУ в байтах */
+uint64_t get_total_memory(void)
+{
+    return g_total_memory;
 }

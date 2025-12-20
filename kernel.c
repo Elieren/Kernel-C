@@ -36,7 +36,6 @@
 
 /* символы из link.ld */
 extern char _heap_start;
-extern char _heap_end;
 
 uint64_t g_saved_user_rsp = 0;
 
@@ -152,11 +151,17 @@ void kmain(uint64_t mb2_addr)
     init_timer(1000);
     outb(0x21, 0xFC); // маска прерываний
 
+    mb2_parse(mb2_addr);
+    uint64_t total_memory = get_total_memory();
+
+    /* Устанавливаем конец кучи на конец ОЗУ (с небольшим запасом) */
+    uint64_t reserved = 1024 * 1024; /* Резервируем 1 MiB для безопасности */
+    uint64_t heap_end = total_memory - reserved;
+
     /* Вычисляем размер кучи по линкер-символам */
-    size_t heap_size = (size_t)((uintptr_t)&_heap_end - (uintptr_t)&_heap_start);
+    size_t heap_size = (size_t)(heap_end - (uint64_t)(uintptr_t)&_heap_start);
     malloc_init(&_heap_start, heap_size);
 
-    mb2_parse(mb2_addr);
     gfx_init(get_framebuffer_info());
     pci_init();
 
