@@ -278,7 +278,7 @@ static void free_task_resources(task_t *t)
     free(t);
 }
 
-static void reap_zombies_internal(void)
+void reap_zombies(void)
 {
     cli();
     task_t *z = zombie_list;
@@ -294,11 +294,6 @@ static void reap_zombies_internal(void)
         free_task_resources(z);
         z = next_z;
     }
-}
-
-void reap_zombies(void)
-{
-    reap_zombies_internal();
 }
 
 int task_list(task_info_t *buf, size_t max)
@@ -331,7 +326,7 @@ int task_stop(int pid)
     if (pid == 0)
         return -1;
 
-    reap_zombies_internal();
+    reap_zombies();
 
     cli();
     if (!task_ring)
@@ -379,7 +374,7 @@ int task_stop(int pid)
 
 void task_exit(int exit_code)
 {
-    reap_zombies_internal();
+    reap_zombies();
 
     cli();
     if (!current || current == &init_task)
@@ -472,7 +467,7 @@ int task_is_alive(int pid)
     if (pid == 0)
         return 1;
 
-    reap_zombies_internal();
+    reap_zombies();
 
     cli();
     if (!task_ring)
