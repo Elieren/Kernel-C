@@ -197,6 +197,19 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
     return (int)(p - buf);
 }
 
+int kformat(char *buffer, size_t size, const char *format, ...)
+{
+    if (!buffer || size == 0 || !format)
+        return -1;
+
+    va_list args;
+    va_start(args, format);
+    int result = simple_vsnprintf(buffer, size, format, args);
+    va_end(args);
+
+    return result;
+}
+
 int kprint(const uint8_t type, const char *format, ...)
 {
     if (!format)

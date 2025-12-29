@@ -12,5 +12,6 @@ enum kprint_type
 };
 
 int kprint(const uint8_t type, const char *format, ...);
+int kformat(char *buffer, size_t size, const char *format, ...);
 
 #endif
