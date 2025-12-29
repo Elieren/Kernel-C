@@ -8,7 +8,7 @@
 #include "../multitask/multitask.h"
 #include "../fat16/fs.h"
 #include "../time/clock/clock.h"
-#include "../graphics/exception_handler/kprint.h"
+#include "../graphics/formatting/formatting.h"
 #include "../graphics/framebuffer/graphics.h"
 
 #include <stdint.h>

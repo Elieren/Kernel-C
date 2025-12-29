@@ -1,5 +1,5 @@
 #include "../framebuffer/graphics.h"
-#include "kprint.h"
+#include "formatting.h"
 #include "../../libc/string.h"
 #include <stdarg.h>
 #include <stddef.h>

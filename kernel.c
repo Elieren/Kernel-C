@@ -27,7 +27,7 @@
 #include "user/time/main_bin.h"
 #include "default_files.h"
 #include "graphics/mb2/mb2.h"
-#include "graphics/exception_handler/kprint.h"
+#include "graphics/formatting/formatting.h"
 #include "graphics/framebuffer/graphics.h"
 #include "graphics/framebuffer/font.h"
 #include "glyphs/english_glyph.h"
