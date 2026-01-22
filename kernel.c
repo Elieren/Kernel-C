@@ -33,6 +33,8 @@
 #include "glyphs/english_glyph.h"
 #include "drivers/ide.h"
 #include "drivers/pci.h"
+#include "drivers/sound/pcs/pcs.h"
+#include "panic/panic.h"
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -164,6 +166,8 @@ void kmain(uint64_t mb2_addr)
 
     gfx_init(get_framebuffer_info());
     pci_init();
+
+    pc_speaker_init();
 
     /* Очистим экран чёрный */
     gfx_clear(0x00000000);

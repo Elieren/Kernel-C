@@ -95,6 +95,20 @@
 #define KEY_LCONTROL 0x1D
 #define KEY_RCONTROL 0xE01D
 
+#define KBD_BUF_SIZE 256
+
+extern volatile bool can_type;
+extern bool shift_down;
+extern bool caps_lock;
+extern bool ctrl_down;
+extern char kbd_buf[KBD_BUF_SIZE];
+
+extern volatile int kbd_head;
+extern volatile int kbd_tail;
+
 char kbd_getchar(void); /* возвращает -1 если буфер пуст, иначе ASCII 0..255 */
+
+unsigned long irq_save_flags(void);
+void irq_restore_flags(unsigned long flags);
 
 #endif

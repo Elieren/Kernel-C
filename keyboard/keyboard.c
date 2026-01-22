@@ -2,18 +2,18 @@
 #include "../portio/portio.h"
 #include "../pic.h"
 
-#define KBD_BUF_SIZE 256
-
 #define INTERNAL_SPACE 0x01
 
-static bool shift_down = false;
-static bool caps_lock = false;
-static bool ctrl_down = false;
+bool shift_down = false;
+bool caps_lock = false;
+bool ctrl_down = false;
+
+volatile bool can_type = true;
 
 /* Кольцевой буфер */
-static char kbd_buf[KBD_BUF_SIZE];
-static volatile int kbd_head = 0; /* место для следующего push */
-static volatile int kbd_tail = 0; /* место для чтения */
+char kbd_buf[KBD_BUF_SIZE];
+volatile int kbd_head = 0; /* место для следующего push */
+volatile int kbd_tail = 0; /* место для чтения */
 
 // Таблица 0–255, все неиспользуемые элементы = 0
 static const char scancode_to_ascii[256] = {
@@ -196,14 +196,14 @@ char get_ascii_char(uint8_t scancode)
 }
 
 /* Простые helpers для атомарности: сохраняем/восстанавливаем flags */
-static inline unsigned long irq_save_flags(void)
+inline unsigned long irq_save_flags(void)
 {
     unsigned long flags;
     asm volatile("pushf; pop %0; cli" : "=g"(flags)::"memory");
     return flags;
 }
 
-static inline void irq_restore_flags(unsigned long flags)
+inline void irq_restore_flags(unsigned long flags)
 {
     asm volatile("push %0; popf" ::"g"(flags) : "memory", "cc");
 }
@@ -229,6 +229,13 @@ void kbd_buffer_push(char c)
 char kbd_getchar(void)
 {
     unsigned long flags = irq_save_flags();
+
+    if (!can_type)
+    {
+        irq_restore_flags(flags);
+        return -1; // Возвращаем -1 если вывод запрещен
+    }
+
     if (kbd_head == kbd_tail)
     {
         irq_restore_flags(flags);

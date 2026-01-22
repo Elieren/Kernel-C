@@ -81,12 +81,28 @@ static uint64_t *prepare_initial_stack(void (*entry)(void),
     return sp;
 }
 
+char *strdup(const char *s)
+{
+    if (!s)
+        return NULL;
+
+    size_t len = strlen(s) + 1; // +1 для '\0'
+    char *dup = (char *)malloc(len);
+
+    if (!dup)
+        return NULL;
+
+    memcpy(dup, s, len);
+    return dup;
+}
+
 /* ----------------Scheduler init / create / pick_next -------------------- */
 void scheduler_init(void)
 {
     memset(&init_task, 0, sizeof(init_task));
     init_task.pid = 0;
     init_task.state = TASK_RUNNING;
+    init_task.name = "INIT";
     init_task.regs = NULL;
     init_task.kstack = NULL;
     init_task.kstack_size = 0;
@@ -102,7 +118,7 @@ void scheduler_init(void)
 }
 
 /* Создаёт kernel-thread */
-void task_create(void (*entry)(void), size_t stack_size)
+void task_create(void (*entry)(void), size_t stack_size, const char *name)
 {
     if (stack_size == 0)
         stack_size = KSTACK_SIZE;
@@ -126,6 +142,7 @@ void task_create(void (*entry)(void), size_t stack_size)
     t->exit_code = 0;
     t->next = NULL;
     t->cwd_idx = FS_ROOT_IDX;
+    t->name = strdup(name);
 
     void *kstack_top = (char *)kstack + stack_size;
     t->regs = prepare_initial_stack(entry,
@@ -275,6 +292,12 @@ static void free_task_resources(task_t *t)
         t->user_mem_size = 0;
     }
 
+    if (t->name)
+    { // Освобождаем память, выделенную для имени
+        free(t->name);
+        t->name = NULL;
+    }
+
     free(t);
 }
 
@@ -313,6 +336,7 @@ int task_list(task_info_t *buf, size_t max)
             break;
         buf[count].pid = it->pid;
         buf[count].state = it->state;
+        buf[count].name = strdup(it->name);
         count++;
         it = it->next;
     } while (it != task_ring->next);
@@ -401,7 +425,8 @@ uint64_t utask_create(void (*entry)(void),
                       void *user_mem,
                       size_t user_mem_size,
                       int argc,
-                      uintptr_t argv_ptr)
+                      uintptr_t argv_ptr,
+                      const char *name)
 {
     if (stack_size == 0)
         stack_size = KSTACK_SIZE;
@@ -424,6 +449,7 @@ uint64_t utask_create(void (*entry)(void),
     t->kstack_size = stack_size;
     t->user_mem = user_mem;
     t->user_mem_size = user_mem_size;
+    t->name = strdup(name);
 
     void *user_stack_top = (char *)user_mem + user_mem_size;
     void *kstack_top = (char *)kstack + stack_size;
@@ -578,4 +604,105 @@ int sys_get_cwd_idx(uint32_t *out_idx)
 
     *out_idx = current->cwd_idx;
     return FS_OK;
+}
+
+void kill_all_tasks(void)
+{
+    cli(); // Отключаем прерывания
+
+    if (!task_ring)
+    {
+        sti();
+        return;
+    }
+
+    task_t *start = task_ring->next;
+    task_t *it = start;
+
+    do
+    {
+        // Пропускаем init-задачу (PID 0)
+        if (it->pid != 0 && it != &init_task)
+        {
+            // Помечаем как зомби
+            it->state = TASK_ZOMBIE;
+            it->exit_code = -1; // Код завершения при ошибке
+
+            // Добавляем в список зомби для очистки
+            add_to_zombie_list(it);
+        }
+        it = it->next;
+    } while (it != start);
+
+    // Удаляем все завершенные задачи из кольца
+    reap_zombies();
+
+    // Текущей задачей становится init
+    current = &init_task;
+    current->state = TASK_RUNNING;
+
+    // Обновляем кольцо, если нужно
+    if (task_ring->pid != 0)
+    {
+        task_ring = &init_task;
+        init_task.next = &init_task;
+    }
+
+    sti();
+}
+
+/* Немедленно завершает все задачи с освобождением ресурсов */
+void emergency_terminate_all(void)
+{
+    cli();
+
+    if (!task_ring)
+    {
+        sti();
+        return;
+    }
+
+    // Сохраняем указатель на начало
+    task_t *start = task_ring->next;
+    task_t *it = start;
+
+    // Создаем временный массив для задач, которые нужно удалить
+    task_t *tasks_to_free[256];
+    int task_count = 0;
+
+    // Сначала собираем все задачи кроме init
+    do
+    {
+        if (it->pid != 0 && it != &init_task)
+        {
+            if (task_count < 256)
+            {
+                tasks_to_free[task_count++] = it;
+            }
+        }
+        it = it->next;
+    } while (it != start && task_count < 256);
+
+    // Удаляем все найденные задачи из кольца
+    for (int i = 0; i < task_count; i++)
+    {
+        unlink_from_ring(tasks_to_free[i]);
+    }
+
+    // Немедленно освобождаем ресурсы
+    for (int i = 0; i < task_count; i++)
+    {
+        free_task_resources(tasks_to_free[i]);
+    }
+
+    // Сбрасываем структуры
+    task_ring = &init_task;
+    init_task.next = &init_task;
+    current = &init_task;
+    current->state = TASK_RUNNING;
+
+    // Очищаем список зомби
+    zombie_list = NULL;
+
+    sti();
 }

@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <string.h>
 
-extern uint32_t seconds;
+extern volatile uint32_t seconds;
 
 static char str[11];
 static char tmp[11];
@@ -136,7 +136,7 @@ uint64_t load_and_run_program(const char *str)
     uintptr_t argv_user_ptr = (uintptr_t)argv_user;
 
     // 6. Создать задачу и передать туда файл + argc/argv
-    uint64_t pid = utask_create((void (*)(void))user_mem, 16384, user_mem, alloc_size, argc, argv_user_ptr);
+    uint64_t pid = utask_create((void (*)(void))user_mem, 16384, user_mem, alloc_size, argc, argv_user_ptr, progname);
     if (pid == 0)
     {
         free(user_mem);

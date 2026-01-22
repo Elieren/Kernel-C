@@ -216,8 +216,8 @@ void load_and_run_from_autorun(void)
                         // Прочитать файл
                         if (fs_read_file_in_dir(file_name, ext, parent_idx, user_mem, file_entry.size, NULL) == 0)
                         {
-                            // Запустить задачу
-                            utask_create((void (*)(void))user_mem, 0, user_mem, file_entry.size, 0, 0);
+                            // Запустить задачу с именем файла (без расширения)
+                            utask_create((void (*)(void))user_mem, 0, user_mem, file_entry.size, 0, 0, file_name);
                         }
                         else
                         {
@@ -239,6 +239,6 @@ void tasks_init(void)
 {
     load_and_run_from_autorun();
 
-    task_create(zombie_reaper_task, 0);
-    task_create(screen_refresh, 0);
+    task_create(zombie_reaper_task, 0, "ZombieReap");
+    task_create(screen_refresh, 0, "ScreenRefresh");
 }
