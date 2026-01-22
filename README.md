@@ -76,6 +76,12 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Added user mode.
 
+* [X] Added panic.
+
+* [X] Added process names.
+
+* [X] Added basic sound implementation driver.
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 
