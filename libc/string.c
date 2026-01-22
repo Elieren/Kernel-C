@@ -1,10 +1,16 @@
 #include <stddef.h>
 #include "string.h"
 #include <stdint.h>
+#include "../panic/panic.h"
 
 /* =================== MEM =================== */
 void *memcpy(void *dst_, const void *src_, size_t n)
 {
+    if (!dst_ || !src_)
+    {
+        panic("MEMCPY_NULL_POINTER", false, true);
+    }
+
     unsigned char *dst = (unsigned char *)dst_;
     const unsigned char *src = (const unsigned char *)src_;
     void *ret = dst_;
@@ -80,6 +86,11 @@ void *memcpy(void *dst_, const void *src_, size_t n)
 
 void *memset(void *s, int c, size_t n)
 {
+    if (!s)
+    {
+        panic("MEMSET_NULL_POINTER", false, true);
+    }
+
     unsigned char *p = (unsigned char *)s;
     unsigned char val = (unsigned char)c;
     void *ret = s;
@@ -135,6 +146,11 @@ int memcmp(const void *ptr1, const void *ptr2, size_t num)
 
 void *memmove(void *dst0, const void *src0, size_t n)
 {
+    if (!dst0 || !src0)
+    {
+        panic("MEMMOVE_NULL_POINTER", false, true);
+    }
+
     if (n == 0 || dst0 == src0)
         return dst0;
 

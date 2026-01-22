@@ -10,6 +10,7 @@
 #include "../time/clock/clock.h"
 #include "../graphics/formatting/formatting.h"
 #include "../graphics/framebuffer/graphics.h"
+#include "../panic/panic.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -161,6 +162,11 @@ struct syscall_regs
 
 uintptr_t syscall_handler(const struct syscall_regs *regs)
 {
+    if (!regs)
+    {
+        panic("SYSCALL_NULL_REGS", false, true);
+    }
+
     switch ((uint32_t)regs->rax)
     {
     case SYSCALL_PRINT_CHAR_POSITION:
@@ -363,6 +369,7 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
             (size_t *)(uintptr_t)regs->r9);
 
     default:
+        panic("UNKNOWN_SYSCALL", false, true);
         return (uintptr_t)-1;
     }
 }

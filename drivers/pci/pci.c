@@ -1,7 +1,7 @@
 #include "pci.h"
-#include "../portio/portio.h"
-#include "../malloc/malloc.h"
-#include "../graphics/formatting/formatting.h"
+#include "../../portio/portio.h"
+#include "../../malloc/malloc.h"
+#include "../../graphics/formatting/formatting.h"
 #include <string.h>
 #include <stdint.h>
 

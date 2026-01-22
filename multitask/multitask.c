@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "../tss/tss.h"
+#include "../panic/panic.h"
 
 #define USER_CS ((uint64_t)0x18 | 3) /* 0x1B */
 #define USER_SS ((uint64_t)0x20 | 3) /* 0x23 */
@@ -120,18 +121,25 @@ void scheduler_init(void)
 /* Создаёт kernel-thread */
 void task_create(void (*entry)(void), size_t stack_size, const char *name)
 {
+    if (!entry)
+    {
+        panic("TASK_CREATE_NULL_ENTRY", false, true);
+    }
+
     if (stack_size == 0)
         stack_size = KSTACK_SIZE;
 
     task_t *t = (task_t *)malloc(sizeof(task_t));
     if (!t)
-        return;
+    {
+        panic("TASK_ALLOCATION_FAILED", false, false);
+    }
 
     void *kstack = malloc(stack_size);
     if (!kstack)
     {
         free(t);
-        return;
+        panic("TASK_STACK_ALLOCATION_FAILED", false, false);
     }
 
     memset(t, 0, sizeof(*t));
@@ -188,6 +196,11 @@ static task_t *pick_next(void)
 
 void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
 {
+    if (!regs)
+    {
+        panic("SCHEDULER_NULL_REGS", true, false);
+    }
+
     if (!current)
     {
         init_task.kstack = init_task_stack;
@@ -209,8 +222,7 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
     task_t *next = pick_next();
     if (!next)
     {
-        *out_regs_ptr = regs;
-        return;
+        panic("NO_RUNNABLE_TASKS", false, false);
     }
 
     if (next == current)
@@ -428,12 +440,24 @@ uint64_t utask_create(void (*entry)(void),
                       uintptr_t argv_ptr,
                       const char *name)
 {
+    if (!entry)
+    {
+        panic("UTASK_CREATE_NULL_ENTRY", false, true);
+    }
+
+    if (!user_mem || user_mem_size == 0)
+    {
+        panic("UTASK_CREATE_INVALID_MEMORY", false, true);
+    }
+
     if (stack_size == 0)
         stack_size = KSTACK_SIZE;
 
     task_t *t = (task_t *)malloc(sizeof(task_t));
     if (!t)
+    {
         return 0;
+    }
 
     void *kstack = malloc(stack_size);
     if (!kstack)

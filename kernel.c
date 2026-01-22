@@ -31,8 +31,8 @@
 #include "graphics/framebuffer/graphics.h"
 #include "graphics/framebuffer/font.h"
 #include "glyphs/english_glyph.h"
-#include "drivers/ide.h"
-#include "drivers/pci.h"
+#include "drivers/ide/ide.h"
+#include "drivers/pci/pci.h"
 #include "drivers/sound/pcs/pcs.h"
 #include "panic/panic.h"
 
@@ -156,15 +156,34 @@ void kmain(uint64_t mb2_addr)
     mb2_parse(mb2_addr);
     uint64_t total_memory = get_total_memory();
 
+    if (total_memory == 0)
+    {
+        panic("MULTIBOOT2_MEMORY_INFO_INVALID", true, false);
+    }
+
     /* Устанавливаем конец кучи на конец ОЗУ (с небольшим запасом) */
     uint64_t reserved = 1024 * 1024; /* Резервируем 1 MiB для безопасности */
     uint64_t heap_end = total_memory - reserved;
 
     /* Вычисляем размер кучи по линкер-символам */
     size_t heap_size = (size_t)(heap_end - (uint64_t)(uintptr_t)&_heap_start);
+
+    if (heap_size < (1024 * 1024)) // минимум 1MB для кучи
+    {
+        panic("INSUFFICIENT_HEAP_SIZE", true, false);
+    }
+
     malloc_init(&_heap_start, heap_size);
 
     gfx_init(get_framebuffer_info());
+
+    // Проверка инициализации framebuffer
+    framebuffer_info_t *fb_info = get_framebuffer_info();
+    if (!fb_info || fb_info->addr == 0)
+    {
+        panic("FRAMEBUFFER_INIT_FAILED", true, false);
+    }
+
     pci_init();
 
     pc_speaker_init();

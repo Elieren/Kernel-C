@@ -1,4 +1,5 @@
 #include "tss.h"
+#include "../panic/panic.h"
 
 extern tss_t tss_buffer;
 extern uint64_t gdt[];
@@ -10,12 +11,22 @@ void tss_init(void)
 {
     tss = &tss_buffer;
 
+    if (!tss)
+    {
+        panic("TSS_ALLOCATION_FAILED", true, false);
+    }
+
     /* Очищаем TSS */
     for (int i = 0; i < sizeof(tss_t); i++)
         ((uint8_t *)tss)[i] = 0;
 
     /* Инициализируем rsp0 с начального kernel stack */
     tss->rsp0 = (uint64_t)&stack64_top;
+
+    if (tss->rsp0 == 0)
+    {
+        panic("TSS_INVALID_RSP0", true, false);
+    }
 
     tss->iopb_offset = sizeof(tss_t);
 

@@ -1,5 +1,5 @@
 #include "ide.h"
-#include "../portio/portio.h"
+#include "../../portio/portio.h"
 
 /* Небольшая задержка: четыре чтения ALTSTATUS (~100ns) */
 static inline void io_delay(uint16_t ctrl_port)

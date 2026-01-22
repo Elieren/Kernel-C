@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "../syscall/syscall.h"
+#include "../panic/panic.h"
 
 /* Конфигурация */
 #define ALIGN 8
@@ -176,14 +177,28 @@ void *malloc(size_t size)
     size = align_up(size);
 
     block_header_t *fit = find_fit(size);
+    int expansion_attempts = 0;
+    const int MAX_EXPANSION_ATTEMPTS = 10;
+
     while (!fit)
     {
+        if (++expansion_attempts > MAX_EXPANSION_ATTEMPTS)
+        {
+            panic("KERNEL_HEAP_EXHAUSTED", false, false);
+        }
+
         if (!heap_expand(size))
-            break;
+        {
+            panic("KERNEL_HEAP_EXPANSION_FAILED", false, false);
+        }
         fit = find_fit(size);
     }
+
     if (!fit)
-        return NULL;
+    {
+        panic("MALLOC_CRITICAL_FAILURE", false, false);
+    }
+
     split_block(fit, size);
     fit->free = 0;
     return header_to_payload(fit);
@@ -199,11 +214,15 @@ void free(void *ptr)
 
     /* проверяем magic */
     if (h->magic != MAGIC)
-        return; /* повреждённый или неверный указатель */
+    {
+        panic("HEAP_CORRUPTION_INVALID_MAGIC", false, true);
+    }
 
     /* проверка на многократное освобождение */
     if (h->free)
-        return; /* уже свободен, ничего не делаем */
+    {
+        panic("DOUBLE_FREE_DETECTED", false, true);
+    }
 
     h->free = 1;
 
