@@ -87,66 +87,65 @@ To view the list of available commands, use the "help" command.
 
 ## Build and Run
 
-__Build:__
-
-```
-make
-```
-
-* All build artifacts (.o files and final binary) are placed in the `build/` folder.
-
-* Final binary: `build/kernel`.
-
-__Run in QEMU:__
-
-* Regular run (executes `build/kernel`):
-
-```
+### Quick Start
+```bash
+# Building the kernel and creating an ISO image
+make iso
+# Running in QEMU
 make run
 ```
-
-* Debug run with serial (`stdout`) output — useful for viewing kernel output and entering commands:
-
+### Basic Build Commands
+| Command | Description |
+|---------|----------|
+| `make` or `make all` | Build the kernel (default) |
+| `make iso` | Build the kernel and create a bootable ISO image |
+| `make run` | Build, create ISO, and run in QEMU |
+| `make debug` | Run with debug information and gdb stub |
+| `make clean` | Remove all build artifacts |
+| `make help` | Help for available commands |
+### Prerequisites
+Make sure the necessary tools are installed:
+```bash
+sudo apt install grub-pc-bin xorriso mtools qemu-system-x86
 ```
-make debug
-```
-
-__Build with GRUB:__
-
-* Make sure you have the necessary tools installed:
-```
-sudo apt install grub-pc-bin xorriso mtools
-```
-* Compile the project and generate the `build/kernel` and `iso/boot/kernel` files:
-
-```
+### Detailed Description of Targets
+#### Basic Build
+```bash
 make
 ```
-* Use `grub-mkrescue` to package the kernel into a bootable ISO image:
+- All build artifacts (.o files and final binary) are placed in the `build/` folder
+- Final binary: `build/kernel.elf`
+#### Running in QEMU
+**Normal Run:**
+```bash
+make run
 ```
-grub-mkrescue -o kernel.iso iso
-```
-* Run the generated ISO using QEMU:
-```
-qemu-system-x86_64 -cdrom kernel.iso -m 1024M
-```
+Creates an ISO image and runs the kernel in the QEMU emulator
 
-__Additional QEMU options:__
-* You can pass options to QEMU via the `QEMU_OPTS` variable. Examples:
-
+**Run with Debugging:**
+```bash
+make debug
 ```
-# Run with gdb stub and 512MB RAM
+Build with debug information, create ISO, and run in QEMU with serial output and gdb support
+
+### Custom QEMU Options
+Pass options through the `QEMU_OPTS` variable:
+```bash
+# Running with gdb stub and 512 MB of RAM
 make run QEMU_OPTS="-s -S -m 512"
-
-# debug + gdb
+# Debugging with gdb
 make debug QEMU_OPTS="-s -S"
 ```
-Note: `-s -S` enables the gdb stub and halts the CPU until the debugger is attached.
+> **Note:** the `-s -S` flags enable gdb stub and pause the CPU until the debugger is connected
 
-__Clean build:__
-
-```
+### Cleanup
+```bash
 make clean
 ```
+Removes the `build/` folder and all build artifacts
 
-This will remove `build/` and all build artifacts.
+### Additional
+For a detailed list of all available commands, run:
+```bash
+make help
+```

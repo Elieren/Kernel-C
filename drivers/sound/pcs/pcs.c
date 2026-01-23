@@ -1,7 +1,7 @@
 #include "pcs.h"
-#include "../../../portio/portio.h"
-#include "../../../time/timer.h"
-#include "../../../graphics/formatting/formatting.h"
+#include <asm/io.h>
+#include "kernel/time/timer.h"
+#include "lib/graphics/formatting/formatting.h"
 #include <stddef.h>
 
 #define PC_SPEAKER_PORT 0x61
@@ -36,10 +36,10 @@ void pc_speaker_init(void)
 
 bool pc_speaker_detect(void)
 {
-    uint8_t original_state = inb(PC_SPEAKER_PORT);
-    outb(PC_SPEAKER_PORT, original_state | SPEAKER_GATE_MASK | SPEAKER_DATA_MASK);
-    uint8_t test_state = inb(PC_SPEAKER_PORT);
-    outb(PC_SPEAKER_PORT, original_state);
+    uint8_t original_state = io_read8(PC_SPEAKER_PORT);
+    io_write8(PC_SPEAKER_PORT, original_state | SPEAKER_GATE_MASK | SPEAKER_DATA_MASK);
+    uint8_t test_state = io_read8(PC_SPEAKER_PORT);
+    io_write8(PC_SPEAKER_PORT, original_state);
     return (test_state & (SPEAKER_GATE_MASK | SPEAKER_DATA_MASK)) ==
            (SPEAKER_GATE_MASK | SPEAKER_DATA_MASK);
 }
@@ -123,23 +123,23 @@ speaker_state_t pc_speaker_get_state(void)
 // Внутренняя функция: включение динамика
 static void enable_speaker(void)
 {
-    uint8_t state = inb(PC_SPEAKER_PORT);
+    uint8_t state = io_read8(PC_SPEAKER_PORT);
 
     // Включаем таймер и динамик
     state |= (SPEAKER_GATE_MASK | SPEAKER_DATA_MASK);
 
-    outb(PC_SPEAKER_PORT, state);
+    io_write8(PC_SPEAKER_PORT, state);
 }
 
 // Внутренняя функция: выключение динамика
 static void disable_speaker(void)
 {
-    uint8_t state = inb(PC_SPEAKER_PORT);
+    uint8_t state = io_read8(PC_SPEAKER_PORT);
 
     // Выключаем таймер и динамик
     state &= ~(SPEAKER_GATE_MASK | SPEAKER_DATA_MASK);
 
-    outb(PC_SPEAKER_PORT, state);
+    io_write8(PC_SPEAKER_PORT, state);
 }
 
 // Внутренняя функция: настройка PIT на нужную частоту
@@ -155,11 +155,11 @@ static void set_pit_frequency(uint32_t frequency)
         divisor = 65535;
 
     // Отправляем команду настройки PIT
-    outb(PIT_COMMAND_PORT, PIT_ACCESS_LOHI);
+    io_write8(PIT_COMMAND_PORT, PIT_ACCESS_LOHI);
 
     // Отправляем младший и старший байты делителя
-    outb(PIT_CHANNEL2_PORT, (uint8_t)(divisor & 0xFF));
-    outb(PIT_CHANNEL2_PORT, (uint8_t)((divisor >> 8) & 0xFF));
+    io_write8(PIT_CHANNEL2_PORT, (uint8_t)(divisor & 0xFF));
+    io_write8(PIT_CHANNEL2_PORT, (uint8_t)((divisor >> 8) & 0xFF));
 }
 
 void play_fnaf_main_theme(void)

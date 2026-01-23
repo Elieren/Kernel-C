@@ -1,63 +1,86 @@
-CC      := gcc
-LD      := ld
-AS      := nasm
-QEMU    := qemu-system-x86_64
+# =============================================================================
+# Основной Makefile проекта
+# =============================================================================
 
-# Флаги компилятора
-BASE_CFLAGS := -m64
-DEBUG_CFLAGS := -m64 -g -O0 -DDEBUG
+# Подключение конфигурации
+include config.mk
 
-# Флаги линковки
-LDFLAGS  := -m elf_x86_64 -T link.ld
+# Инициализация списков исходников
+SRCS_ASM :=
+SRCS_C :=
 
-# Флаги ассемблера
-ASMFLAGS       := -f elf64
-ASMFLAGS_DEBUG := -f elf64 -g -F dwarf
+# Подключение модулей (порядок важен)
+include arch/x86_64/arch.mk
+include kernel/kernel.mk
+include drivers/drivers.mk
+include lib/lib.mk
+include mm/mm.mk
+include fs/fs.mk
 
-# Источники
-SRCS_AS := kernel.asm lidt_load.asm interrupt/isr32.asm interrupt/isr33.asm interrupt/isr_stubs.asm interrupt/isr80.asm
-SRCS_C  := kernel.c graphics/vga/vga.c keyboard/keyboard.c portio/portio.c time/timer.c idt.c pic.c syscall/syscall.c time/clock/clock.c time/clock/rtc.c malloc/malloc.c libc/string.c libc/stack_protector.c power/poweroff.c power/reboot.c multitask/multitask.c tasks/tasks.c ramdisk/ramdisk.c fat16/fs.c graphics/formatting/formatting.c graphics/mb2/mb2.c graphics/framebuffer/graphics.c graphics/framebuffer/font.c drivers/ide/ide.c drivers/pci/pci.c spinlock/spinlock.c seqlock/seqlock.c tss/tss.c panic/panic.c drivers/sound/pcs/pcs.c
+# Генерация списков объектных файлов
+ASM_OBJS :=  $(patsubst %.asm,$(BUILD_DIR)/%.asm.o,$(SRCS_ASM))
+C_OBJS   :=  $(patsubst %.c,$(BUILD_DIR)/%.c.o,$(SRCS_C))
+OBJECTS  :=  $(ASM_OBJS) $(C_OBJS)
 
-# Объекты
-ASM_OBJS := $(patsubst %.asm,build/%.asm.o,$(SRCS_AS))
-C_OBJS   := $(patsubst %.c,build/%.c.o,$(SRCS_C))
-OBJECTS  := $(ASM_OBJS) $(C_OBJS)
+# Файлы зависимостей
+DEPS := $(C_OBJS:.o=.d)
 
-BUILD_KERNEL := build/kernel.elf
-QEMU_OPTS ?=
+# Подключение правил сборки
+include rules.mk
 
-.PHONY: all clean builddir run debug
+# =============================================================================
+# Цели
+# =============================================================================
 
+.PHONY: all clean builddir run debug iso help
+
+# Цель по умолчанию
 all: builddir $(BUILD_KERNEL)
 
+# Создание директорий для сборки
 builddir:
-	@mkdir -p build
+	@mkdir -p  $(BUILD_DIR) $(BOOT_DIR)
 
-# Правила для asm
-build/%.asm.o: %.asm
-	@mkdir -p $(dir $@)
-	$(AS) $(ASMFLAGS) $< -o $@
+# Debug-сборка с отладочной информацией
+debug: EXTRA_CFLAGS = $(DEBUG_CFLAGS)
+debug: ASMFLAGS = $(ASMFLAGS_DEBUG)
+debug: clean all
+	@echo "Debug build complete"
+	 $(QEMU) -kernel $(BUILD_KERNEL) -serial stdio $(QEMU_OPTS)
 
-# Правила для c
-build/%.c.o: %.c
-	@mkdir -p $(dir $@)
-	$(CC) $(BASE_CFLAGS) $(EXTRA_CFLAGS) -c $< -o $@
-
-$(BUILD_KERNEL): $(OBJECTS) link.ld
-	@mkdir -p $(dir $@)
-	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
-	@mkdir -p iso/boot
-	cp $(BUILD_KERNEL) iso/boot/
-
-# debug-сборка: подменяем флаги
-debug: EXTRA_CFLAGS=$(DEBUG_CFLAGS)
-debug: ASMFLAGS=$(ASMFLAGS_DEBUG)
-debug: all
-	$(QEMU) -kernel $(BUILD_KERNEL) -serial stdio $(QEMU_OPTS)
-
+# Запуск в QEMU
 run: all
-	$(QEMU) -kernel $(BUILD_KERNEL) $(QEMU_OPTS)
+	@echo "Starting QEMU..."
+	 $(QEMU) -kernel $(BUILD_KERNEL) $(QEMU_OPTS)
 
+# Создание ISO образа
+iso: all
+	@echo "Creating ISO image..."
+	grub-mkrescue -o kernel.iso $(ISO_DIR)
+	@echo "ISO created: kernel.iso"
+
+# Очистка
 clean:
-	rm -rf build
-	rm -f iso/boot/kernel.elf
+	@echo "Cleaning build artifacts..."
+	@rm -rf $(BUILD_DIR)
+	@rm -f $(BOOT_DIR)/kernel.elf
+	@rm -f kernel.iso
+	@echo "Clean complete"
+
+# Помощь
+help:
+	@echo "Available targets:"
+	@echo "  all     - Build kernel (default)"
+	@echo "  debug   - Build with debug info and run in QEMU"
+	@echo "  run     - Build and run in QEMU"
+	@echo "  iso     - Create bootable ISO image"
+	@echo "  clean   - Remove build artifacts"
+	@echo "  help    - Show this help"
+
+# Подключение файлов зависимостей
+-include $(DEPS)
+
+# Информация о сборке
+$(info =============================================================================)
+ $(info Building project with $(words  $(SRCS_C)) C files and $(words $(SRCS_ASM)) ASM files)
+$(info =============================================================================)
