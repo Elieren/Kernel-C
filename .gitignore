@@ -1,5 +1,6 @@
 *.o
 *.asm.o
 *.c.o
+*.c.d
 ide_disk.img
 apps/test/
