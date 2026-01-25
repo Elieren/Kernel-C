@@ -1,4 +1,4 @@
-#include "reboot.h"
+#include "kernel/power/power.h"
 #include <asm/io.h>
 #include <asm/cpu.h>
 

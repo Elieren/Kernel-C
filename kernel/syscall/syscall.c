@@ -1,8 +1,7 @@
 // syscall.c
 #include "syscall.h"
 #include "kernel/time/timer.h"
-#include "kernel/power/poweroff.h"
-#include "kernel/power/reboot.h"
+#include "kernel/power/power.h"
 #include "drivers/input/keyboard/keyboard.h"
 #include "fs/fat16/fs.h"
 #include "kernel/time/clock/clock.h"

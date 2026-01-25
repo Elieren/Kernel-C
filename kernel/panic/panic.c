@@ -1,6 +1,6 @@
 #include "panic.h"
 #include "drivers/video/framebuffer/graphics.h"
-#include "kernel/power/reboot.h"
+#include "kernel/power/power.h"
 #include "kernel/sched/multitask/multitask.h"
 #include "kernel/time/timer.h"
 #include "drivers/input/keyboard/keyboard.h"

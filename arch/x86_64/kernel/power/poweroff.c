@@ -1,6 +1,6 @@
 #include <boot/bootinfo.h>
 #include <asm/io.h>
-#include "poweroff.h"
+#include "kernel/power/power.h"
 #include <string.h>
 #include <stdint.h>
 #include <asm/cpu.h>

@@ -5,8 +5,6 @@
 KERNEL_C_SRCS := \
 	kernel/kernel.c \
 	kernel/panic/panic.c \
-	kernel/power/poweroff.c \
-	kernel/power/reboot.c \
 	kernel/sched/multitask/multitask.c \
 	kernel/sched/tasks/tasks.c \
 	kernel/syscall/syscall.c \
