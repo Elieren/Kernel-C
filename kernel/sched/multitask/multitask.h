@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include <asm/multitask.h>
+
 #define KSTACK_SIZE (8 * 1024) /* дефолтный размер */
 
 typedef enum

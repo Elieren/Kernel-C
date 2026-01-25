@@ -17,7 +17,8 @@ ARCH_C_SRCS := \
 	arch/x86_64/boot/mb2/mb2.c \
 	arch/x86_64/tables/idt.c \
 	arch/x86_64/tables/tss.c \
-	arch/x86_64/irqchip/pic.c
+	arch/x86_64/irqchip/pic.c \
+	arch/x86_64/kernel/sched/multitask.c
 
 # Добавление в общие списки
 SRCS_ASM += $(ARCH_ASM_SRCS)
