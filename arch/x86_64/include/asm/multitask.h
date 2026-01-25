@@ -1,5 +1,5 @@
-#ifndef X86_64_ARCH_TASK_H
-#define X86_64_ARCH_TASK_H
+#ifndef X86_64_MULTITASK_H
+#define X86_64_MULTITASK_H
 
 #include <stdint.h>
 #include <stddef.h>

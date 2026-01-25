@@ -36,7 +36,7 @@ static bool ensure_buffer_allocated(void)
     return true;
 }
 
-static void append_to_buffer(const char *str)
+void append_to_buffer(const char *str)
 {
     if (!str || !ensure_buffer_allocated())
         return;
@@ -88,61 +88,6 @@ static void free_buffer(void)
     }
 }
 
-/* ================= ПОЛУЧЕНИЕ РЕГИСТРОВ ================= */
-
-void get_registers(RegistersState *regs)
-{
-    if (!regs)
-        return;
-
-    __asm__ volatile(
-        "movq %%rax, 0x00(%0)\n\t"
-        "movq %%rbx, 0x08(%0)\n\t"
-        "movq %%rcx, 0x10(%0)\n\t"
-        "movq %%rdx, 0x18(%0)\n\t"
-        "movq %%rsi, 0x20(%0)\n\t"
-        "movq %%rdi, 0x28(%0)\n\t"
-        "movq %%rbp, 0x30(%0)\n\t"
-        "movq %%r8,  0x38(%0)\n\t"
-        "movq %%r9,  0x40(%0)\n\t"
-        "movq %%r10, 0x48(%0)\n\t"
-        "movq %%r11, 0x50(%0)\n\t"
-        "movq %%r12, 0x58(%0)\n\t"
-        "movq %%r13, 0x60(%0)\n\t"
-        "movq %%r14, 0x68(%0)\n\t"
-        "movq %%r15, 0x70(%0)\n\t"
-        "movq %%rsp, %%rax\n\t"
-        "movq %%rax, 0x78(%0)\n\t"
-        "leaq (%%rip), %%rax\n\t"
-        "movq %%rax, 0x80(%0)\n\t"
-        "pushfq\n\t"
-        "popq %%rax\n\t"
-        "movq %%rax, 0x88(%0)\n\t"
-        "mov %%cs, %%ax\n\t"
-        "movw %%ax, 0x90(%0)\n\t"
-        "mov %%ds, %%ax\n\t"
-        "movw %%ax, 0x92(%0)\n\t"
-        "mov %%es, %%ax\n\t"
-        "movw %%ax, 0x94(%0)\n\t"
-        "mov %%fs, %%ax\n\t"
-        "movw %%ax, 0x96(%0)\n\t"
-        "mov %%gs, %%ax\n\t"
-        "movw %%ax, 0x98(%0)\n\t"
-        "mov %%ss, %%ax\n\t"
-        "movw %%ax, 0x9a(%0)\n\t"
-        "mov %%cr0, %%rax\n\t"
-        "movq %%rax, 0x9c(%0)\n\t"
-        "mov %%cr2, %%rax\n\t"
-        "movq %%rax, 0xa4(%0)\n\t"
-        "mov %%cr3, %%rax\n\t"
-        "movq %%rax, 0xac(%0)\n\t"
-        "mov %%cr4, %%rax\n\t"
-        "movq %%rax, 0xb4(%0)"
-        :
-        : "r"(regs)
-        : "rax", "memory");
-}
-
 /* ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ================= */
 
 static void u64_to_hex_str(uint64_t value, char *buffer)
@@ -173,11 +118,37 @@ static void u16_to_hex_str(uint16_t value, char *buffer)
     buffer[6] = '\0';
 }
 
+static void u8_to_hex_str(uint8_t value, char *buffer)
+{
+    const char *hex_digits = "0123456789ABCDEF";
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    for (int i = 0; i < 2; i++)
+    {
+        uint8_t nibble = (value >> ((1 - i) * 4)) & 0xF;
+        buffer[i + 2] = hex_digits[nibble];
+    }
+    buffer[4] = '\0';
+}
+
+static void u32_to_hex_str(uint32_t value, char *buffer)
+{
+    const char *hex_digits = "0123456789ABCDEF";
+    buffer[0] = '0';
+    buffer[1] = 'x';
+    for (int i = 0; i < 8; i++)
+    {
+        uint8_t nibble = (value >> ((7 - i) * 4)) & 0xF;
+        buffer[i + 2] = hex_digits[nibble];
+    }
+    buffer[10] = '\0';
+}
+
 /* ================= ФУНКЦИИ ДАМПА ПАМЯТИ И СТЕКА ================= */
 
 static void dump_memory(uint64_t address, int lines)
 {
-    if (address < 0x1000 || address > 0xFFFFFFFFFFFFFFF0)
+    if (!is_valid_address(address))
     {
         append_to_buffer("INVALID MEMORY ADDRESS\n");
         return;
@@ -190,25 +161,27 @@ static void dump_memory(uint64_t address, int lines)
     append_to_buffer(hex_buf);
     append_to_buffer(":\n");
 
-    uint64_t *ptr = (uint64_t *)(address & ~0xF);
-    uint64_t start_addr = (uint64_t)ptr - (lines / 2 * 16);
+    uint64_t aligned_addr = align_address(address);
+    uint64_t start_addr = calculate_dump_start(aligned_addr, lines);
 
     for (int i = 0; i < lines; i++)
     {
-        uint64_t current_addr = start_addr + (i * 16);
+        uint64_t current_addr = start_addr + (i * LINE_SIZE);
 
-        if (current_addr < 0x1000 || current_addr > 0xFFFFFFFFFFFFFFF0)
+        if (!is_valid_address(current_addr))
             continue;
 
         u64_to_hex_str(current_addr, hex_buf);
         append_to_buffer(hex_buf);
         append_to_buffer(": ");
 
-        for (int j = 0; j < 2; j++)
+        for (int j = 0; j < QWORDS_PER_LINE; j++)
         {
-            if (current_addr + j * 8 < 0xFFFFFFFFFFFFFFF8)
+            uint64_t offset = current_addr + j * sizeof(uint64_t);
+
+            if (can_read_qword(offset))
             {
-                uint64_t value = *(uint64_t *)(current_addr + j * 8);
+                uint64_t value = read_qword(offset);
                 u64_to_hex_str(value, hex_buf);
                 append_to_buffer(hex_buf);
                 append_to_buffer(" ");
@@ -223,72 +196,88 @@ static void dump_memory(uint64_t address, int lines)
     }
 }
 
-static void dump_stack_trace(uint64_t rbp, uint64_t rip, int max_frames)
+static void dump_stack_trace(uint64_t base_ptr, uint64_t instr_ptr, int max_frames)
 {
     char hex_buf[20];
-    uint64_t *frame_ptr = (uint64_t *)rbp;
 
     append_to_buffer("\n=== Stack Trace ===\n");
 
+    // Печать первого фрейма
     append_to_buffer("Frame 00: RIP=");
-    u64_to_hex_str(rip, hex_buf);
+    u64_to_hex_str(instr_ptr, hex_buf);
     append_to_buffer(hex_buf);
     append_to_buffer(" RBP=");
-    u64_to_hex_str(rbp, hex_buf);
+    u64_to_hex_str(base_ptr, hex_buf);
     append_to_buffer(hex_buf);
     append_to_buffer("\n");
 
+    // Инициализация указателя на текущий фрейм
+    void *frame_ptr = stack_get_frame_pointer(base_ptr);
+
     for (int frame_num = 1; frame_num < max_frames && frame_ptr; frame_num++)
     {
-        uint64_t frame_addr = (uint64_t)frame_ptr;
+        uint64_t frame_addr = stack_frame_to_address(frame_ptr);
 
-        if (frame_addr < 0xFFFF800000000000 ||
-            frame_addr > 0xFFFFFFFFFFFFF000 ||
-            (frame_addr & 0x7) != 0)
+        // Проверка валидности фрейма
+        if (!stack_is_valid_frame(frame_addr))
             break;
 
-        uint64_t saved_rbp = frame_ptr[0];
-        uint64_t return_addr = frame_ptr[1];
+        // Получение сохраненных значений из стекового фрейма
+        uint64_t saved_base_ptr;
+        uint64_t return_addr;
 
-        if (return_addr < 0x10000 || return_addr > 0xFFFFFFFFFFFFFF00)
+        if (!stack_read_frame(frame_ptr, &saved_base_ptr, &return_addr))
             break;
 
+        // Проверка валидности адреса возврата
+        if (!stack_is_valid_return_address(return_addr))
+            break;
+
+        // Печать информации о фрейме
         append_formatted("Frame %02d: RIP=", frame_num);
         u64_to_hex_str(return_addr, hex_buf);
         append_to_buffer(hex_buf);
         append_to_buffer(" RBP=");
-        u64_to_hex_str(saved_rbp, hex_buf);
+        u64_to_hex_str(saved_base_ptr, hex_buf);
         append_to_buffer(hex_buf);
         append_to_buffer("\n");
 
-        frame_ptr = (uint64_t *)saved_rbp;
+        // Переход к следующему фрейму
+        void *next_frame = stack_get_frame_pointer(saved_base_ptr);
 
-        if (saved_rbp <= frame_addr)
+        // Проверка на зацикливание (следующий фрейм должен быть выше в стеке)
+        if (!stack_frame_is_higher(next_frame, frame_ptr))
             break;
+
+        frame_ptr = next_frame;
     }
 
     append_to_buffer("=== End Stack Trace ===\n");
 }
 
-static void dump_stack_values(uint64_t rsp, int num_qwords)
+static void dump_stack_values(uint64_t stack_ptr, int num_qwords)
 {
     char hex_buf[20];
-    uint64_t *stack_ptr = (uint64_t *)rsp;
 
     append_to_buffer("\n=== Stack Values (RSP = ");
-    u64_to_hex_str(rsp, hex_buf);
+    u64_to_hex_str(stack_ptr, hex_buf);
     append_to_buffer(hex_buf);
     append_to_buffer(") ===\n");
 
+    void *stack = stack_dump_get_pointer(stack_ptr);
+
     for (int i = 0; i < num_qwords; i++)
     {
-        uint64_t stack_addr = (uint64_t)(stack_ptr + i);
+        uint64_t stack_addr = stack_dump_get_qword_address(stack, i);
 
-        if (stack_addr < 0xFFFF800000000000 || stack_addr > 0xFFFFFFFFFFFFF000)
+        // Проверка валидности адреса стека
+        if (!stack_dump_is_valid_address(stack_addr))
             break;
 
-        uint64_t value = stack_ptr[i];
+        // Чтение значения из стека
+        uint64_t value = stack_dump_read_qword(stack, i);
 
+        // Печать адреса и значения
         u64_to_hex_str(stack_addr, hex_buf);
         append_to_buffer(hex_buf);
         append_to_buffer(":  ");
@@ -297,17 +286,31 @@ static void dump_stack_values(uint64_t rsp, int num_qwords)
         append_to_buffer(hex_buf);
         append_to_buffer("  (");
 
-        if (value >= 0x10000 && value <= 0xFFFFFFFFFFFFFF00)
+        // Классификация значения
+        enum value_type value_type = stack_dump_classify_value(value);
+
+        switch (value_type)
         {
+        case VALUE_CODE:
             append_to_buffer("possible code");
-        }
-        else if (value >= 0xFFFF800000000000 && value <= 0xFFFFFFFFFFFFF000)
-        {
+            break;
+
+        case VALUE_KERNEL_POINTER:
             append_to_buffer("kernel pointer");
-        }
-        else if (value < 0x1000)
-        {
+            break;
+
+        case VALUE_SMALL:
             append_to_buffer("small value");
+            break;
+
+        case VALUE_USER_POINTER:
+            append_to_buffer("user pointer");
+            break;
+
+        case VALUE_UNKNOWN:
+        default:
+            append_to_buffer("unknown");
+            break;
         }
 
         append_to_buffer(")\n");
@@ -325,167 +328,89 @@ void print_registers(const RegistersState *regs)
 
     append_to_buffer("PANIC REGISTER DUMP\n");
 
-    struct
+    // Получаем все группы регистров для архитектуры
+    struct register_groups *groups = get_register_groups(regs);
+    if (!groups)
     {
-        const char *name;
-        uint64_t value;
-    } main_regs[] = {
-        {"RAX", regs->rax},
-        {"RBX", regs->rbx},
-        {"RCX", regs->rcx},
-        {"RDX", regs->rdx},
-        {"RSI", regs->rsi},
-        {"RDI", regs->rdi},
-        {"RIP", regs->rip},
-        {"RFLAGS", regs->rflags},
-    };
+        append_to_buffer("ERROR: Failed to allocate register groups\n");
+        return;
+    }
 
-    for (size_t i = 0; i < sizeof(main_regs) / sizeof(main_regs[0]); i += 2)
+    // Проходим по всем группам регистров
+    for (size_t g = 0; g < groups->group_count; g++)
     {
-        append_to_buffer(main_regs[i].name);
-        append_to_buffer(": ");
-        u64_to_hex_str(main_regs[i].value, hex_buf);
-        append_to_buffer(hex_buf);
-        append_to_buffer("    ");
+        const struct register_group *group = &groups->groups[g];
 
-        if (i + 1 < sizeof(main_regs) / sizeof(main_regs[0]))
+        // Печатаем заголовок группы (если есть)
+        if (group->header)
         {
-            append_to_buffer(main_regs[i + 1].name);
+            append_to_buffer("\n");
+            append_to_buffer(group->header);
+            append_to_buffer("\n");
+        }
+
+        // Печатаем регистры этой группы
+        for (size_t i = 0; i < group->count; i++)
+        {
+            const struct register_entry *entry = &group->registers[i];
+
+            // Печатаем имя регистра
+            append_to_buffer(entry->name);
             append_to_buffer(": ");
-            u64_to_hex_str(main_regs[i + 1].value, hex_buf);
-            append_to_buffer(hex_buf);
-        }
 
-        append_to_buffer("\n");
-    }
+            // Печатаем значение в зависимости от размера
+            switch (entry->size)
+            {
+            case REG_SIZE_8:
+            {
+                uint8_t value = *(uint8_t *)entry->value_ptr;
+                u8_to_hex_str(value, hex_buf);
+                append_to_buffer(hex_buf);
+                break;
+            }
 
-    struct
-    {
-        const char *name;
-        uint64_t value;
-    } ext_regs[] = {
-        {"R8 ", regs->r8},
-        {"R9 ", regs->r9},
-        {"R10", regs->r10},
-        {"R11", regs->r11},
-        {"R12", regs->r12},
-        {"R13", regs->r13},
-        {"R14", regs->r14},
-        {"R15", regs->r15},
-    };
+            case REG_SIZE_16:
+            {
+                uint16_t value = *(uint16_t *)entry->value_ptr;
+                u16_to_hex_str(value, hex_buf);
+                append_to_buffer(hex_buf);
+                break;
+            }
 
-    for (size_t i = 0; i < sizeof(ext_regs) / sizeof(ext_regs[0]); i += 2)
-    {
-        append_to_buffer(ext_regs[i].name);
-        append_to_buffer(": ");
-        u64_to_hex_str(ext_regs[i].value, hex_buf);
-        append_to_buffer(hex_buf);
-        append_to_buffer("    ");
+            case REG_SIZE_32:
+            {
+                uint32_t value = *(uint32_t *)entry->value_ptr;
+                u32_to_hex_str(value, hex_buf);
+                append_to_buffer(hex_buf);
+                break;
+            }
 
-        if (i + 1 < sizeof(ext_regs) / sizeof(ext_regs[0]))
-        {
-            append_to_buffer(ext_regs[i + 1].name);
-            append_to_buffer(": ");
-            u64_to_hex_str(ext_regs[i + 1].value, hex_buf);
-            append_to_buffer(hex_buf);
-        }
+            case REG_SIZE_64:
+            {
+                uint64_t value = *(uint64_t *)entry->value_ptr;
+                u64_to_hex_str(value, hex_buf);
+                append_to_buffer(hex_buf);
+                break;
+            }
+            }
 
-        append_to_buffer("\n");
-    }
-
-    append_to_buffer("RBP: ");
-    u64_to_hex_str(regs->rbp, hex_buf);
-    append_to_buffer(hex_buf);
-    append_to_buffer("    RSP: ");
-    u64_to_hex_str(regs->rsp, hex_buf);
-    append_to_buffer(hex_buf);
-    append_to_buffer("\n");
-
-    struct
-    {
-        const char *name;
-        uint16_t value;
-    } seg_regs[] = {
-        {"CS", regs->cs},
-        {"DS", regs->ds},
-        {"ES", regs->es},
-        {"FS", regs->fs},
-        {"GS", regs->gs},
-        {"SS", regs->ss},
-    };
-
-    for (size_t i = 0; i < sizeof(seg_regs) / sizeof(seg_regs[0]); i += 2)
-    {
-        append_to_buffer(seg_regs[i].name);
-        append_to_buffer(": ");
-        u16_to_hex_str(seg_regs[i].value, hex_buf);
-        append_to_buffer(hex_buf);
-        append_to_buffer("    ");
-
-        if (i + 1 < sizeof(seg_regs) / sizeof(seg_regs[0]))
-        {
-            append_to_buffer(seg_regs[i + 1].name);
-            append_to_buffer(": ");
-            u16_to_hex_str(seg_regs[i + 1].value, hex_buf);
-            append_to_buffer(hex_buf);
-        }
-
-        append_to_buffer("\n");
-    }
-
-    struct
-    {
-        const char *name;
-        uint64_t value;
-    } cr_regs[] = {
-        {"CR0", regs->cr0},
-        {"CR2", regs->cr2},
-        {"CR3", regs->cr3},
-        {"CR4", regs->cr4},
-    };
-
-    for (size_t i = 0; i < sizeof(cr_regs) / sizeof(cr_regs[0]); i += 2)
-    {
-        append_formatted("CR%c: ", cr_regs[i].name[2]);
-        u64_to_hex_str(cr_regs[i].value, hex_buf);
-        append_to_buffer(hex_buf);
-        append_to_buffer("    ");
-
-        if (i + 1 < sizeof(cr_regs) / sizeof(cr_regs[0]))
-        {
-            append_formatted("CR%c: ", cr_regs[i + 1].name[2]);
-            u64_to_hex_str(cr_regs[i + 1].value, hex_buf);
-            append_to_buffer(hex_buf);
-        }
-
-        append_to_buffer("\n");
-    }
-
-    uint64_t rflags = regs->rflags;
-    const char *flag_names[] = {"CF", "PF", "AF", "ZF", "SF", "IF", "DF", "OF"};
-    uint64_t flag_masks[] = {
-        0x0001,
-        0x0004,
-        0x0010,
-        0x0040,
-        0x0080,
-        0x0200,
-        0x0400,
-        0x0800,
-    };
-
-    append_to_buffer("[");
-
-    for (int i = 0; i < 8; i++)
-    {
-        if (rflags & flag_masks[i])
-        {
-            append_to_buffer(flag_names[i]);
-            append_to_buffer(" ");
+            // Добавляем разделитель или перевод строки
+            if (group->columns > 1 && (i + 1) % group->columns != 0 && i + 1 < group->count)
+            {
+                append_to_buffer("    ");
+            }
+            else
+            {
+                append_to_buffer("\n");
+            }
         }
     }
 
-    append_to_buffer("]\n");
+    // Печать флагов (если поддерживается)
+    print_flags(regs);
+
+    // Освобождаем ресурсы
+    free_register_groups(groups);
 }
 
 /* ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ОСТАНОВКИ СИСТЕМЫ ================= */
@@ -543,41 +468,19 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             free_buffer();
         }
 
-        uint64_t flags;
-        __asm__ volatile(
-            "pushfq\n\t"
-            "pop %%rax\n\t"
-            "test $0x200, %%rax\n\t"
-            "setz %%al\n\t"
-            "movzb %%al, %0"
-            : "=r"(flags)
-            :
-            : "rax", "memory");
-
-        if (!flags)
-            local_irq_disable();
-
+        local_irq_disable();
         halt_system();
     }
 
     /* ===== СОХРАНЕНИЕ СОСТОЯНИЯ ПРЕРЫВАНИЙ ===== */
-    uint64_t interrupts_were_enabled;
-    __asm__ volatile(
-        "pushfq\n\t"
-        "pop %%rax\n\t"
-        "test $0x200, %%rax\n\t"
-        "setnz %%al\n\t"
-        "movzb %%al, %0"
-        : "=r"(interrupts_were_enabled)
-        :
-        : "rax", "memory");
+    uint64_t flags = save_flags();
 
     /* ===== УСТАНОВКА ФЛАГА ПАНИКИ ===== */
     is_panic = true;
     can_type = false;
 
     /* ===== ОТКЛЮЧЕНИЕ ПРЕРЫВАНИЙ ДЛЯ БЕЗОПАСНОСТИ ===== */
-    if (interrupts_were_enabled)
+    if (flags & 0x200)
         local_irq_disable();
 
     /* ===== ПОЛУЧЕНИЕ РЕГИСТРОВ ===== */
@@ -658,10 +561,15 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
 
     /* ===== ДИАГНОСТИЧЕСКАЯ ИНФОРМАЦИЯ ===== */
     print_registers(&regs);
-    dump_stack_trace(regs.rbp, regs.rip, 12);
-    dump_stack_values(regs.rsp, 16);
+
+    uint64_t frame_ptr = get_frame_pointer(&regs);
+    uint64_t instr_ptr = get_instruction_pointer(&regs);
+    uint64_t stack_ptr = get_stack_pointer(&regs);
+
+    dump_stack_trace(frame_ptr, instr_ptr, 12);
+    dump_stack_values(stack_ptr, 16);
     append_to_buffer("\n");
-    dump_memory(regs.rip, 8);
+    dump_memory(instr_ptr, 8);
 
     /* ===== РАЗДЕЛИТЕЛЬНАЯ ЛИНИЯ ===== */
     append_to_buffer("\n");
@@ -706,7 +614,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             can_type = true;
             is_panic = false;
 
-            if (interrupts_were_enabled)
+            if (flags & 0x200)
                 local_irq_enable();
 
             task_stop(current_task_pid);
@@ -724,7 +632,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             can_type = true;
             is_panic = false;
 
-            if (interrupts_were_enabled)
+            if (flags & 0x200)
                 local_irq_enable();
 
             return 0;

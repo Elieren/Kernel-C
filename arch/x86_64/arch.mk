@@ -20,7 +20,8 @@ ARCH_C_SRCS := \
 	arch/x86_64/irqchip/pic.c \
 	arch/x86_64/kernel/sched/multitask.c \
 	arch/x86_64/kernel/power/poweroff.c \
-	arch/x86_64/kernel/power/reboot.c
+	arch/x86_64/kernel/power/reboot.c \
+	arch/x86_64/kernel/panic/panic.c
 
 # Добавление в общие списки
 SRCS_ASM += $(ARCH_ASM_SRCS)
