@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <asm/tss.h>
 #include "kernel/panic/panic.h"
+#include <asm/cpu.h>
 
 #define USER_CS ((uint64_t)0x18 | 3) /* 0x1B */
 #define USER_SS ((uint64_t)0x20 | 3) /* 0x23 */
@@ -398,7 +399,7 @@ int task_stop(int pid)
         for (;;)
         {
             sti();
-            __asm__ volatile("hlt");
+            halt();
         }
     }
 
@@ -428,7 +429,7 @@ void task_exit(int exit_code)
     for (;;)
     {
         sti();
-        __asm__ volatile("hlt");
+        halt();
     }
 }
 

@@ -48,7 +48,7 @@ void tss_init(void)
     gdt[6] = upper;
 
     /* Загружаем TSS */
-    asm volatile("mov $0x28, %%ax; ltr %%ax" ::: "ax");
+    __asm__ volatile("mov $0x28, %%ax; ltr %%ax" ::: "ax");
 }
 
 void tss_update_rsp0(uint64_t rsp0)

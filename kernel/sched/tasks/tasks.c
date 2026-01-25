@@ -4,6 +4,7 @@
 #include "fs/fat16/fs.h"
 #include "lib/string/string.h"
 #include "drivers/video/framebuffer/graphics.h"
+#include <asm/cpu.h>
 
 extern bool screen_refresh_status;
 
@@ -13,7 +14,7 @@ void zombie_reaper_task(void)
     for (;;)
     {
         reap_zombies();
-        asm volatile("hlt");
+        halt();
     }
 }
 
@@ -26,7 +27,7 @@ void screen_refresh(void)
             gfx_update_screen();
             screen_refresh_status = false;
         }
-        asm volatile("hlt");
+        halt();
     }
 }
 

@@ -20,7 +20,7 @@ void *memcpy(void *dst_, const void *src_, size_t n)
 
 #if defined(__x86_64__) || defined(__i386__)
     /* На x86/x86_64 rep movsb очень быстрый */
-    asm volatile(
+    __asm__ volatile(
         "rep movsb"
         : "+D"(dst), "+S"(src), "+c"(n)
         :

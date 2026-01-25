@@ -14,6 +14,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#include <asm/cpu.h>
+
 extern volatile uint32_t seconds;
 
 static char str[11];
@@ -21,10 +23,10 @@ static char tmp[11];
 
 uint64_t load_and_run_program(const char *str)
 {
-    asm volatile("cli");
+    local_irq_disable();
     if (!str || str[0] == '\0')
     {
-        asm volatile("sti");
+        local_irq_enable();
         return -1;
     }
 
@@ -32,7 +34,7 @@ uint64_t load_and_run_program(const char *str)
     int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
     if (bin_idx < 0)
     {
-        asm volatile("sti");
+        local_irq_enable();
         return 0; // нет /bin
     }
 
@@ -65,7 +67,7 @@ uint64_t load_and_run_program(const char *str)
 
     if (argc == 0)
     {
-        asm volatile("sti");
+        local_irq_enable();
         return -1;
     }
     const char *progname = argv_storage[0];
@@ -75,12 +77,12 @@ uint64_t load_and_run_program(const char *str)
     int file_idx = fs_find_in_dir(progname, "bin", bin_idx, &entry);
     if (file_idx < 0)
     {
-        asm volatile("sti");
+        local_irq_enable();
         return 0; // файл не найден
     }
     if (entry.size == 0)
     {
-        asm volatile("sti");
+        local_irq_enable();
         return 0;
     }
 
@@ -89,7 +91,7 @@ uint64_t load_and_run_program(const char *str)
     void *user_mem = malloc(alloc_size);
     if (!user_mem)
     {
-        asm volatile("sti");
+        local_irq_enable();
         return 0;
     }
     memset(user_mem, 0, alloc_size);
@@ -106,7 +108,7 @@ uint64_t load_and_run_program(const char *str)
     if (used + ptrs_size > area_size)
     {
         free(user_mem);
-        asm volatile("sti");
+        local_irq_enable();
         return 0;
     }
     char **argv_user = (char **)(area + used);
@@ -118,7 +120,7 @@ uint64_t load_and_run_program(const char *str)
         if (used + len > area_size)
         {
             free(user_mem);
-            asm volatile("sti");
+            local_irq_enable();
             return 0;
         }
         char *dst = area + used;
@@ -139,11 +141,11 @@ uint64_t load_and_run_program(const char *str)
     if (pid == 0)
     {
         free(user_mem);
-        asm volatile("sti");
+        local_irq_enable();
         return 0;
     }
 
-    asm volatile("sti");
+    local_irq_enable();
     return pid;
 }
 

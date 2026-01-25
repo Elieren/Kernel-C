@@ -3,6 +3,7 @@
 #include <asm/pic.h>
 #include "clock/clock.h"
 #include "kernel/sched/multitask/multitask.h"
+#include <asm/cpu.h>
 
 /* PIT (Programmable Interval Timer) порты и команды */
 #define PIT_CMD_PORT 0x43
@@ -110,7 +111,7 @@ void wait(uint32_t delay_seconds)
         }
 
         /* Небольшая пауза в цикле, чтобы не нагружать процессор на 100% */
-        asm volatile("pause");
+        cpu_relax();
     }
 }
 
@@ -198,7 +199,7 @@ void mwait(uint32_t delay_milliseconds)
         }
 
         /* Небольшая пауза в цикле */
-        asm volatile("pause");
+        cpu_relax();
     }
 }
 

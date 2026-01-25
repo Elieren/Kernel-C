@@ -3,6 +3,7 @@
 #include "poweroff.h"
 #include <string.h>
 #include <stdint.h>
+#include <asm/cpu.h>
 
 /* ============================================================================
  * ACPI структуры
@@ -119,7 +120,7 @@ static void delay_ms(int ms)
     {
         for (volatile int j = 0; j < 10000; j++)
         {
-            __asm__ volatile("pause");
+            cpu_relax();
         }
     }
 }
@@ -491,7 +492,7 @@ static int try_acpi_shutdown(void)
     uint16_t pm1a_value = (1 << 13) | ((uint16_t)(slp_typa & 0x7) << 10);
     uint16_t pm1b_value = (1 << 13) | ((uint16_t)(slp_typb & 0x7) << 10);
 
-    __asm__ volatile("cli");
+    local_irq_disable();
 
     io_write16((uint16_t)pm1a_cnt, pm1a_value);
     io_wait();
@@ -530,7 +531,7 @@ static int try_acpi_bruteforce(void)
     uint16_t pm1a_cnt = (uint16_t)fadt->pm1a_control_block;
     uint16_t pm1b_cnt = (uint16_t)fadt->pm1b_control_block;
 
-    __asm__ volatile("cli");
+    local_irq_disable();
 
     uint8_t slp_values[] = {5, 7, 0, 6, 4, 3, 2, 1};
 
@@ -687,7 +688,7 @@ static void __attribute__((noreturn)) try_triple_fault(void)
 
     while (1)
     {
-        __asm__ volatile("hlt");
+        halt();
     }
 }
 
@@ -725,8 +726,8 @@ void __attribute__((noreturn)) universal_shutdown(void)
 
     while (1)
     {
-        __asm__ volatile("cli");
-        __asm__ volatile("hlt");
+        local_irq_disable();
+        halt();
     }
 }
 

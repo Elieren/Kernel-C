@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
+#include <asm/cpu.h>
 
 volatile bool is_panic = false;
 
@@ -94,7 +95,7 @@ void get_registers(RegistersState *regs)
     if (!regs)
         return;
 
-    asm volatile(
+    __asm__ volatile(
         "movq %%rax, 0x00(%0)\n\t"
         "movq %%rbx, 0x08(%0)\n\t"
         "movq %%rcx, 0x10(%0)\n\t"
@@ -494,7 +495,7 @@ static void halt_system()
     emergency_terminate_all();
     while (1)
     {
-        asm volatile("hlt");
+        halt();
     }
 }
 
@@ -543,7 +544,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
         }
 
         uint64_t flags;
-        asm volatile(
+        __asm__ volatile(
             "pushfq\n\t"
             "pop %%rax\n\t"
             "test $0x200, %%rax\n\t"
@@ -554,14 +555,14 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             : "rax", "memory");
 
         if (!flags)
-            asm volatile("cli");
+            local_irq_disable();
 
         halt_system();
     }
 
     /* ===== СОХРАНЕНИЕ СОСТОЯНИЯ ПРЕРЫВАНИЙ ===== */
     uint64_t interrupts_were_enabled;
-    asm volatile(
+    __asm__ volatile(
         "pushfq\n\t"
         "pop %%rax\n\t"
         "test $0x200, %%rax\n\t"
@@ -577,7 +578,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
 
     /* ===== ОТКЛЮЧЕНИЕ ПРЕРЫВАНИЙ ДЛЯ БЕЗОПАСНОСТИ ===== */
     if (interrupts_were_enabled)
-        asm volatile("cli");
+        local_irq_disable();
 
     /* ===== ПОЛУЧЕНИЕ РЕГИСТРОВ ===== */
     RegistersState regs;
@@ -706,7 +707,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             is_panic = false;
 
             if (interrupts_were_enabled)
-                asm volatile("sti");
+                local_irq_enable();
 
             task_stop(current_task_pid);
         }
@@ -724,7 +725,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             is_panic = false;
 
             if (interrupts_were_enabled)
-                asm volatile("sti");
+                local_irq_enable();
 
             return 0;
         }

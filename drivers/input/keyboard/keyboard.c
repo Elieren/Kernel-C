@@ -199,13 +199,13 @@ char get_ascii_char(uint8_t scancode)
 inline unsigned long irq_save_flags(void)
 {
     unsigned long flags;
-    asm volatile("pushf; pop %0; cli" : "=g"(flags)::"memory");
+    __asm__ volatile("pushf; pop %0; cli" : "=g"(flags)::"memory");
     return flags;
 }
 
 inline void irq_restore_flags(unsigned long flags)
 {
-    asm volatile("push %0; popf" ::"g"(flags) : "memory", "cc");
+    __asm__ volatile("push %0; popf" ::"g"(flags) : "memory", "cc");
 }
 
 /* Вызывается из ISR (keyboard_handler). Добавляет ASCII в буфер (если не переполнен). */

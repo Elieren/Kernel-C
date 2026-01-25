@@ -35,6 +35,7 @@
 #include "drivers/bus/pci/pci.h"
 #include "drivers/sound/pcs/pcs.h"
 #include "kernel/panic/panic.h"
+#include <asm/cpu.h>
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -297,11 +298,11 @@ void kmain(uint64_t mb2_addr)
     tasks_init();
 
     /* Разрешаем прерывания */
-    asm volatile("sti");
+    local_irq_enable();
 
     /* Основной бесконечный цикл ядра */
     for (;;)
     {
-        asm volatile("hlt");
+        halt();
     }
 }

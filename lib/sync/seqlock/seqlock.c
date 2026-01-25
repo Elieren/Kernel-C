@@ -1,4 +1,5 @@
 #include "seqlock.h"
+#include <asm/cpu.h>
 
 /* Писатель: начало */
 void seqlock_write_begin(seqlock_t *s)
@@ -30,7 +31,7 @@ unsigned seqlock_read_begin(const seqlock_t *s)
             return seq;
 
         /* Нечётный → писатель пишет, ждём */
-        asm volatile("pause" ::: "memory");
+        cpu_relax();
     }
 }
 

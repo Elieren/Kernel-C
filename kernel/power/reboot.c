@@ -1,5 +1,6 @@
 #include "reboot.h"
 #include <asm/io.h>
+#include <asm/cpu.h>
 
 static inline void wait_kbc(void)
 {
@@ -15,12 +16,12 @@ void reboot_system(void)
     io_write8(0x64, 0xFE);
 
     // Если KBC не сработал, пробуем triple fault:
-    asm volatile(
+    __asm__ volatile(
         "lidt (0) \n\t" // Загружаем нулевой IDT
         "int $3"        // Генерируем исключение -> triple fault -> reset
     );
 
     // Если triple fault не сработал (редкий случай)
     while (1)
-        asm volatile("hlt");
+        halt();
 }

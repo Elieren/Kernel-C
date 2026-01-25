@@ -1,4 +1,5 @@
 #include "spinlock.h"
+#include <asm/cpu.h>
 
 /* Глобальный lock для fb - atomic_flag (специальный тип) */
 static atomic_flag g_fb_lock = ATOMIC_FLAG_INIT;
@@ -11,7 +12,7 @@ void fb_lock_acquire(void)
     while (atomic_flag_test_and_set_explicit(&g_fb_lock, memory_order_acquire))
     {
         /* memory clobber для предотвращения переупорядочивания */
-        asm volatile("pause" ::: "memory");
+        cpu_relax();
     }
 }
 
@@ -30,7 +31,7 @@ void spin_lock(spinlock_t *l)
         /* Спиним на простом чтении (не инвалидирует cache line других ядер) */
         while (atomic_load_explicit(&l->flag, memory_order_relaxed))
         {
-            asm volatile("pause" ::: "memory");
+            cpu_relax();
         }
         /* Lock освободился, повторяем попытку захвата в outer loop */
     }
