@@ -9,7 +9,6 @@ KERNEL_C_SRCS := \
 	kernel/sched/tasks/tasks.c \
 	kernel/syscall/syscall.c \
 	kernel/time/timer.c \
-	kernel/time/clock/clock.c \
-	kernel/time/clock/rtc.c
+	kernel/time/clock/clock.c
 
 SRCS_C += $(KERNEL_C_SRCS)

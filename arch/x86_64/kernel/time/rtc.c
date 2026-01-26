@@ -1,4 +1,4 @@
-#include "rtc.h"
+#include <asm/hwclock.h>
 #include <asm/io.h>
 
 // Ждём окончания обновления RTC (Update-in-Progress бит в регистре 0x0A)

@@ -7,7 +7,7 @@
 #define true 1
 #define false 0
 
-#define TIMEZONE_OFFSET 7
+#define TIMEZONE_OFFSET 0
 
 void read_rtc_time(uint32_t *hour, uint32_t *minute, uint32_t *second);
 

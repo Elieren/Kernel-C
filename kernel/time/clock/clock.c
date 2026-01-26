@@ -1,7 +1,7 @@
 // clock.c
 
 #include "clock.h"
-#include "rtc.h"
+#include <asm/hwclock.h>
 
 volatile ClockTime system_clock = {0, 0, 0}; // старт с 00:00:00
 
