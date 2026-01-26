@@ -4,10 +4,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define PIT_FREQUENCY 1193180U
+#include <asm/timer.h>
 
 extern volatile uint16_t tick_time;
 extern volatile uint32_t seconds;
+extern volatile bool screen_refresh_status;
 
 void init_timer(uint32_t frequency);
 

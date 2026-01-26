@@ -1,6 +1,5 @@
-// arch/x86_64/include/asm/io.h
-#ifndef ASM_X86_64_IO_H
-#define ASM_X86_64_IO_H
+#ifndef X86_64_IO_H
+#define X86_64_IO_H
 
 #include <stdint.h>
 

@@ -5,30 +5,11 @@
 #include "kernel/sched/multitask/multitask.h"
 #include <asm/cpu.h>
 
-/* PIT (Programmable Interval Timer) порты и команды */
-#define PIT_CMD_PORT 0x43
-#define PIT_COUNTER0 0x40
-#define PIT_CMD_VALUE 0x36 // Бинарный счетчик, режим 3 (квадратная волна)
-
 volatile uint16_t tick_time = 0;
 volatile uint32_t seconds = 0;
 volatile bool screen_refresh_status = true;
 
-static uint16_t read_pit_count(void)
-{
-    uint16_t count = 0;
-
-    /* Команда latch для канала 0 */
-    io_write8(PIT_CMD_PORT, 0x00);
-
-    /* Читаем младший и старший байты */
-    count = io_read8(PIT_COUNTER0);
-    count |= io_read8(PIT_COUNTER0) << 8;
-
-    return count;
-}
-
-/* Абсолютно точная функция wait с busy-wait */
+/* Блокирующая задержка на указанное количество секунд */
 void wait(uint32_t delay_seconds)
 {
     if (delay_seconds == 0)
@@ -37,7 +18,7 @@ void wait(uint32_t delay_seconds)
     /* Запоминаем начальное время с максимальной точностью */
     uint32_t start_seconds = seconds;
     uint16_t start_tick_time = tick_time;
-    uint16_t start_pit_count = read_pit_count();
+    uint16_t start_hw_count = timer_read_counter();
 
     /* Рассчитываем целевое количество тиков */
     /* При частоте таймера 1000 Гц: 1 секунда = 1000 тиков */
@@ -82,26 +63,17 @@ void wait(uint32_t delay_seconds)
             }
         }
 
-        /* Для еще большей точности на коротких интервалах используем PIT */
+        /* Для еще большей точности на коротких интервалах используем аппаратный счетчик */
         if (elapsed_ticks + 10 >= target_ticks_total)
         {
             /* Когда осталось мало времени, переключаемся на точный подсчет */
-            uint16_t current_pit_count = read_pit_count();
+            uint16_t current_hw_count = timer_read_counter();
 
-            /* PIT считает в обратном направлении от 0xFFFF до 0 */
-            uint32_t pit_ticks_passed;
-            if (current_pit_count <= start_pit_count)
-            {
-                pit_ticks_passed = start_pit_count - current_pit_count;
-            }
-            else
-            {
-                /* Произошло переполнение PIT */
-                pit_ticks_passed = (0xFFFF - start_pit_count) + current_pit_count;
-            }
+            /* Получаем разницу в тиках аппаратного счетчика */
+            uint32_t hw_ticks_passed = timer_get_ticks_delta(start_hw_count, current_hw_count);
 
-            /* Пересчитываем PIT тики в миллисекунды (зависит от частоты таймера) */
-            uint32_t additional_ms = pit_ticks_passed / 1193; /* 1193180 / 1000 ≈ 1193 */
+            /* Конвертируем аппаратные тики в миллисекунды */
+            uint32_t additional_ms = timer_ticks_to_ms(hw_ticks_passed);
             uint32_t total_elapsed = elapsed_ticks + additional_ms;
 
             if (total_elapsed >= target_ticks_total)
@@ -123,7 +95,7 @@ void mwait(uint32_t delay_milliseconds)
     /* Запоминаем начальное время с максимальной точностью */
     uint32_t start_seconds = seconds;
     uint16_t start_tick_time = tick_time;
-    uint16_t start_pit_count = read_pit_count();
+    uint16_t start_hw_count = timer_read_counter();
 
     /* Рассчитываем целевое количество миллисекунд */
     /* При частоте таймера 1000 Гц: 1 мс = 1 тик */
@@ -169,27 +141,17 @@ void mwait(uint32_t delay_milliseconds)
             }
         }
 
-        /* Для еще большей точности на коротких интервалах используем PIT */
+        /* Для еще большей точности на коротких интервалах используем аппаратный счетчик */
         if (elapsed_milliseconds + 10 >= target_milliseconds)
         {
             /* Когда осталось мало времени, переключаемся на точный подсчет */
-            uint16_t current_pit_count = read_pit_count();
+            uint16_t current_hw_count = timer_read_counter();
 
-            /* PIT считает в обратном направлении от 0xFFFF до 0 */
-            uint32_t pit_ticks_passed;
-            if (current_pit_count <= start_pit_count)
-            {
-                pit_ticks_passed = start_pit_count - current_pit_count;
-            }
-            else
-            {
-                /* Произошло переполнение PIT */
-                pit_ticks_passed = (0xFFFF - start_pit_count) + current_pit_count;
-            }
+            /* Получаем разницу в тиках аппаратного счетчика */
+            uint32_t hw_ticks_passed = timer_get_ticks_delta(start_hw_count, current_hw_count);
 
-            /* Пересчитываем PIT тики в миллисекунды */
-            /* 1193180 Гц / 1000 = 1193.18 тиков на миллисекунду */
-            uint32_t additional_ms = pit_ticks_passed / 1193;
+            /* Конвертируем в миллисекунды */
+            uint32_t additional_ms = timer_ticks_to_ms(hw_ticks_passed);
             uint32_t total_elapsed = elapsed_milliseconds + additional_ms;
 
             if (total_elapsed >= target_milliseconds)
@@ -205,7 +167,17 @@ void mwait(uint32_t delay_milliseconds)
 
 void timer_tick(void)
 {
+    static uint32_t accumulated_error = 0;
+
     tick_time++;
+
+    accumulated_error += 180;
+    if (accumulated_error >= 1000)
+    {
+        tick_time++;
+        accumulated_error -= 1000;
+    }
+
     if (tick_time >= 1000)
     {
         tick_time = 0;
@@ -225,20 +197,5 @@ void timer_tick(void)
 
 void init_timer(uint32_t frequency)
 {
-    if (frequency == 0 || frequency > PIT_FREQUENCY)
-    {
-        return; /* Некорректная частота */
-    }
-
-    uint32_t divisor = PIT_FREQUENCY / frequency;
-
-    /* Ограничиваем делитель для 16-разрядного счетчика */
-    if (divisor > 0xFFFF)
-    {
-        divisor = 0xFFFF;
-    }
-
-    io_write8(PIT_CMD_PORT, PIT_CMD_VALUE);                    // Command port
-    io_write8(PIT_COUNTER0, (uint8_t)(divisor & 0xFF));        // Low byte
-    io_write8(PIT_COUNTER0, (uint8_t)((divisor >> 8) & 0xFF)); // High byte
+    timer_init(frequency);
 }
