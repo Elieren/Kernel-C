@@ -455,7 +455,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
     /* ===== ОБРАБОТКА ДВОЙНОЙ ПАНИКИ ===== */
     if (is_panic)
     {
-        can_type = false;
+        keyboard_disable();
 
         // Пытаемся выделить буфер для сообщения об ошибке
         if (ensure_buffer_allocated())
@@ -477,7 +477,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
 
     /* ===== УСТАНОВКА ФЛАГА ПАНИКИ ===== */
     is_panic = true;
-    can_type = false;
+    keyboard_disable();
 
     /* ===== ОТКЛЮЧЕНИЕ ПРЕРЫВАНИЙ ДЛЯ БЕЗОПАСНОСТИ ===== */
     if (flags & 0x200)
@@ -611,7 +611,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             flush_panic_buffer();
             free_buffer();
 
-            can_type = true;
+            keyboard_enable();
             is_panic = false;
 
             if (flags & 0x200)
@@ -629,7 +629,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             flush_panic_buffer();
             free_buffer();
 
-            can_type = true;
+            keyboard_enable();
             is_panic = false;
 
             if (flags & 0x200)

@@ -1,21 +1,23 @@
 #include "keyboard.h"
 #include <asm/io.h>
 #include <asm/pic.h>
+#include <asm/cpu.h>
 
 #define INTERNAL_SPACE 0x01
 
-bool shift_down = false;
-bool caps_lock = false;
-bool ctrl_down = false;
+static bool shift_down = false;
+static bool caps_lock = false;
+static bool ctrl_down = false;
+static volatile bool can_read_keyboard = true;
 
-volatile bool can_type = true;
+// Кольцевой буфер
+static char kbd_buf[KBD_BUF_SIZE];
+static volatile int kbd_head = 0;
+static volatile int kbd_tail = 0;
 
-/* Кольцевой буфер */
-char kbd_buf[KBD_BUF_SIZE];
-volatile int kbd_head = 0; /* место для следующего push */
-volatile int kbd_tail = 0; /* место для чтения */
+static bool initialized = false;
 
-// Таблица 0–255, все неиспользуемые элементы = 0
+// Таблица сканкодов -> ASCII
 static const char scancode_to_ascii[256] = {
     [KEY_A] = 'a',
     [KEY_B] = 'b',
@@ -130,7 +132,11 @@ static const char scancode_to_ascii_shifted[256] = {
     [KEY_BACKSPACE] = '\b',
 };
 
-char my_toupper(char c)
+// ============================================================================
+// Вспомогательные функции
+// ============================================================================
+
+static inline char my_toupper(char c)
 {
     if (c >= 'a' && c <= 'z')
     {
@@ -175,88 +181,244 @@ bool is_alpha(uint8_t scancode)
     }
 }
 
-// Преобразование сканкода в ASCII (или 0, если нет соответствия)
-char get_ascii_char(uint8_t scancode)
+static char get_ascii_char(uint8_t scancode)
 {
     if (is_alpha(scancode))
     {
         bool upper = shift_down ^ caps_lock;
-        char base = scancode_to_ascii[(uint8_t)scancode]; // 'a'–'z'
+        char base = scancode_to_ascii[scancode]; // 'a'-'z'
         return upper ? my_toupper(base) : base;
     }
 
-    if (shift_down)
+    return shift_down ? scancode_to_ascii_shifted[scancode]
+                      : scancode_to_ascii[scancode];
+}
+
+// ============================================================================
+// Низкоуровневые функции работы с контроллером клавиатуры
+// ============================================================================
+
+static void kbd_wait_input(void)
+{
+    uint32_t timeout = 100000;
+    while (timeout--)
     {
-        return scancode_to_ascii_shifted[(uint8_t)scancode];
+        if (!(io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_INPUT_FULL))
+            return;
     }
-    else
+}
+
+static void kbd_wait_output(void)
+{
+    uint32_t timeout = 100000;
+    while (timeout--)
     {
-        return scancode_to_ascii[(uint8_t)scancode];
+        if (io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL)
+            return;
     }
 }
 
-/* Простые helpers для атомарности: сохраняем/восстанавливаем flags */
-inline unsigned long irq_save_flags(void)
+static void kbd_write_command(uint8_t cmd)
 {
-    unsigned long flags;
-    __asm__ volatile("pushf; pop %0; cli" : "=g"(flags)::"memory");
-    return flags;
+    kbd_wait_input();
+    io_write8(KEYBOARD_COMMAND_PORT, cmd);
 }
 
-inline void irq_restore_flags(unsigned long flags)
+static uint8_t kbd_read_data(void)
 {
-    __asm__ volatile("push %0; popf" ::"g"(flags) : "memory", "cc");
+    kbd_wait_output();
+    return io_read8(KEYBOARD_DATA_PORT);
 }
 
-/* Вызывается из ISR (keyboard_handler). Добавляет ASCII в буфер (если не переполнен). */
-void kbd_buffer_push(char c)
+static void kbd_write_data(uint8_t data)
 {
-    unsigned long flags = irq_save_flags(); /* отключаем прерывания на короткое время */
+    kbd_wait_input();
+    io_write8(KEYBOARD_DATA_PORT, data);
+}
+
+// ============================================================================
+// Работа с буфером
+// ============================================================================
+
+static void kbd_buffer_push(char c)
+{
+    unsigned long flags = save_flags();
+
     int next = (kbd_head + 1) % KBD_BUF_SIZE;
-    if (next != kbd_tail) /* если не полный */
+    if (next != kbd_tail)
     {
         kbd_buf[kbd_head] = c;
         kbd_head = next;
     }
-    else
-    {
-        /* буфер полный — символ теряем (альтернатива: overwrite oldest) */
-    }
-    irq_restore_flags(flags);
+    // Иначе буфер полный - символ теряется
+
+    restore_flags(flags);
 }
 
-/* Берёт символ из буфера без блокировки. Возвращает -1 если пусто. */
+// ============================================================================
+// Управление LED индикаторами
+// ============================================================================
+
+static void keyboard_update_leds(void)
+{
+    uint8_t led_state = 0;
+
+    if (caps_lock)
+        led_state |= 0x04;
+
+    // Отправляем команду установки LED
+    kbd_write_data(KBD_CMD_SET_LED);
+    kbd_read_data(); // ACK
+    kbd_write_data(led_state);
+    kbd_read_data(); // ACK
+}
+
+// ============================================================================
+// Публичный API
+// ============================================================================
+
+void keyboard_init(void)
+{
+    if (initialized)
+        return;
+
+    int clear_attempts = 0;
+    while ((io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL) && clear_attempts++ < 100)
+    {
+        io_read8(KEYBOARD_DATA_PORT);
+        // Микрозадержка для стабильности
+        for (volatile int i = 0; i < 1000; i++)
+            ;
+    }
+
+    shift_down = false;
+    caps_lock = false;
+    ctrl_down = false;
+    kbd_head = 0;
+    kbd_tail = 0;
+    can_read_keyboard = true;
+
+    initialized = true;
+}
+
+void keyboard_enable(void)
+{
+    unsigned long flags = save_flags();
+
+    can_read_keyboard = true;
+
+    // Включаем сканирование с проверкой
+    kbd_write_data(KBD_CMD_ENABLE_SCANNING);
+    uint8_t response = kbd_read_data();
+
+    // Если не получили ACK, очищаем буфер
+    if (response != KBD_RESPONSE_ACK)
+    {
+        while (io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL)
+            io_read8(KEYBOARD_DATA_PORT);
+    }
+
+    restore_flags(flags);
+}
+
+void keyboard_disable(void)
+{
+    unsigned long flags = save_flags();
+
+    can_read_keyboard = false;
+
+    // Отключаем сканирование с проверкой
+    kbd_write_data(KBD_CMD_DISABLE_SCANNING);
+    uint8_t response = kbd_read_data();
+
+    // Если не получили ACK, очищаем буфер
+    if (response != KBD_RESPONSE_ACK)
+    {
+        while (io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL)
+            io_read8(KEYBOARD_DATA_PORT);
+    }
+
+    restore_flags(flags);
+}
+
+bool keyboard_has_char(void)
+{
+    unsigned long flags = save_flags();
+    bool has = (kbd_head != kbd_tail);
+    restore_flags(flags);
+    return has;
+}
+
 char kbd_getchar(void)
 {
-    unsigned long flags = irq_save_flags();
+    unsigned long flags = save_flags();
 
-    if (!can_type)
+    if (!can_read_keyboard || kbd_head == kbd_tail)
     {
-        irq_restore_flags(flags);
-        return -1; // Возвращаем -1 если вывод запрещен
+        restore_flags(flags);
+        return -1;
     }
 
-    if (kbd_head == kbd_tail)
-    {
-        irq_restore_flags(flags);
-        return -1; /* пусто */
-    }
-    char c = (char)kbd_buf[kbd_tail];
+    char c = kbd_buf[kbd_tail];
     kbd_tail = (kbd_tail + 1) % KBD_BUF_SIZE;
-    irq_restore_flags(flags);
+
+    restore_flags(flags);
     return c;
 }
 
-/* Модифицированный обработчик клавиатуры — вместо печати пушим символ в буфер. */
+void keyboard_flush_buffer(void)
+{
+    unsigned long flags = save_flags();
+    kbd_head = 0;
+    kbd_tail = 0;
+    restore_flags(flags);
+}
+
+// Получение состояния модификаторов
+bool keyboard_is_shift_down(void)
+{
+    return shift_down;
+}
+
+bool keyboard_is_ctrl_down(void)
+{
+    return ctrl_down;
+}
+
+bool keyboard_is_caps_lock_on(void)
+{
+    return caps_lock;
+}
+
+// ============================================================================
+// Обработчик прерывания
+// ============================================================================
+
 void keyboard_handler(void)
 {
-    uint8_t code = io_read8(KEYBOARD_PORT);
+    uint8_t status = io_read8(KEYBOARD_COMMAND_PORT);
 
-    // Проверяем Break‑код (высокий бит = 1)
+    // Проверяем, что данные действительно доступны
+    if (!(status & KBD_STATUS_OUTPUT_FULL))
+    {
+        pic_send_eoi(1);
+        return;
+    }
+
+    uint8_t code = io_read8(KEYBOARD_DATA_PORT);
+
+    // Проверяем Break-код (бит 7 = 1)
     bool released = code & 0x80;
     uint8_t key = code & 0x7F;
 
-    // Обработка Ctrl
+    // Обработка модификаторов
+    if (key == KEY_LSHIFT || key == KEY_RSHIFT)
+    {
+        shift_down = !released;
+        pic_send_eoi(1);
+        return;
+    }
+
     if (key == KEY_LCONTROL || key == KEY_RCONTROL)
     {
         ctrl_down = !released;
@@ -264,30 +426,29 @@ void keyboard_handler(void)
         return;
     }
 
-    // Обработка Ctrl+C
-    if (!released && ctrl_down && key == KEY_C)
-    {
-        kbd_buffer_push(0x03); // ASCII код для Ctrl+C
-        pic_send_eoi(1);
-        return;
-    }
-
-    if (key == KEY_LSHIFT || key == KEY_RSHIFT)
-    {
-        shift_down = !released;
-        pic_send_eoi(1);
-        return;
-    }
     if (key == KEY_CAPSLOCK && !released)
     {
-        // при нажатии (make-код) — переключаем
         caps_lock = !caps_lock;
+
+        // Обновляем LED
+        keyboard_update_leds();
+
         pic_send_eoi(1);
         return;
     }
 
-    if (!released)
+    // Обработка нажатия клавиш (только make-коды)
+    if (!released && can_read_keyboard)
     {
+        // Обработка Ctrl+C
+        if (ctrl_down && key == KEY_C)
+        {
+            kbd_buffer_push(0x03); // ASCII код для Ctrl+C
+            pic_send_eoi(1);
+            return;
+        }
+
+        // Преобразование в ASCII
         char ch = get_ascii_char(key);
         if (ch)
         {

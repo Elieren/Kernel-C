@@ -186,6 +186,8 @@ void kmain(uint64_t mb2_addr)
 
     pc_speaker_init();
 
+    keyboard_init();
+
     /* Очистим экран чёрный */
     gfx_clear(0x00000000);
 
