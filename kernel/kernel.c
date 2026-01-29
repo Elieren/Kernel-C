@@ -1,6 +1,7 @@
 /* kernel.c */
 #include <stdint.h>
 #include "drivers/input/keyboard/keyboard.h"
+#include "drivers/input/mouse/mouse.h"
 #include <asm/io.h>
 #include <asm/idt.h>
 #include "kernel/time/timer.h"
@@ -38,8 +39,6 @@
 
 /* символы из link.ld */
 extern char _heap_start;
-
-uint64_t g_saved_user_rsp = 0;
 
 void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, unsigned int dat)
 {
@@ -151,7 +150,8 @@ void kmain(uint64_t mb2_addr)
     idt_install();
     init_system_clock();
     init_timer(1000);
-    io_write8(0x21, 0xFC); // маска прерываний
+    io_write8(0x21, 0xF8); // маска прерываний
+    io_write8(0xA1, 0xEF);
 
     boot_info_t *info = arch_parse_boot_info(mb2_addr);
 
@@ -182,11 +182,30 @@ void kmain(uint64_t mb2_addr)
         panic("FRAMEBUFFER_INIT_FAILED", true, false);
     }
 
+    // Сохраняем разрешение экрана для использования в драйвере мыши
+    uint32_t g_screen_width = info->fb.width;
+    uint32_t g_screen_height = info->fb.height;
+
     pci_init();
 
     pc_speaker_init();
 
     keyboard_init();
+
+    /* Инициализация мыши PS/2 */
+    if (!mouse_init())
+    {
+        panic("MOUSE_INIT_FAILED", true, false);
+    }
+
+    /* Устанавливаем границы мыши по размеру экрана */
+    mouse_set_bounds(0, 0, g_screen_width - 1, g_screen_height - 1);
+
+    /* Позиционируем курсор в центр экрана */
+    mouse_set_position(g_screen_width / 2, g_screen_height / 2);
+
+    keyboard_enable();
+    mouse_enable();
 
     /* Очистим экран чёрный */
     gfx_clear(0x00000000);

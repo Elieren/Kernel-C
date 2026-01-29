@@ -47,6 +47,7 @@ extern void isr_stub_31();
  */
 extern void isr32();
 extern void isr33();
+extern void isr44();
 extern void isr80();
 
 #endif // ISR_H

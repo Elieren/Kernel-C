@@ -8,6 +8,7 @@ ARCH_ASM_SRCS := \
 	arch/x86_64/tables/lidt_load.asm \
 	arch/x86_64/interrupt/isr32.asm \
 	arch/x86_64/interrupt/isr33.asm \
+	arch/x86_64/interrupt/isr44.asm \
 	arch/x86_64/interrupt/isr80.asm \
 	arch/x86_64/interrupt/isr_stubs.asm
 

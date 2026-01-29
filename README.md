@@ -82,6 +82,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Added basic sound implementation driver.
 
+* [X] Added mouse driver.
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 

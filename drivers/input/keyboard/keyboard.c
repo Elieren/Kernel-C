@@ -8,7 +8,7 @@
 static bool shift_down = false;
 static bool caps_lock = false;
 static bool ctrl_down = false;
-static volatile bool can_read_keyboard = true;
+static volatile bool can_read_keyboard = false;
 
 // Кольцевой буфер
 static char kbd_buf[KBD_BUF_SIZE];
@@ -303,6 +303,9 @@ void keyboard_init(void)
 
 void keyboard_enable(void)
 {
+    if (!initialized || can_read_keyboard)
+        return;
+
     unsigned long flags = save_flags();
 
     can_read_keyboard = true;
@@ -323,6 +326,9 @@ void keyboard_enable(void)
 
 void keyboard_disable(void)
 {
+    if (!initialized || !can_read_keyboard)
+        return;
+
     unsigned long flags = save_flags();
 
     can_read_keyboard = false;
@@ -401,6 +407,14 @@ void keyboard_handler(void)
     // Проверяем, что данные действительно доступны
     if (!(status & KBD_STATUS_OUTPUT_FULL))
     {
+        pic_send_eoi(1);
+        return;
+    }
+
+    // Проверяем, что данные от клавиатуры (бит 5 = 0), а не от мыши (бит 5 = 1)
+    if (status & 0x20)
+    {
+        // Это данные от мыши, не трогаем их
         pic_send_eoi(1);
         return;
     }

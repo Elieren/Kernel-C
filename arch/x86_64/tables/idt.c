@@ -52,6 +52,7 @@ void idt_install(void)
     /* IRQ handlers (timer, keyboard) и системный вызов (DPL=3 -> 0xEE) */
     idt_set_gate(TIMER, isr32, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(KEYBOARD, isr33, KERNEL_CODE_SEL, IDT_GATE_INT);
+    idt_set_gate(MOUSE, isr44, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(INTERRUPT, isr80, KERNEL_CODE_SEL, IDT_GATE_SYSCALL);
 
     /* Загружаем IDT через 64-bit asm-обёртку */

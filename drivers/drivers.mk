@@ -6,6 +6,7 @@ DRIVERS_C_SRCS := \
 	drivers/block/ide/ide.c \
 	drivers/bus/pci/pci.c \
 	drivers/input/keyboard/keyboard.c \
+	drivers/input/mouse/mouse.c \
 	drivers/sound/pcs/pcs.c \
 	drivers/video/vga/vga.c \
 	drivers/video/framebuffer/graphics.c \

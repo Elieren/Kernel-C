@@ -6,6 +6,7 @@
 
 #define TIMER 32
 #define KEYBOARD 33
+#define MOUSE 44
 #define INTERRUPT 0x80
 
 /* Флаги селекторов и типов */
