@@ -150,8 +150,8 @@ void kmain(uint64_t mb2_addr)
     idt_install();
     init_system_clock();
     init_timer(1000);
-    io_write8(0x21, 0xF8); // маска прерываний
-    io_write8(0xA1, 0xEF);
+    io_write8(0x21, 0xF8); // маска прерываний PIC1
+    io_write8(0xA1, 0xEF); // маска прерываний PIC2
 
     boot_info_t *info = arch_parse_boot_info(mb2_addr);
 
