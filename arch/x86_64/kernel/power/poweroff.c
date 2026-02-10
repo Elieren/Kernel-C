@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <asm/cpu.h>
+#include "fs/fat16/fs.h"
 
 /* ============================================================================
  * ACPI структуры
@@ -733,5 +734,6 @@ void __attribute__((noreturn)) universal_shutdown(void)
 
 void power_off(void)
 {
+    fs_sync();
     universal_shutdown();
 }

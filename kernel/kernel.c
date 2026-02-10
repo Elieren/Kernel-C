@@ -210,109 +210,30 @@ void kmain(uint64_t mb2_addr)
     /* Очистим экран чёрный */
     gfx_clear(0x00000000);
 
-#ifdef DEBUG
-
-    uint64_t rsdp = get_rsdp_address();
-    if (rsdp != 0)
-    {
-        kprint(0, "RSDP found at physical address: 0x%016lx\n", rsdp);
-    }
-    else
-    {
-        kprint(0, "RSDP not found in Multiboot2 tags\n");
-    }
-
-    int n = pci_get_device_count();
-    kprint(0, "PCI devices: %d\n", n);
-    for (int i = 0; i < n; ++i)
-    {
-        pci_device_t *d = pci_get_device(i);
-        kprint(0, "dev %d: %02x:%02x.%x ven=0x%04x dev=0x%04x class=0x%02x sub=0x%02x\n",
-               i, d->bus, d->device, d->function, d->vendor_id, d->device_id, d->class_code, d->subclass);
-    }
-
-    /* --- Инициализация IDE и проверка диска --- */
     ide_disk_t disk;
-    int rc = ide_init(&disk, IDE_CHANNEL_PRIMARY, 0); // primary channel, master (0)
+    ide_init(&disk, IDE_CHANNEL_PRIMARY, 0);
 
-    if (rc == 0)
+    // Первый запуск - форматирование
+    if (fs_init(&disk) == FS_ERR_NOT_FOUND)
     {
-        uint16_t ident[256];
-        if (ide_identify(&disk, ident) == 0)
-        {
-            /* Считываем модель из слов 54..73 (20 слов = 40 байт) */
-            char model[41];
-            for (int i = 0; i < 40; i += 2)
-            {
-                uint16_t w = ident[54 + i / 2];
-                model[i] = (char)((w >> 8) & 0xFF);
-                model[i + 1] = (char)(w & 0xFF);
-            }
-            model[40] = '\0';
-            /* Обрезаем пробелы справа */
-            int mlen = strlen(model);
-            while (mlen > 0 && model[mlen - 1] == ' ')
-            {
-                model[mlen - 1] = '\0';
-                --mlen;
-            }
+        fs_format(&disk);
 
-            /* Выводим найденную модель и общее число секторов (форматированные вызовы) */
-            kprint(0, "IDE: Found ATA Drive Primary Master: \"%s\"\n", model);
+        init_autorun(autorun);
 
-            char numbuf[32];
-            /* Преобразуем число в строку */
-            {
-                uint64_t val = disk.total_sectors;
-                int pos = 0;
-                if (val == 0)
-                {
-                    numbuf[pos++] = '0';
-                }
-                else
-                {
-                    char rev[32];
-                    int rpos = 0;
-                    while (val && rpos < (int)sizeof(rev) - 1)
-                    {
-                        rev[rpos++] = '0' + (val % 10);
-                        val /= 10;
-                    }
-                    while (rpos > 0)
-                        numbuf[pos++] = rev[--rpos];
-                }
-                numbuf[pos] = '\0';
-            }
+        load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
+        load_app_to_fs("bin", "memstat", "bin", memstat_bin, memstat_bin_len);
+        load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
+        load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
+        load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
+        load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
+        load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
+        load_app_to_fs("bin", "ls", "bin", ls_bin, ls_bin_len);
+        load_app_to_fs("bin", "pwd", "bin", pwd_bin, pwd_bin_len);
+        load_app_to_fs("bin", "mkdir", "bin", mkdir_bin, mkdir_bin_len);
+        load_app_to_fs("bin", "rm", "bin", rm_bin, rm_bin_len);
 
-            kprint(0, "IDE: Total sectors: %s\n", numbuf);
-        }
-        else
-        {
-            kprint(0, "IDE: IDENTIFY failed (device present but identify read failed)\n");
-        }
+        fs_sync();
     }
-    else
-    {
-        kprint(0, "IDE: No device on Primary Master (ide_init failed)\n");
-    }
-
-#endif // DEBUG
-
-    fs_init();
-
-    init_autorun(autorun);
-
-    load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
-    load_app_to_fs("bin", "memstat", "bin", memstat_bin, memstat_bin_len);
-    load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
-    load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
-    load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
-    load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
-    load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
-    load_app_to_fs("bin", "ls", "bin", ls_bin, ls_bin_len);
-    load_app_to_fs("bin", "pwd", "bin", pwd_bin, pwd_bin_len);
-    load_app_to_fs("bin", "mkdir", "bin", mkdir_bin, mkdir_bin_len);
-    load_app_to_fs("bin", "rm", "bin", rm_bin, rm_bin_len);
 
     scheduler_init();
     tasks_init();

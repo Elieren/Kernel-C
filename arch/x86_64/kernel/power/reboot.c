@@ -1,6 +1,7 @@
 #include "kernel/power/power.h"
 #include <asm/io.h>
 #include <asm/cpu.h>
+#include "fs/fat16/fs.h"
 
 static inline void wait_kbc(void)
 {
@@ -11,6 +12,7 @@ static inline void wait_kbc(void)
 
 void reboot_system(void)
 {
+    fs_sync();
     // Попытка сброса через KBC
     wait_kbc();
     io_write8(0x64, 0xFE);

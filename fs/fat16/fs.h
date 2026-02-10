@@ -4,6 +4,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "drivers/block/ide/ide.h"
 
 #define FS_NAME_MAX 255
 #define FS_EXT_MAX 64
@@ -20,13 +21,15 @@
 
 /* Коды ошибок для функций FS (отрицательные значения) */
 #define FS_OK 0
-#define FS_ERR_INVALID_ARG -1   // неверные параметры
-#define FS_ERR_NOT_DIR -2       // родитель не существует или не каталог
-#define FS_ERR_EXISTS -3        // запись с таким именем уже существует
-#define FS_ERR_NO_SPACE -4      // нет места в таблице записей
-#define FS_ERR_NO_FAT_SPACE -5  // нет места в FAT (нет свободных кластеров)
-#define FS_ERR_PARTIAL_WRITE -6 // частично записано
-#define FS_ERR_NOT_FOUND -7     // запись не найдена
+#define FS_ERR_INVALID_ARG -1     // неверные параметры
+#define FS_ERR_NOT_DIR -2         // родитель не существует или не каталог
+#define FS_ERR_EXISTS -3          // запись с таким именем уже существует
+#define FS_ERR_NO_SPACE -4        // нет места в таблице записей
+#define FS_ERR_NO_FAT_SPACE -5    // нет места в FAT (нет свободных кластеров)
+#define FS_ERR_PARTIAL_WRITE -6   // частично записано
+#define FS_ERR_NOT_FOUND -7       // запись не найдена
+#define FS_ERR_DISK_IO -8         // ошибка чтения/записи диска
+#define FS_ERR_NOT_INITIALIZED -9 // файловая система не инициализирована
 
 #define FS_HAS_CHILDREN 1
 #define FS_NO_CHILDREN 0
@@ -42,8 +45,14 @@ typedef struct
     uint8_t is_dir;         // 1 — это директория
 } fs_entry_t;
 
-/* Инициализация файловой системы (вызывает инициализацию FAT и корня) */
-void fs_init(void);
+/* Инициализация файловой системы на IDE диске */
+int fs_init(ide_disk_t *disk);
+
+/* Форматирование диска (создание новой файловой системы) */
+int fs_format(ide_disk_t *disk);
+
+/* Синхронизация (запись кэшированных данных на диск) */
+int fs_sync(void);
 
 /* Создать директорию с именем name в каталоге parent (индекс). Возвращает индекс новой записи или -1 при ошибке */
 int fs_mkdir(const char *name, int parent);
