@@ -12,7 +12,6 @@
 #include "kernel/power/power.h"
 #include "kernel/sched/multitask/multitask.h"
 #include "kernel/sched/tasks/tasks.h"
-#include "mm/ramdisk/ramdisk.h"
 #include "fs/fat16/fs.h"
 #include "apps/terminal/main_bin.h"
 #include "apps/ls/main_bin.h"

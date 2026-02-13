@@ -3,7 +3,6 @@
 # =============================================================================
 
 MM_C_SRCS := \
-	mm/malloc/malloc.c \
-	mm/ramdisk/ramdisk.c
+	mm/malloc/malloc.c
 
 SRCS_C += $(MM_C_SRCS)
