@@ -6,6 +6,8 @@
 ARCH_ASM_SRCS := \
 	arch/x86_64/boot/kernel.asm \
 	arch/x86_64/tables/lidt_load.asm \
+	arch/x86_64/interrupt/isr_stub_13.asm \
+	arch/x86_64/interrupt/isr_stub_14.asm \
 	arch/x86_64/interrupt/isr32.asm \
 	arch/x86_64/interrupt/isr33.asm \
 	arch/x86_64/interrupt/isr44.asm \

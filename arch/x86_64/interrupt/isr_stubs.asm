@@ -43,8 +43,16 @@ isr_stub_%1:
     iretq
 %endmacro
 
+; Стабы 0..12
 %assign i 0
-%rep 32
+%rep 13
+    ISR_STUB i
+    %assign i i+1
+%endrep
+
+; Стабы 15..31
+%assign i 15
+%rep 17
     ISR_STUB i
     %assign i i+1
 %endrep

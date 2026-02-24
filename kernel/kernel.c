@@ -35,6 +35,7 @@
 #include "drivers/sound/pcs/pcs.h"
 #include "kernel/panic/panic.h"
 #include <asm/cpu.h>
+#include "mm/paging/paging.h"
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -172,6 +173,8 @@ void kmain(uint64_t mb2_addr)
     }
 
     malloc_init(&_heap_start, heap_size);
+
+    paging_init(info->total_memory);
 
     gfx_init(&info->fb);
 

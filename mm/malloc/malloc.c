@@ -325,6 +325,18 @@ void get_kmalloc_stats(kmalloc_stats_t *st)
     }
 }
 
+size_t malloc_usable_size(void *ptr)
+{
+    if (!ptr)
+        return 0;
+    block_header_t *h = payload_to_header(ptr);
+    if (h->magic != MAGIC)
+        return 0;
+    if (h->free)
+        return 0;
+    return h->size;
+}
+
 static size_t kstrlen(const char *s)
 {
     size_t i = 0;

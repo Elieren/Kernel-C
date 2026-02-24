@@ -3,6 +3,7 @@
 # =============================================================================
 
 MM_C_SRCS := \
-	mm/malloc/malloc.c
+	mm/malloc/malloc.c \
+	mm/paging/paging.c
 
 SRCS_C += $(MM_C_SRCS)

@@ -86,6 +86,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Migrated file system storage from RAMDisk to physical disk (IDE).
 
+* [X] Added kernel memory protection (per-task page tables, ring-3 isolation).
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 

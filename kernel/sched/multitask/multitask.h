@@ -30,6 +30,7 @@ typedef struct task
     size_t user_mem_size; // размер .user памяти
     uint32_t cwd_idx;     /* индекс директории в FS (FS_ROOT_IDX для корня) */
     char *name;
+    uint64_t *page_table;
 } task_t;
 
 typedef struct task_info

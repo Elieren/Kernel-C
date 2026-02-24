@@ -23,7 +23,9 @@ isr44:
     push r15
 
     ; вызываем C-обработчик
+    sub rsp, 8
     call mouse_handler
+    add rsp, 8
 
     ; восстанавливаем регистры
     pop r15

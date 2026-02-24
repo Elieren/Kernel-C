@@ -21,5 +21,6 @@ void *malloc(size_t size);
 void free(void *ptr);
 void *realloc(void *ptr, size_t new_size);
 void get_kmalloc_stats(kmalloc_stats_t *st);
+size_t malloc_usable_size(void *ptr);
 
 #endif // KERNEL_MALLOC_H

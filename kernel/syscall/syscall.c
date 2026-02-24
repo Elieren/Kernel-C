@@ -1,5 +1,6 @@
 // syscall.c
 #include "syscall.h"
+#include "mm/paging/paging.h"
 #include "kernel/time/timer.h"
 #include "kernel/power/power.h"
 #include "drivers/input/keyboard/keyboard.h"
@@ -209,14 +210,73 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return 0;
 
     case SYSCALL_MALLOC:
-        return (uintptr_t)malloc((size_t)regs->rdi);
+    {
+        size_t sz = (size_t)regs->rdi;
+        void *ptr = malloc(sz);
+        if (ptr)
+        {
+            task_t *cur = get_current_task();
+            if (cur && cur->page_table)
+            {
+                size_t actual = malloc_usable_size(ptr);
+                paging_map_user_region(cur->page_table, ptr, actual);
+            }
+        }
+        return (uintptr_t)ptr;
+    }
 
     case SYSCALL_FREE:
-        free((void *)(uintptr_t)regs->rdi);
+    {
+        void *ptr = (void *)(uintptr_t)regs->rdi;
+        if (ptr)
+        {
+            task_t *cur = get_current_task();
+            if (cur && cur->page_table)
+            {
+                size_t actual = malloc_usable_size(ptr);
+                if (actual > 0)
+                    paging_unmap_user_region(cur->page_table, ptr, actual);
+            }
+            free(ptr);
+        }
         return 0;
+    }
 
     case SYSCALL_REALLOC:
-        return (uintptr_t)realloc((void *)(uintptr_t)regs->rdi, (size_t)regs->rsi);
+    {
+        void *old_ptr = (void *)(uintptr_t)regs->rdi;
+        size_t new_size = (size_t)regs->rsi;
+        task_t *cur = get_current_task();
+
+        /* Снять маппинг старого блока (пока он ещё жив) */
+        if (old_ptr && cur && cur->page_table)
+        {
+            size_t old_actual = malloc_usable_size(old_ptr);
+            if (old_actual > 0)
+                paging_unmap_user_region(cur->page_table, old_ptr, old_actual);
+        }
+
+        void *new_ptr = realloc(old_ptr, new_size);
+
+        if (new_ptr && cur && cur->page_table)
+        {
+            /* Добавить маппинг нового блока (может быть тот же адрес или новый) */
+            size_t new_actual = malloc_usable_size(new_ptr);
+            paging_map_user_region(cur->page_table, new_ptr, new_actual);
+        }
+        else if (!new_ptr && old_ptr && cur && cur->page_table)
+        {
+            /*
+             * realloc вернул NULL — по стандарту old_ptr остаётся валидным.
+             * Восстанавливаем маппинг.
+             */
+            size_t old_actual = malloc_usable_size(old_ptr);
+            if (old_actual > 0)
+                paging_map_user_region(cur->page_table, old_ptr, old_actual);
+        }
+
+        return (uintptr_t)new_ptr;
+    }
 
     case SYSCALL_KMALLOC_STATS:
         if (regs->rdi)

@@ -27,7 +27,9 @@ isr32:
     push qword 32       ; int_no (dummy for consistent frame)
 
     ; --- вызов C-функции для тика таймера (не трогает regs на стеке) ---
+    sub rsp, 8
     call timer_tick
+    add rsp, 8
 
     sub rsp, 8
     lea rdi, [rsp + 8]      ; frame pointer
