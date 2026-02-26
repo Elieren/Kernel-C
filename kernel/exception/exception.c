@@ -3,14 +3,16 @@
 #include "kernel/panic/panic.h"
 #include <stdint.h>
 
-void handle_page_fault(uint64_t cr2, uint64_t error_code,
-                       uint64_t rip, uint64_t cs)
-{
-    (void)cr2; /* используется при необходимости для диагностики */
-    (void)error_code;
-    (void)rip;
+// privilege: 0 = ядро, 1 = пользователь.
 
-    if (cs & 3)
+void handle_page_fault(uint64_t fault_addr, uint64_t fault_flags,
+                       uint64_t pc, uint64_t privilege)
+{
+    (void)fault_addr; /* используется при необходимости для диагностики */
+    (void)fault_flags;
+    (void)pc;
+
+    if (privilege != 0)
     {
         task_exit(EXIT_SIGSEGV);
     }
@@ -20,12 +22,12 @@ void handle_page_fault(uint64_t cr2, uint64_t error_code,
     }
 }
 
-void handle_gpf(uint64_t error_code, uint64_t rip, uint64_t cs)
+void handle_gpf(uint64_t fault_flags, uint64_t pc, uint64_t privilege)
 {
-    (void)error_code;
-    (void)rip;
+    (void)fault_flags;
+    (void)pc;
 
-    if (cs & 3)
+    if (privilege != 0)
     {
         task_exit(EXIT_SIGSEGV);
     }
