@@ -26,7 +26,7 @@ typedef struct
    Должна быть вызвана перед всеми остальными функциями. */
 void gfx_init(framebuffer_info_t *fb);
 
-void gfx_put_char_position(uint32_t gx, uint32_t gy, char ch, uint32_t color);
+void gfx_put_char_position(char ch, uint32_t gx, uint32_t gy, uint32_t color);
 void gfx_put_char(char ch, uint32_t color);
 
 void gfx_put_string_position(const char *str,

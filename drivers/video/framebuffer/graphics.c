@@ -175,7 +175,7 @@ void gfx_init(framebuffer_info_t *fb)
 
 // ============================ char ============================
 
-void gfx_put_char_position(uint32_t gx, uint32_t gy, char ch, uint32_t color)
+void gfx_put_char_position(char ch, uint32_t gx, uint32_t gy, uint32_t color)
 {
     if (!g_cells)
         return;
