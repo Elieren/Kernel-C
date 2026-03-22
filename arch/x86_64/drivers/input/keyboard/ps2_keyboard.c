@@ -1,4 +1,4 @@
-#include "arch/x86_64/drivers/input/keyboard/ps2_keyboard.h"
+#include "ps2_keyboard.h"
 #include "drivers/input/keyboard/keyboard.h"
 #include <asm/io.h>
 #include <asm/pic.h>

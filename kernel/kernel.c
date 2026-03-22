@@ -45,6 +45,7 @@ extern char _heap_start;
 // ============================================================================
 
 extern void ps2_keyboard_driver_init(void);
+extern void ps2_mouse_driver_init(void);
 
 // ============================================================================
 // helper functions
@@ -205,6 +206,7 @@ void kmain(uint64_t mb2_addr)
     ps2_keyboard_driver_init();
     keyboard_init();
 
+    ps2_mouse_driver_init();
     /* Инициализация мыши PS/2 */
     if (!mouse_init())
     {
