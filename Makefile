@@ -12,10 +12,11 @@ SRCS_C :=
 # Подключение модулей (порядок важен)
 include arch/x86_64/arch.mk
 include kernel/kernel.mk
-include drivers/drivers.mk
+include drivers/drivers_ops.mk
 include lib/lib.mk
 include mm/mm.mk
 include fs/fs.mk
+include arch/x86_64/drivers/drivers.mk
 
 # Генерация списков объектных файлов
 ASM_OBJS :=  $(patsubst %.asm,$(BUILD_DIR)/%.asm.o,$(SRCS_ASM))

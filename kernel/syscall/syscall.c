@@ -285,7 +285,7 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
 
     case SYSCALL_GETCHAR:
     {
-        int c = kbd_getchar();
+        int c = keyboard_getchar();
         return (uintptr_t)(c == -1 ? 0 : c);
     }
 

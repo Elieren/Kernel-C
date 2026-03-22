@@ -40,6 +40,16 @@
 /* символы из link.ld */
 extern char _heap_start;
 
+// ============================================================================
+// OPS
+// ============================================================================
+
+extern void ps2_keyboard_driver_init(void);
+
+// ============================================================================
+// helper functions
+// ============================================================================
+
 void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, unsigned int dat)
 {
     // Найти/создать каталог /bin
@@ -192,6 +202,7 @@ void kmain(uint64_t mb2_addr)
 
     pc_speaker_init();
 
+    ps2_keyboard_driver_init();
     keyboard_init();
 
     /* Инициализация мыши PS/2 */
