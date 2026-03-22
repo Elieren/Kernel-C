@@ -7,7 +7,7 @@ DRIVERS_C_SRCS := \
 	drivers/bus/pci/pci.c \
 	drivers/input/keyboard/keyboard.c \
 	drivers/input/mouse/mouse.c \
-	drivers/sound/pcs/pcs.c \
+	drivers/sound/sound.c \
 	drivers/video/vga/vga.c \
 	drivers/video/framebuffer/graphics.c \
 	drivers/video/framebuffer/font.c

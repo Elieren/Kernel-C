@@ -7,7 +7,6 @@
 #include "kernel/syscall/syscall.h"
 #include "lib/string/string.h"
 #include "lib/graphics/formatting/formatting.h"
-#include "drivers/sound/pcs/pcs.h"
 #include "mm/malloc/malloc.h"
 #include <stdint.h>
 #include <stdbool.h>

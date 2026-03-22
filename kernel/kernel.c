@@ -32,7 +32,7 @@
 #include "lib/graphics/glyphs/english_glyph.h"
 #include "drivers/block/ide/ide.h"
 #include "drivers/bus/pci/pci.h"
-#include "drivers/sound/pcs/pcs.h"
+#include "drivers/sound/sound.h"
 #include "kernel/panic/panic.h"
 #include <asm/cpu.h>
 #include "mm/paging/paging.h"
@@ -46,6 +46,7 @@ extern char _heap_start;
 
 extern void ps2_keyboard_driver_init(void);
 extern void ps2_mouse_driver_init(void);
+extern void pcs_sound_driver_init(void);
 
 // ============================================================================
 // helper functions
@@ -201,7 +202,8 @@ void kmain(uint64_t mb2_addr)
 
     pci_init();
 
-    pc_speaker_init();
+    pcs_sound_driver_init();
+    sound_init();
 
     ps2_keyboard_driver_init();
     keyboard_init();
