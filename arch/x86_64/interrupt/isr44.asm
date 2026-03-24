@@ -2,7 +2,7 @@
 [BITS 64]
 
 global isr44
-extern mouse_handler  ; void mouse_handler(void);
+extern ps2_mouse_handler
 
 isr44:
     ; сохраняем регистры
@@ -24,7 +24,7 @@ isr44:
 
     ; вызываем C-обработчик
     sub rsp, 8
-    call mouse_handler
+    call ps2_mouse_handler
     add rsp, 8
 
     ; восстанавливаем регистры

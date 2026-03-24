@@ -44,8 +44,8 @@ extern char _heap_start;
 // OPS
 // ============================================================================
 
-extern void ps2_keyboard_driver_init(void);
-extern void ps2_mouse_driver_init(void);
+extern void ps2_keyboard_register(void);
+extern void ps2_mouse_register(void);
 extern void pcs_sound_driver_init(void);
 
 // ============================================================================
@@ -205,24 +205,24 @@ void kmain(uint64_t mb2_addr)
     pcs_sound_driver_init();
     sound_init();
 
-    ps2_keyboard_driver_init();
-    keyboard_init();
+    ps2_keyboard_register();
+    ps2_mouse_register();
 
-    ps2_mouse_driver_init();
-    /* Инициализация мыши PS/2 */
-    if (!mouse_init())
+    if (keyboard_init())
     {
-        panic("MOUSE_INIT_FAILED", true, false);
+        keyboard_enable();
     }
 
-    /* Устанавливаем границы мыши по размеру экрана */
-    mouse_set_bounds(0, 0, g_screen_width - 1, g_screen_height - 1);
+    if (mouse_init())
+    {
+        /* Устанавливаем границы мыши по размеру экрана */
+        mouse_set_bounds(0, 0, g_screen_width - 1, g_screen_height - 1);
 
-    /* Позиционируем курсор в центр экрана */
-    mouse_set_position(g_screen_width / 2, g_screen_height / 2);
+        /* Позиционируем курсор в центр экрана */
+        mouse_set_position(g_screen_width / 2, g_screen_height / 2);
 
-    keyboard_enable();
-    mouse_enable();
+        mouse_enable();
+    }
 
     /* Очистим экран чёрный */
     gfx_clear(0x00000000);

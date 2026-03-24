@@ -4,37 +4,44 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define KBD_BUF_SIZE 256
+#define KBD_MAX_DRIVERS 8
+
 typedef struct
 {
-    const char *name;
-    int (*init)(void);
-    void (*enable)(void);
-    void (*disable)(void);
-    bool (*has_char)(void);
-    char (*getchar)(void);
-    void (*flush)(void);
-    bool (*is_shift_down)(void);
-    bool (*is_ctrl_down)(void);
-    bool (*is_caps_lock)(void);
-    void (*irq_handler)(void);
+    const char *name; /* "ps2", "usb", ... */
 
-} keyboard_ops_t;
+    bool (*init)(void);    /* инициализировать железо         */
+    void (*enable)(void);  /* разрешить прерывания            */
+    void (*disable)(void); /* запретить прерывания            */
+} keyboard_driver_t;
 
-void keyboard_register(const keyboard_ops_t *ops);
+void keyboard_register(const keyboard_driver_t *drv);
 
-int keyboard_init(void);
+void keyboard_push_char(char c);
 
+/* ============================================================
+ *  Публичный API
+ * ============================================================ */
+
+/* Инициализировать ВСЕ зарегистрированные драйверы */
+bool keyboard_init(void);
+
+/* Включить / выключить ВСЕ зарегистрированные драйверы */
 void keyboard_enable(void);
 void keyboard_disable(void);
 
+/* Работа с общим буфером */
 bool keyboard_has_char(void);
-char keyboard_getchar(void);
+char keyboard_getchar(void); /* -1 если пусто */
 void keyboard_flush(void);
 
+/* Состояние модификаторов. */
 bool keyboard_is_shift_down(void);
 bool keyboard_is_ctrl_down(void);
 bool keyboard_is_caps_lock(void);
 
-void keyboard_handler(void);
+/* Драйвер обновляет модификаторы через эту функцию */
+void keyboard_set_modifiers(bool shift, bool ctrl, bool caps);
 
 #endif /* KEYBOARD_H */

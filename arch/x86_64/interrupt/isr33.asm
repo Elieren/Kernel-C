@@ -2,7 +2,7 @@
 [BITS 64]
 
 global isr33
-extern keyboard_handler  ; void keyboard_handler(void);
+extern ps2_keyboard_handler
 
 isr33:
     ; сохраняем регистры
@@ -24,7 +24,7 @@ isr33:
 
     ; вызываем C-обработчик
     sub rsp, 8
-    call keyboard_handler
+    call ps2_keyboard_handler
     add rsp, 8
 
     ; восстанавливаем регистры

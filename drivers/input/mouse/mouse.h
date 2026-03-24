@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define MOUSE_BUF_SIZE 64
+#define MOUSE_MAX_DRIVERS 4
+
 typedef struct
 {
     int32_t x;            // Абсолютная позиция X
@@ -24,27 +27,20 @@ typedef struct
 typedef struct
 {
     const char *name;
+
     bool (*init)(void);
     void (*enable)(void);
     void (*disable)(void);
-    void (*get_state)(mouse_state_t *out);
-    void (*get_position)(int32_t *x, int32_t *y);
-    void (*set_position)(int32_t x, int32_t y);
-    void (*set_bounds)(int32_t min_x, int32_t min_y,
-                       int32_t max_x, int32_t max_y);
-    void (*get_buttons)(bool *left, bool *right, bool *middle);
-    bool (*left_pressed)(void);
-    bool (*right_pressed)(void);
-    bool (*middle_pressed)(void);
-    bool (*left_released)(void);
-    bool (*right_released)(void);
-    bool (*middle_released)(void);
-    void (*clear_events)(void);
-    void (*irq_handler)(void);
+} mouse_driver_t;
 
-} mouse_ops_t;
+void mouse_register(const mouse_driver_t *drv);
 
-void mouse_register(const mouse_ops_t *ops);
+void mouse_update_move(int16_t dx, int16_t dy);
+void mouse_update_buttons(bool left, bool right, bool middle);
+
+/* ============================================================
+ *  Публичный API
+ * ============================================================ */
 
 bool mouse_init(void);
 void mouse_enable(void);
@@ -64,7 +60,5 @@ bool mouse_left_released(void);
 bool mouse_right_released(void);
 bool mouse_middle_released(void);
 void mouse_clear_events(void);
-
-void mouse_handler(void);
 
 #endif /* MOUSE_H */

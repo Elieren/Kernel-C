@@ -6,17 +6,12 @@
 
 #define INTERNAL_SPACE 0x01
 
-static bool shift_down = false;
-static bool caps_lock = false;
-static bool ctrl_down = false;
-static volatile bool can_read_keyboard = false;
+static bool g_shift = false;
+static bool g_ctrl = false;
+static bool g_caps = false;
+static bool g_enabled = false;
 
-// Кольцевой буфер
-static char kbd_buf[KBD_BUF_SIZE];
-static volatile int kbd_head = 0;
-static volatile int kbd_tail = 0;
-
-static bool initialized = false;
+static bool g_initialized = false;
 
 // Таблица сканкодов -> ASCII
 static const char scancode_to_ascii[256] = {
@@ -146,7 +141,7 @@ static inline char my_toupper(char c)
     return c;
 }
 
-bool is_alpha(uint8_t scancode)
+static bool is_alpha(uint8_t scancode)
 {
     switch (scancode)
     {
@@ -186,13 +181,14 @@ static char get_ascii_char(uint8_t scancode)
 {
     if (is_alpha(scancode))
     {
-        bool upper = shift_down ^ caps_lock;
+        bool upper = g_shift ^ g_caps;
         char base = scancode_to_ascii[scancode]; // 'a'-'z'
         return upper ? my_toupper(base) : base;
     }
 
-    return shift_down ? scancode_to_ascii_shifted[scancode]
-                      : scancode_to_ascii[scancode];
+    char c = g_shift ? scancode_to_ascii_shifted[scancode]
+                     : scancode_to_ascii[scancode];
+    return (c == INTERNAL_SPACE) ? ' ' : c;
 }
 
 // ============================================================================
@@ -238,25 +234,6 @@ static void kbd_write_data(uint8_t data)
 }
 
 // ============================================================================
-// Работа с буфером
-// ============================================================================
-
-static void kbd_buffer_push(char c)
-{
-    unsigned long flags = save_flags();
-
-    int next = (kbd_head + 1) % KBD_BUF_SIZE;
-    if (next != kbd_tail)
-    {
-        kbd_buf[kbd_head] = c;
-        kbd_head = next;
-    }
-    // Иначе буфер полный - символ теряется
-
-    restore_flags(flags);
-}
-
-// ============================================================================
 // Управление LED индикаторами
 // ============================================================================
 
@@ -264,7 +241,7 @@ static void keyboard_update_leds(void)
 {
     uint8_t led_state = 0;
 
-    if (caps_lock)
+    if (g_caps)
         led_state |= 0x04;
 
     // Отправляем команду установки LED
@@ -278,38 +255,57 @@ static void keyboard_update_leds(void)
 // Публичный API
 // ============================================================================
 
-void ps2_keyboard_init(void)
+static bool ps2_keyboard_init(void)
 {
-    if (initialized)
-        return;
+    if (g_initialized)
+        return true;
 
+    // Очистка выходного буфера контроллера
     int clear_attempts = 0;
-    while ((io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL) && clear_attempts++ < 100)
+    while ((io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL) &&
+           clear_attempts++ < 100)
     {
         io_read8(KEYBOARD_DATA_PORT);
-        // Микрозадержка для стабильности
         for (volatile int i = 0; i < 1000; i++)
             ;
     }
 
-    shift_down = false;
-    caps_lock = false;
-    ctrl_down = false;
-    kbd_head = 0;
-    kbd_tail = 0;
-    can_read_keyboard = true;
+    // Включить первый PS/2 порт
+    kbd_write_command(KBD_CMD_ENABLE_KEYBOARD);
 
-    initialized = true;
+    // Сброс клавиатуры (0xFF)
+    kbd_write_data(KBD_CMD_RESET);
+
+    uint8_t response = kbd_read_data();
+    if (response != KBD_RESPONSE_ACK)
+        return false;
+
+    // Ждём результат самотестирования (BAT)
+    response = kbd_read_data();
+    if (response != KBD_RESPONSE_BAT_OK)
+        return false;
+
+    // Установить параметры по умолчанию (0xF6)
+    kbd_write_data(KBD_CMD_SET_DEFAULTS);
+    response = kbd_read_data();
+    if (response != KBD_RESPONSE_ACK)
+        return false;
+
+    // Инициализация состояния
+    g_shift = false;
+    g_caps = false;
+    g_ctrl = false;
+    g_enabled = false;
+    g_initialized = true;
+    return true;
 }
 
-void ps2_keyboard_enable(void)
+static void ps2_keyboard_enable(void)
 {
-    if (!initialized || can_read_keyboard)
+    if (!g_initialized || g_enabled)
         return;
 
-    unsigned long flags = save_flags();
-
-    can_read_keyboard = true;
+    g_enabled = true;
 
     // Включаем сканирование с проверкой
     kbd_write_data(KBD_CMD_ENABLE_SCANNING);
@@ -321,18 +317,14 @@ void ps2_keyboard_enable(void)
         while (io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL)
             io_read8(KEYBOARD_DATA_PORT);
     }
-
-    restore_flags(flags);
 }
 
-void ps2_keyboard_disable(void)
+static void ps2_keyboard_disable(void)
 {
-    if (!initialized || !can_read_keyboard)
+    if (!g_initialized || !g_enabled)
         return;
 
-    unsigned long flags = save_flags();
-
-    can_read_keyboard = false;
+    g_enabled = false;
 
     // Отключаем сканирование с проверкой
     kbd_write_data(KBD_CMD_DISABLE_SCANNING);
@@ -344,57 +336,6 @@ void ps2_keyboard_disable(void)
         while (io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL)
             io_read8(KEYBOARD_DATA_PORT);
     }
-
-    restore_flags(flags);
-}
-
-bool ps2_keyboard_has_char(void)
-{
-    unsigned long flags = save_flags();
-    bool has = (kbd_head != kbd_tail);
-    restore_flags(flags);
-    return has;
-}
-
-char ps2_kbd_getchar(void)
-{
-    unsigned long flags = save_flags();
-
-    if (!can_read_keyboard || kbd_head == kbd_tail)
-    {
-        restore_flags(flags);
-        return -1;
-    }
-
-    char c = kbd_buf[kbd_tail];
-    kbd_tail = (kbd_tail + 1) % KBD_BUF_SIZE;
-
-    restore_flags(flags);
-    return c;
-}
-
-void ps2_keyboard_flush_buffer(void)
-{
-    unsigned long flags = save_flags();
-    kbd_head = 0;
-    kbd_tail = 0;
-    restore_flags(flags);
-}
-
-// Получение состояния модификаторов
-bool ps2_keyboard_is_shift_down(void)
-{
-    return shift_down;
-}
-
-bool ps2_keyboard_is_ctrl_down(void)
-{
-    return ctrl_down;
-}
-
-bool ps2_keyboard_is_caps_lock_on(void)
-{
-    return caps_lock;
 }
 
 // ============================================================================
@@ -429,36 +370,39 @@ void ps2_keyboard_handler(void)
     // Обработка модификаторов
     if (key == KEY_LSHIFT || key == KEY_RSHIFT)
     {
-        shift_down = !released;
+        g_shift = !released;
+        keyboard_set_modifiers(g_shift, g_ctrl, g_caps);
         pic_send_eoi(1);
         return;
     }
 
     if (key == KEY_LCONTROL || key == KEY_RCONTROL)
     {
-        ctrl_down = !released;
+        g_ctrl = !released;
+        keyboard_set_modifiers(g_shift, g_ctrl, g_caps);
         pic_send_eoi(1);
         return;
     }
 
     if (key == KEY_CAPSLOCK && !released)
     {
-        caps_lock = !caps_lock;
+        g_caps = !g_caps;
 
         // Обновляем LED
         keyboard_update_leds();
+        keyboard_set_modifiers(g_shift, g_ctrl, g_caps);
 
         pic_send_eoi(1);
         return;
     }
 
     // Обработка нажатия клавиш (только make-коды)
-    if (!released && can_read_keyboard)
+    if (!released && g_enabled)
     {
         // Обработка Ctrl+C
-        if (ctrl_down && key == KEY_C)
+        if (g_ctrl && key == KEY_C)
         {
-            kbd_buffer_push(0x03); // ASCII код для Ctrl+C
+            keyboard_push_char(0x03); // ASCII код для Ctrl+C
             pic_send_eoi(1);
             return;
         }
@@ -467,28 +411,29 @@ void ps2_keyboard_handler(void)
         char ch = get_ascii_char(key);
         if (ch)
         {
-            kbd_buffer_push(ch);
+            keyboard_push_char(ch);
         }
     }
 
     pic_send_eoi(1);
 }
 
-static const keyboard_ops_t ps2_keyboard_ops = {
+// ============================================================================
+// Таблица драйвера
+// ============================================================================
+
+static const keyboard_driver_t ps2_keyboard_driver = {
     .name = "ps2",
     .init = ps2_keyboard_init,
     .enable = ps2_keyboard_enable,
     .disable = ps2_keyboard_disable,
-    .has_char = ps2_keyboard_has_char,
-    .getchar = ps2_kbd_getchar,
-    .flush = ps2_keyboard_flush_buffer,
-    .is_shift_down = ps2_keyboard_is_shift_down,
-    .is_ctrl_down = ps2_keyboard_is_ctrl_down,
-    .is_caps_lock = ps2_keyboard_is_caps_lock_on,
-    .irq_handler = ps2_keyboard_handler,
 };
 
-void ps2_keyboard_driver_init(void)
+// ============================================================================
+// Точка входа
+// ============================================================================
+
+void ps2_keyboard_register(void)
 {
-    keyboard_register(&ps2_keyboard_ops);
+    keyboard_register(&ps2_keyboard_driver);
 }

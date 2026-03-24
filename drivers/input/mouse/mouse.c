@@ -1,114 +1,202 @@
 #include "mouse.h"
-#include <stddef.h>
+#include <asm/cpu.h>
 
-static const mouse_ops_t *active = NULL;
+/* ---- Реестр драйверов -------------------------------------- */
 
-void mouse_register(const mouse_ops_t *ops)
+static const mouse_driver_t *g_drivers[MOUSE_MAX_DRIVERS];
+static int g_driver_count = 0;
+
+void mouse_register(const mouse_driver_t *drv)
 {
-    active = ops;
+    if (!drv || g_driver_count >= MOUSE_MAX_DRIVERS)
+        return;
+    g_drivers[g_driver_count++] = drv;
 }
+
+/* ---- Общее состояние мыши ---------------------------------- */
+
+static mouse_state_t g_state = {0};
+
+static int32_t g_min_x = 0, g_min_y = 0;
+static int32_t g_max_x = 1024, g_max_y = 768;
+
+static void clamp(void)
+{
+    if (g_state.x < g_min_x)
+        g_state.x = g_min_x;
+    if (g_state.x > g_max_x)
+        g_state.x = g_max_x;
+    if (g_state.y < g_min_y)
+        g_state.y = g_min_y;
+    if (g_state.y > g_max_y)
+        g_state.y = g_max_y;
+}
+
+void mouse_update_move(int16_t dx, int16_t dy)
+{
+    unsigned long flags = save_flags();
+    g_state.delta_x = (int8_t)dx;
+    g_state.delta_y = (int8_t)dy;
+    g_state.x += dx;
+    g_state.y -= dy; /* Y инвертирован */
+    clamp();
+    restore_flags(flags);
+}
+
+void mouse_update_buttons(bool left, bool right, bool middle)
+{
+    unsigned long flags = save_flags();
+
+    /* Вычисляем события нажатия / отпускания */
+    g_state.left_pressed = !g_state.left_button && left;
+    g_state.left_released = g_state.left_button && !left;
+    g_state.right_pressed = !g_state.right_button && right;
+    g_state.right_released = g_state.right_button && !right;
+    g_state.middle_pressed = !g_state.middle_button && middle;
+    g_state.middle_released = g_state.middle_button && !middle;
+
+    g_state.left_button = left;
+    g_state.right_button = right;
+    g_state.middle_button = middle;
+
+    restore_flags(flags);
+}
+
+/* ---- Публичный API ----------------------------------------- */
 
 bool mouse_init(void)
 {
-    if (!active || !active->init)
-        return false;
-
-    return active->init();
+    bool ok = false;
+    for (int i = 0; i < g_driver_count; i++)
+        if (g_drivers[i]->init)
+            ok |= g_drivers[i]->init();
+    return ok;
 }
 
 void mouse_enable(void)
 {
-    if (active && active->enable)
-        active->enable();
+    for (int i = 0; i < g_driver_count; i++)
+        if (g_drivers[i]->enable)
+            g_drivers[i]->enable();
 }
 
 void mouse_disable(void)
 {
-    if (active && active->disable)
-        active->disable();
+    for (int i = 0; i < g_driver_count; i++)
+        if (g_drivers[i]->disable)
+            g_drivers[i]->disable();
 }
 
 void mouse_get_state(mouse_state_t *out)
 {
-    if (active && active->get_state)
-        active->get_state(out);
+    if (!out)
+        return;
+    unsigned long flags = save_flags();
+    *out = g_state;
+    restore_flags(flags);
 }
 
 void mouse_get_position(int32_t *x, int32_t *y)
 {
-    if (active && active->get_position)
-        active->get_position(x, y);
+    unsigned long flags = save_flags();
+    if (x)
+        *x = g_state.x;
+    if (y)
+        *y = g_state.y;
+    restore_flags(flags);
 }
 
 void mouse_set_position(int32_t x, int32_t y)
 {
-    if (active && active->set_position)
-        active->set_position(x, y);
+    unsigned long flags = save_flags();
+    g_state.x = x;
+    g_state.y = y;
+    clamp();
+    restore_flags(flags);
 }
 
 void mouse_set_bounds(int32_t min_x, int32_t min_y,
                       int32_t max_x, int32_t max_y)
 {
-    if (active && active->set_bounds)
-        active->set_bounds(min_x, min_y, max_x, max_y);
+    unsigned long flags = save_flags();
+    g_min_x = min_x;
+    g_min_y = min_y;
+    g_max_x = max_x;
+    g_max_y = max_y;
+    clamp();
+    restore_flags(flags);
 }
 
 void mouse_get_buttons(bool *left, bool *right, bool *middle)
 {
-    if (active && active->get_buttons)
-        active->get_buttons(left, right, middle);
+    unsigned long flags = save_flags();
+    if (left)
+        *left = g_state.left_button;
+    if (right)
+        *right = g_state.right_button;
+    if (middle)
+        *middle = g_state.middle_button;
+    restore_flags(flags);
 }
 
 bool mouse_left_pressed(void)
 {
-    if (!active || !active->left_pressed)
-        return false;
-    return active->left_pressed();
+    unsigned long f = save_flags();
+    bool r = g_state.left_pressed;
+    g_state.left_pressed = false;
+    restore_flags(f);
+    return r;
 }
 
 bool mouse_right_pressed(void)
 {
-    if (!active || !active->right_pressed)
-        return false;
-    return active->right_pressed();
+    unsigned long f = save_flags();
+    bool r = g_state.right_pressed;
+    g_state.right_pressed = false;
+    restore_flags(f);
+    return r;
 }
 
 bool mouse_middle_pressed(void)
 {
-    if (!active || !active->middle_pressed)
-        return false;
-    return active->middle_pressed();
+    unsigned long f = save_flags();
+    bool r = g_state.middle_pressed;
+    g_state.middle_pressed = false;
+    restore_flags(f);
+    return r;
 }
 
 bool mouse_left_released(void)
 {
-    if (!active || !active->left_released)
-        return false;
-    return active->left_released();
+    unsigned long f = save_flags();
+    bool r = g_state.left_released;
+    g_state.left_released = false;
+    restore_flags(f);
+    return r;
 }
 
 bool mouse_right_released(void)
 {
-    if (!active || !active->right_released)
-        return false;
-    return active->right_released();
+    unsigned long f = save_flags();
+    bool r = g_state.right_released;
+    g_state.right_released = false;
+    restore_flags(f);
+    return r;
 }
 
 bool mouse_middle_released(void)
 {
-    if (!active || !active->middle_released)
-        return false;
-    return active->middle_released();
+    unsigned long f = save_flags();
+    bool r = g_state.middle_released;
+    g_state.middle_released = false;
+    restore_flags(f);
+    return r;
 }
 
 void mouse_clear_events(void)
 {
-    if (active && active->clear_events)
-        active->clear_events();
-}
-
-void mouse_handler(void)
-{
-    if (active && active->irq_handler)
-        active->irq_handler();
+    unsigned long flags = save_flags();
+    g_state.left_pressed = g_state.right_pressed = g_state.middle_pressed = false;
+    g_state.left_released = g_state.right_released = g_state.middle_released = false;
+    restore_flags(flags);
 }
