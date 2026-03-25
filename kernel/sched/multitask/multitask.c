@@ -107,6 +107,7 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
                                     0); /* kernel mode */
 
     /* Вставляем в кольцо как новый tail */
+    unsigned long flags = save_flags();
     local_irq_disable();
     if (!task_ring)
     {
@@ -119,7 +120,7 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
         task_ring->next = t;
         task_ring = t;
     }
-    local_irq_enable();
+    restore_flags(flags);
 }
 
 /* Простая выборка следующей READY задачи (round-robin). */
@@ -448,6 +449,7 @@ uint64_t utask_create(void (*entry)(void),
     else
         t->cwd_idx = FS_ROOT_IDX;
 
+    unsigned long flags = save_flags();
     local_irq_disable();
     if (!task_ring)
     {
@@ -460,7 +462,7 @@ uint64_t utask_create(void (*entry)(void),
         task_ring->next = t;
         task_ring = t;
     }
-    local_irq_enable();
+    restore_flags(flags);
 
     return t->pid;
 }
