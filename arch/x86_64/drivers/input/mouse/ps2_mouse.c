@@ -142,19 +142,23 @@ static bool ps2_mouse_init(void)
 
 static void ps2_mouse_enable(void)
 {
-    if (!g_initialized || g_enabled)
-        return;
-
     unsigned long flags = save_flags();
+    local_irq_disable();
 
-    g_enabled = true;
+    if (!g_initialized || g_enabled)
+    {
+        restore_flags(flags);
+        return;
+    }
 
-    // Включаем передачу данных
     mouse_write_data(MOUSE_CMD_ENABLE_STREAMING);
     uint8_t response = mouse_read_data();
 
-    // Если не получили ACK, очищаем буфер
-    if (response != MOUSE_RESPONSE_ACK)
+    if (response == MOUSE_RESPONSE_ACK)
+    {
+        g_enabled = true;
+    }
+    else
     {
         while (io_read8(MOUSE_COMMAND_PORT) & PS2_STATUS_OUTPUT_FULL)
             io_read8(MOUSE_DATA_PORT);
@@ -165,19 +169,23 @@ static void ps2_mouse_enable(void)
 
 static void ps2_mouse_disable(void)
 {
-    if (!g_initialized || !g_enabled)
-        return;
-
     unsigned long flags = save_flags();
+    local_irq_disable();
 
-    g_enabled = false;
+    if (!g_initialized || !g_enabled)
+    {
+        restore_flags(flags);
+        return;
+    }
 
-    // Отключаем передачу данных
     mouse_write_data(MOUSE_CMD_DISABLE_STREAMING);
     uint8_t response = mouse_read_data();
 
-    // Если не получили ACK, очищаем буфер
-    if (response != MOUSE_RESPONSE_ACK)
+    if (response == MOUSE_RESPONSE_ACK)
+    {
+        g_enabled = false;
+    }
+    else
     {
         while (io_read8(MOUSE_COMMAND_PORT) & PS2_STATUS_OUTPUT_FULL)
             io_read8(MOUSE_DATA_PORT);

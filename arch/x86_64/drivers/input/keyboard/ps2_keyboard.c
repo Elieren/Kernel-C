@@ -302,40 +302,56 @@ static bool ps2_keyboard_init(void)
 
 static void ps2_keyboard_enable(void)
 {
+    unsigned long flags = save_flags();
+    local_irq_disable();
+
     if (!g_initialized || g_enabled)
+    {
+        restore_flags(flags);
         return;
+    }
 
-    g_enabled = true;
-
-    // Включаем сканирование с проверкой
     kbd_write_data(KBD_CMD_ENABLE_SCANNING);
     uint8_t response = kbd_read_data();
 
-    // Если не получили ACK, очищаем буфер
-    if (response != KBD_RESPONSE_ACK)
+    if (response == KBD_RESPONSE_ACK)
+    {
+        g_enabled = true;
+    }
+    else
     {
         while (io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL)
             io_read8(KEYBOARD_DATA_PORT);
     }
+
+    restore_flags(flags);
 }
 
 static void ps2_keyboard_disable(void)
 {
+    unsigned long flags = save_flags();
+    local_irq_disable();
+
     if (!g_initialized || !g_enabled)
+    {
+        restore_flags(flags);
         return;
+    }
 
-    g_enabled = false;
-
-    // Отключаем сканирование с проверкой
     kbd_write_data(KBD_CMD_DISABLE_SCANNING);
     uint8_t response = kbd_read_data();
 
-    // Если не получили ACK, очищаем буфер
-    if (response != KBD_RESPONSE_ACK)
+    if (response == KBD_RESPONSE_ACK)
+    {
+        g_enabled = false;
+    }
+    else
     {
         while (io_read8(KEYBOARD_COMMAND_PORT) & KBD_STATUS_OUTPUT_FULL)
             io_read8(KEYBOARD_DATA_PORT);
     }
+
+    restore_flags(flags);
 }
 
 // ============================================================================

@@ -22,27 +22,34 @@ static volatile int g_tail = 0;
 void keyboard_push_char(char c)
 {
     unsigned long flags = save_flags();
+    local_irq_disable();
+
     int next = (g_head + 1) % KBD_BUF_SIZE;
     if (next != g_tail)
     {
         g_buf[g_head] = c;
         g_head = next;
     }
+
     restore_flags(flags);
 }
 
 /* ---- Состояние модификаторов ------------------------------- */
-
-static bool g_shift = false;
-static bool g_ctrl = false;
-static bool g_caps = false;
+static volatile bool g_shift = false;
+static volatile bool g_ctrl = false;
+static volatile bool g_caps = false;
 
 /* Каждый драйвер вызывает это когда меняется состояние модификаторов */
 void keyboard_set_modifiers(bool shift, bool ctrl, bool caps)
 {
+    unsigned long flags = save_flags();
+    local_irq_disable();
+
     g_shift = shift;
     g_ctrl = ctrl;
     g_caps = caps;
+
+    restore_flags(flags);
 }
 
 /* ---- Публичный API ----------------------------------------- */
@@ -73,7 +80,10 @@ void keyboard_disable(void)
 bool keyboard_has_char(void)
 {
     unsigned long flags = save_flags();
+    local_irq_disable();
+
     bool has = (g_head != g_tail);
+
     restore_flags(flags);
     return has;
 }
@@ -81,13 +91,17 @@ bool keyboard_has_char(void)
 char keyboard_getchar(void)
 {
     unsigned long flags = save_flags();
+    local_irq_disable();
+
     if (g_head == g_tail)
     {
         restore_flags(flags);
         return -1;
     }
+
     char c = g_buf[g_tail];
     g_tail = (g_tail + 1) % KBD_BUF_SIZE;
+
     restore_flags(flags);
     return c;
 }
@@ -95,7 +109,10 @@ char keyboard_getchar(void)
 void keyboard_flush(void)
 {
     unsigned long flags = save_flags();
+    local_irq_disable();
+
     g_head = g_tail = 0;
+
     restore_flags(flags);
 }
 

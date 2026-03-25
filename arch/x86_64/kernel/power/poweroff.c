@@ -6,6 +6,15 @@
 #include <asm/cpu.h>
 #include "fs/fat16/fs.h"
 
+typedef struct
+{
+    uint8_t address_space;
+    uint8_t bit_width;
+    uint8_t bit_offset;
+    uint8_t access_size;
+    uint64_t address;
+} __attribute__((packed)) gas_t;
+
 /* ============================================================================
  * ACPI структуры
  * ============================================================================ */
@@ -94,17 +103,49 @@ typedef struct
     uint16_t boot_arch_flags;
     uint8_t reserved2;
     uint32_t flags;
-    uint8_t reset_reg[12];
+    gas_t reset_reg;
     uint8_t reset_value;
     uint16_t arm_boot_arch;
     uint8_t fadt_minor_version;
     uint64_t x_firmware_ctrl;
     uint64_t x_dsdt;
-    uint8_t x_pm1a_event_block[12];
-    uint8_t x_pm1b_event_block[12];
-    uint8_t x_pm1a_control_block[12];
-    uint8_t x_pm1b_control_block[12];
+    gas_t x_pm1a_event_block;
+    gas_t x_pm1b_event_block;
+    gas_t x_pm1a_control_block;
+    gas_t x_pm1b_control_block;
+    gas_t x_pm2_control_block;
+    gas_t x_pm_timer_block;
+    gas_t x_gpe0_block;
+    gas_t x_gpe1_block;
+    gas_t sleep_control_reg;
+    gas_t sleep_status_reg;
+    uint64_t hypervisor_vendor_id;
 } __attribute__((packed)) fadt_t;
+
+/* ============================================================================
+ * Константы PM1_CNT
+ * ============================================================================ */
+#define PM1_CNT_SCI_EN (1u << 0)
+#define PM1_CNT_SLP_TYP_IDX 10
+#define PM1_CNT_SLP_TYP_MASK (7u << PM1_CNT_SLP_TYP_IDX)
+#define PM1_CNT_SLP_EN (1u << 13)
+
+#define PM1_CNT_PRESERVE_MASK ((1u << 3) | (1u << 4) | (1u << 5) | (1u << 6) | \
+                               (1u << 7) | (1u << 8) | (1u << 9) |             \
+                               (1u << 14) | (1u << 15))
+
+#define PM1_STS_WAK_STS (1u << 15)
+
+#define FADT_HW_REDUCED_ACPI (1u << 20)
+
+/* ============================================================================
+ * Константы SLEEP_CONTROL_REG для HW-reduced ACPI
+ * ============================================================================ */
+#define SLP_CNT_SLP_TYP_IDX 2
+#define SLP_CNT_SLP_TYP_MASK (7u << SLP_CNT_SLP_TYP_IDX)
+#define SLP_CNT_SLP_EN (1u << 5)
+
+#define ACPI_SLP_TYP_MAX 0x7
 
 /* ============================================================================
  * Задержки
@@ -118,12 +159,8 @@ static inline void io_wait(void)
 static void delay_ms(int ms)
 {
     for (int i = 0; i < ms; i++)
-    {
         for (volatile int j = 0; j < 10000; j++)
-        {
             cpu_relax();
-        }
-    }
 }
 
 /* ============================================================================
@@ -135,202 +172,161 @@ static int acpi_checksum_valid(void *table, size_t length)
     uint8_t sum = 0;
     uint8_t *ptr = (uint8_t *)table;
     for (size_t i = 0; i < length; i++)
-    {
         sum += ptr[i];
-    }
     return sum == 0;
 }
 
-static void *find_acpi_table_rsdt(rsdt_t *rsdt, const char *signature)
+static void *find_table_rsdt(rsdt_t *rsdt, const char *sig)
 {
     if (!rsdt)
         return NULL;
-    acpi_sdt_header_t *header = &rsdt->header;
-    uint32_t entries = (header->length - sizeof(acpi_sdt_header_t)) / 4;
-
-    for (uint32_t i = 0; i < entries; i++)
+    uint32_t n = (rsdt->header.length - sizeof(acpi_sdt_header_t)) / 4;
+    for (uint32_t i = 0; i < n; i++)
     {
         uint32_t addr = rsdt->entries[i];
-        if (addr == 0)
+        if (!addr)
             continue;
-
-        acpi_sdt_header_t *table = (acpi_sdt_header_t *)(uintptr_t)addr;
-        if (memcmp(table->signature, signature, 4) == 0)
-        {
-            if (table->length >= sizeof(acpi_sdt_header_t) &&
-                acpi_checksum_valid(table, table->length))
-            {
-                return table;
-            }
-        }
+        acpi_sdt_header_t *t = (acpi_sdt_header_t *)(uintptr_t)addr;
+        if (memcmp(t->signature, sig, 4) == 0 &&
+            t->length >= sizeof(acpi_sdt_header_t) &&
+            acpi_checksum_valid(t, t->length))
+            return t;
     }
     return NULL;
 }
 
-static void *find_acpi_table_xsdt(xsdt_t *xsdt, const char *signature)
+static void *find_table_xsdt(xsdt_t *xsdt, const char *sig)
 {
     if (!xsdt)
         return NULL;
-    acpi_sdt_header_t *header = &xsdt->header;
-    uint32_t entries = (header->length - sizeof(acpi_sdt_header_t)) / 8;
-
-    for (uint32_t i = 0; i < entries; i++)
+    uint32_t n = (xsdt->header.length - sizeof(acpi_sdt_header_t)) / 8;
+    for (uint32_t i = 0; i < n; i++)
     {
         uint64_t addr = xsdt->entries[i];
-        if (addr == 0 || addr > 0xFFFFFFFFULL)
+        if (!addr || addr > 0xFFFFFFFFULL)
             continue;
-
-        acpi_sdt_header_t *table = (acpi_sdt_header_t *)(uintptr_t)addr;
-        if (memcmp(table->signature, signature, 4) == 0)
-        {
-            if (table->length >= sizeof(acpi_sdt_header_t) &&
-                acpi_checksum_valid(table, table->length))
-            {
-                return table;
-            }
-        }
+        acpi_sdt_header_t *t = (acpi_sdt_header_t *)(uintptr_t)addr;
+        if (memcmp(t->signature, sig, 4) == 0 &&
+            t->length >= sizeof(acpi_sdt_header_t) &&
+            acpi_checksum_valid(t, t->length))
+            return t;
     }
     return NULL;
 }
 
+static uint32_t gas_get_io_port(const gas_t *gas)
+{
+    if (!gas || gas->address_space != 1)
+        return 0;
+    if (!gas->address || gas->address > 0xFFFF)
+        return 0;
+    return (uint32_t)gas->address;
+}
+
 /* ============================================================================
- * Улучшенный парсер AML для поиска _S5 пакета
+ * Парсер AML для поиска объекта _S5_
  * ============================================================================ */
 
-static int parse_s5_package(uint8_t *pkg_start, uint32_t max_len,
+static int parse_s5_package(uint8_t *p, uint32_t max_len,
                             uint8_t *slp_typa, uint8_t *slp_typb)
 {
     uint32_t i = 0;
 
-    if (i >= max_len)
-        return 0;
-    if (pkg_start[i] != 0x12)
+    if (i >= max_len || p[i] != 0x12)
         return 0;
     i++;
 
     if (i >= max_len)
         return 0;
-    uint32_t pkg_length = pkg_start[i] & 0x3F;
-    uint8_t byte_count = (pkg_start[i] >> 6) & 0x03;
+    uint8_t extra = (p[i] >> 6) & 0x03;
     i++;
+    for (uint8_t b = 0; b < extra && i < max_len; b++, i++)
+        ;
 
-    for (uint8_t b = 0; b < byte_count && i < max_len; b++, i++)
-    {
-        pkg_length |= ((uint32_t)pkg_start[i]) << (8 * b + 4);
-    }
-
-    if (i >= max_len)
-        return 0;
-    uint8_t num_elements = pkg_start[i++];
-
-    if (num_elements < 2)
+    if (i >= max_len || p[i++] < 2)
         return 0;
 
     if (i >= max_len)
         return 0;
-    if (pkg_start[i] == 0x0A)
+    if (p[i] == 0x0A)
     {
         i++;
         if (i >= max_len)
             return 0;
-        *slp_typa = pkg_start[i++];
+        *slp_typa = p[i++];
     }
-    else if (pkg_start[i] == 0x00)
-    {
-        *slp_typa = 0;
-        i++;
-    }
-    else if (pkg_start[i] == 0x01)
-    {
-        *slp_typa = 1;
-        i++;
-    }
-    else if (pkg_start[i] == 0x0B)
+    else if (p[i] == 0x0B)
     {
         i++;
         if (i + 1 >= max_len)
             return 0;
-        *slp_typa = pkg_start[i];
+        *slp_typa = p[i];
         i += 2;
     }
-    else
+    else if (p[i] <= 0x0F)
     {
-        *slp_typa = pkg_start[i++] & 0x0F;
+        *slp_typa = p[i++];
     }
+    else
+        return 0;
 
     if (i >= max_len)
         return 0;
-    if (pkg_start[i] == 0x0A)
+    if (p[i] == 0x0A)
     {
         i++;
         if (i >= max_len)
             return 0;
-        *slp_typb = pkg_start[i++];
+        *slp_typb = p[i++];
     }
-    else if (pkg_start[i] == 0x00)
-    {
-        *slp_typb = 0;
-        i++;
-    }
-    else if (pkg_start[i] == 0x01)
-    {
-        *slp_typb = 1;
-        i++;
-    }
-    else if (pkg_start[i] == 0x0B)
+    else if (p[i] == 0x0B)
     {
         i++;
         if (i + 1 >= max_len)
             return 0;
-        *slp_typb = pkg_start[i];
+        *slp_typb = p[i];
         i += 2;
     }
-    else
+    else if (p[i] <= 0x0F)
     {
-        *slp_typb = pkg_start[i++] & 0x0F;
+        *slp_typb = p[i++];
     }
+    else
+        return 0;
+
+    if (*slp_typa > ACPI_SLP_TYP_MAX || *slp_typb > ACPI_SLP_TYP_MAX)
+        return 0;
 
     return 1;
 }
 
-static int find_s5_in_table(acpi_sdt_header_t *table, uint8_t *slp_typa, uint8_t *slp_typb)
+static int find_s5_in_table(acpi_sdt_header_t *table,
+                            uint8_t *slp_typa, uint8_t *slp_typb)
 {
     if (!table || table->length <= sizeof(acpi_sdt_header_t))
         return 0;
-
     uint8_t *aml = (uint8_t *)table + sizeof(acpi_sdt_header_t);
-    uint32_t len = table->length - sizeof(acpi_sdt_header_t);
+    uint32_t len = table->length - (uint32_t)sizeof(acpi_sdt_header_t);
 
-    for (uint32_t i = 0; i < len - 8; i++)
+    for (uint32_t i = 0; i + 4 <= len; i++)
     {
-        int found = 0;
+        int adv = 0;
+        if (aml[i] == '_' && aml[i + 1] == 'S' && aml[i + 2] == '5' && aml[i + 3] == '_')
+            adv = 4;
+        else if (i + 5 <= len && aml[i] == '\\' && aml[i + 1] == '_' &&
+                 aml[i + 2] == 'S' && aml[i + 3] == '5' && aml[i + 4] == '_')
+            adv = 5;
 
-        if (i + 4 <= len &&
-            aml[i] == '_' && aml[i + 1] == 'S' &&
-            aml[i + 2] == '5' && aml[i + 3] == '_')
-        {
-            found = 1;
-            i += 4;
-        }
-        else if (i + 4 <= len &&
-                 aml[i] == '\\' && aml[i + 1] == '_' &&
-                 aml[i + 2] == 'S' && aml[i + 3] == '5')
-        {
-            found = 1;
-            i += 4;
-        }
-
-        if (!found)
+        if (!adv)
             continue;
+        i += (uint32_t)adv;
 
         for (uint32_t j = 0; j < 64 && (i + j) < len; j++)
         {
             if (aml[i + j] == 0x12)
             {
                 if (parse_s5_package(&aml[i + j], len - (i + j), slp_typa, slp_typb))
-                {
                     return 1;
-                }
                 break;
             }
         }
@@ -339,13 +335,107 @@ static int find_s5_in_table(acpi_sdt_header_t *table, uint8_t *slp_typa, uint8_t
 }
 
 /* ============================================================================
- * ACPI выключение (основной метод)
+ * Включение режима ACPI (SMI → SCI)
+ * ============================================================================ */
+
+static void acpi_enable_mode(fadt_t *fadt, uint32_t pm1a_cnt)
+{
+    if (io_read16((uint16_t)pm1a_cnt) & PM1_CNT_SCI_EN)
+        return;
+    if (!fadt->smi_command_port || !fadt->acpi_enable)
+        return;
+
+    io_write8((uint16_t)fadt->smi_command_port, fadt->acpi_enable);
+
+    for (int ms = 0; ms < 3000; ms++)
+    {
+        if (io_read16((uint16_t)pm1a_cnt) & PM1_CNT_SCI_EN)
+            return;
+        delay_ms(1);
+    }
+}
+
+/* ============================================================================
+ * Очистка WAK_STS
+ * ============================================================================ */
+
+static void acpi_clear_wak_sts(fadt_t *fadt)
+{
+    if (fadt->pm1a_event_block)
+        io_write16((uint16_t)fadt->pm1a_event_block, PM1_STS_WAK_STS);
+    if (fadt->pm1b_event_block)
+        io_write16((uint16_t)fadt->pm1b_event_block, PM1_STS_WAK_STS);
+}
+
+/* ============================================================================
+ * Запись в PM1_CNT
+ * ============================================================================ */
+
+static void pm1_cnt_do_sleep(uint32_t port_a, uint32_t port_b,
+                             uint8_t slp_typa, uint8_t slp_typb)
+{
+    if (!port_a)
+        return;
+
+    uint16_t base = io_read16((uint16_t)port_a);
+
+#define PM1_CNT_GBL_RLS (1u << 2)
+    base &= (uint16_t)~(PM1_CNT_SLP_TYP_MASK | PM1_CNT_SLP_EN | PM1_CNT_GBL_RLS);
+
+    uint16_t pm1a = base | (uint16_t)((slp_typa & 0x7) << PM1_CNT_SLP_TYP_IDX);
+    uint16_t pm1b = base | (uint16_t)((slp_typb & 0x7) << PM1_CNT_SLP_TYP_IDX);
+
+    io_write16((uint16_t)port_a, pm1a);
+    io_wait();
+    if (port_b)
+    {
+        io_write16((uint16_t)port_b, pm1b);
+        io_wait();
+    }
+
+    pm1a |= PM1_CNT_SLP_EN;
+    pm1b |= PM1_CNT_SLP_EN;
+
+    io_write16((uint16_t)port_a, pm1a);
+    io_wait();
+    if (port_b)
+    {
+        io_write16((uint16_t)port_b, pm1b);
+        io_wait();
+    }
+}
+
+/* ============================================================================
+ * HW-reduced ACPI shutdown
+ * ============================================================================ */
+
+static void try_hw_reduced_shutdown(fadt_t *fadt, uint8_t slp_typ)
+{
+    if (!(fadt->flags & FADT_HW_REDUCED_ACPI))
+        return;
+    if (fadt->header.length < 256)
+        return;
+
+    uint32_t ctrl_port = gas_get_io_port(&fadt->sleep_control_reg);
+    if (!ctrl_port)
+        return;
+
+    uint8_t ctrl = (uint8_t)(((slp_typ << SLP_CNT_SLP_TYP_IDX) & SLP_CNT_SLP_TYP_MASK) |
+                             SLP_CNT_SLP_EN);
+
+    io_write8((uint16_t)ctrl_port, ctrl);
+    io_wait();
+    delay_ms(1000);
+}
+
+/* ============================================================================
+ * Метод 1: Полный ACPI shutdown (RSDP → XSDT/RSDT → FADT → DSDT/_S5)
  * ============================================================================ */
 
 static int try_acpi_shutdown(void)
 {
     boot_info_t *boot_info = get_boot_info();
-    if (!boot_info || boot_info->rsdp_addr == 0)
+    if (!boot_info || !boot_info->rsdp_addr)
         return 0;
 
     rsdp_v1_t *rsdp = (rsdp_v1_t *)(uintptr_t)boot_info->rsdp_addr;
@@ -356,339 +446,195 @@ static int try_acpi_shutdown(void)
     if (rsdp->revision >= 2)
     {
         rsdp_v2_t *rsdp2 = (rsdp_v2_t *)rsdp;
-        if (rsdp2->xsdt_address != 0 && rsdp2->xsdt_address <= 0xFFFFFFFFULL)
+        if (rsdp2->xsdt_address && rsdp2->xsdt_address <= 0xFFFFFFFFULL)
         {
             root_table = (void *)(uintptr_t)rsdp2->xsdt_address;
             use_xsdt = 1;
         }
     }
-
-    if (root_table == NULL && rsdp->rsdt_address != 0)
-    {
+    if (!root_table && rsdp->rsdt_address)
         root_table = (void *)(uintptr_t)rsdp->rsdt_address;
-        use_xsdt = 0;
-    }
-
-    if (root_table == NULL)
+    if (!root_table)
         return 0;
 
-    acpi_sdt_header_t *root_header = (acpi_sdt_header_t *)root_table;
-    if (!acpi_checksum_valid(root_table, root_header->length))
+    acpi_sdt_header_t *root_hdr = (acpi_sdt_header_t *)root_table;
+    if (!acpi_checksum_valid(root_table, root_hdr->length))
         return 0;
 
-    fadt_t *fadt = NULL;
-    if (use_xsdt)
-    {
-        fadt = (fadt_t *)find_acpi_table_xsdt((xsdt_t *)root_table, "FACP");
-    }
-    else
-    {
-        fadt = (fadt_t *)find_acpi_table_rsdt((rsdt_t *)root_table, "FACP");
-    }
-
-    if (fadt == NULL)
+    fadt_t *fadt = use_xsdt
+                       ? (fadt_t *)find_table_xsdt((xsdt_t *)root_table, "FACP")
+                       : (fadt_t *)find_table_rsdt((rsdt_t *)root_table, "FACP");
+    if (!fadt)
         return 0;
 
     uint32_t pm1a_cnt = 0;
     uint32_t pm1b_cnt = 0;
 
-    if (fadt->header.length >= 148)
+    if (fadt->header.length >= 196)
     {
-        uint8_t *fadt_data = (uint8_t *)fadt;
-        uint8_t *x_pm1a_ptr = fadt_data + 148;
-
-        uint8_t addr_space = x_pm1a_ptr[0];
-        if (addr_space == 1)
-        {
-            uint64_t addr;
-            memcpy(&addr, x_pm1a_ptr + 4, 8);
-            if (addr <= 0xFFFF)
-            {
-                pm1a_cnt = (uint32_t)addr;
-            }
-        }
-
-        uint8_t *x_pm1b_ptr = fadt_data + 160;
-        addr_space = x_pm1b_ptr[0];
-        if (addr_space == 1)
-        {
-            uint64_t addr;
-            memcpy(&addr, x_pm1b_ptr + 4, 8);
-            if (addr <= 0xFFFF)
-            {
-                pm1b_cnt = (uint32_t)addr;
-            }
-        }
+        uint32_t p = gas_get_io_port(&fadt->x_pm1a_control_block);
+        if (p)
+            pm1a_cnt = p;
+        p = gas_get_io_port(&fadt->x_pm1b_control_block);
+        if (p)
+            pm1b_cnt = p;
     }
-
-    if (pm1a_cnt == 0)
-    {
+    if (!pm1a_cnt)
         pm1a_cnt = fadt->pm1a_control_block;
-    }
-    if (pm1b_cnt == 0)
-    {
+    if (!pm1b_cnt)
         pm1b_cnt = fadt->pm1b_control_block;
-    }
-
-    if (pm1a_cnt == 0)
+    if (!pm1a_cnt)
         return 0;
 
     acpi_sdt_header_t *dsdt = NULL;
 
-    if (fadt->header.length >= 140)
-    {
-        uint8_t *fadt_data = (uint8_t *)fadt;
-        uint64_t x_dsdt_addr;
-        memcpy(&x_dsdt_addr, fadt_data + 140, 8);
-
-        if (x_dsdt_addr != 0 && x_dsdt_addr <= 0xFFFFFFFFULL)
-        {
-            dsdt = (acpi_sdt_header_t *)(uintptr_t)x_dsdt_addr;
-        }
-    }
-
-    if (dsdt == NULL && fadt->dsdt != 0)
-    {
+    if (fadt->header.length >= 148 && fadt->x_dsdt &&
+        fadt->x_dsdt <= 0xFFFFFFFFULL)
+        dsdt = (acpi_sdt_header_t *)(uintptr_t)fadt->x_dsdt;
+    if (!dsdt && fadt->dsdt)
         dsdt = (acpi_sdt_header_t *)(uintptr_t)fadt->dsdt;
-    }
 
     uint8_t slp_typa = 5;
     uint8_t slp_typb = 5;
 
-    if (dsdt && acpi_checksum_valid(dsdt, dsdt->length))
+    if (!dsdt || !acpi_checksum_valid(dsdt, dsdt->length) ||
+        !find_s5_in_table(dsdt, &slp_typa, &slp_typb))
     {
-        find_s5_in_table(dsdt, &slp_typa, &slp_typb);
+        acpi_sdt_header_t *ssdt = use_xsdt
+                                      ? (acpi_sdt_header_t *)find_table_xsdt((xsdt_t *)root_table, "SSDT")
+                                      : (acpi_sdt_header_t *)find_table_rsdt((rsdt_t *)root_table, "SSDT");
+        if (ssdt)
+            find_s5_in_table(ssdt, &slp_typa, &slp_typb);
     }
 
-    if (!find_s5_in_table(dsdt, &slp_typa, &slp_typb))
-    {
-        if (use_xsdt)
-        {
-            acpi_sdt_header_t *ssdt = (acpi_sdt_header_t *)find_acpi_table_xsdt((xsdt_t *)root_table, "SSDT");
-            if (ssdt)
-            {
-                find_s5_in_table(ssdt, &slp_typa, &slp_typb);
-            }
-        }
-        else
-        {
-            acpi_sdt_header_t *ssdt = (acpi_sdt_header_t *)find_acpi_table_rsdt((rsdt_t *)root_table, "SSDT");
-            if (ssdt)
-            {
-                find_s5_in_table(ssdt, &slp_typa, &slp_typb);
-            }
-        }
-    }
+    acpi_enable_mode(fadt, pm1a_cnt);
 
-    if (fadt->smi_command_port != 0 && fadt->acpi_enable != 0)
-    {
-        uint16_t pm1_sts = io_read16((uint16_t)pm1a_cnt);
-        if ((pm1_sts & 1) == 0)
-        {
-            io_write8((uint16_t)fadt->smi_command_port, fadt->acpi_enable);
-            delay_ms(100);
-        }
-    }
-
-    uint16_t pm1a_value = (1 << 13) | ((uint16_t)(slp_typa & 0x7) << 10);
-    uint16_t pm1b_value = (1 << 13) | ((uint16_t)(slp_typb & 0x7) << 10);
+    acpi_clear_wak_sts(fadt);
 
     local_irq_disable();
 
-    io_write16((uint16_t)pm1a_cnt, pm1a_value);
-    io_wait();
+    try_hw_reduced_shutdown(fadt, slp_typa);
 
-    if (pm1b_cnt != 0)
-    {
-        io_write16((uint16_t)pm1b_cnt, pm1b_value);
-        io_wait();
-    }
+    pm1_cnt_do_sleep(pm1a_cnt, pm1b_cnt, slp_typa, slp_typb);
 
-    delay_ms(1000);
-
+    delay_ms(10000);
     return 0;
 }
 
 /* ============================================================================
- * Метод 2: Brute-force ACPI
+ * Метод 2: ACPI brute-force (без парсинга DSDT, перебираем SLP_TYP)
  * ============================================================================ */
 
 static int try_acpi_bruteforce(void)
 {
     boot_info_t *boot_info = get_boot_info();
-    if (!boot_info || boot_info->rsdp_addr == 0)
+    if (!boot_info || !boot_info->rsdp_addr)
         return 0;
 
     rsdp_v1_t *rsdp = (rsdp_v1_t *)(uintptr_t)boot_info->rsdp_addr;
-    if (rsdp->rsdt_address == 0)
+    if (!rsdp->rsdt_address)
         return 0;
 
     rsdt_t *rsdt = (rsdt_t *)(uintptr_t)rsdp->rsdt_address;
-    fadt_t *fadt = (fadt_t *)find_acpi_table_rsdt(rsdt, "FACP");
-
-    if (fadt == NULL || fadt->pm1a_control_block == 0)
+    fadt_t *fadt = (fadt_t *)find_table_rsdt(rsdt, "FACP");
+    if (!fadt || !fadt->pm1a_control_block)
         return 0;
 
-    uint16_t pm1a_cnt = (uint16_t)fadt->pm1a_control_block;
-    uint16_t pm1b_cnt = (uint16_t)fadt->pm1b_control_block;
+    uint32_t pm1a = fadt->pm1a_control_block;
+    uint32_t pm1b = fadt->pm1b_control_block;
 
+    acpi_enable_mode(fadt, pm1a);
+    acpi_clear_wak_sts(fadt);
     local_irq_disable();
 
-    uint8_t slp_values[] = {5, 7, 0, 6, 4, 3, 2, 1};
-
+    uint8_t slp_values[] = {5, 7, 6, 4, 3, 2, 1, 0};
     for (int i = 0; i < 8; i++)
     {
-        uint16_t value = (1 << 13) | ((uint16_t)slp_values[i] << 10);
-        io_write16(pm1a_cnt, value);
-        if (pm1b_cnt != 0)
-        {
-            io_write16(pm1b_cnt, value);
-        }
-        delay_ms(100);
+        pm1_cnt_do_sleep(pm1a, pm1b, slp_values[i], slp_values[i]);
+        delay_ms(200);
     }
-
     return 0;
 }
 
 /* ============================================================================
- * Метод 3: QEMU/Bochs/VirtualBox/Cloud Hypervisor специальные порты
+ * Метод 3: Эмулятор-специфичные порты (QEMU/Bochs/VirtualBox/Cloud Hypervisor)
  * ============================================================================ */
 
-static void try_qemu_shutdown(void)
+static void try_emulator_shutdown(void)
 {
     io_write16(0x604, 0x2000);
+    io_wait();
     delay_ms(100);
 
     io_write16(0xB004, 0x2000);
+    io_wait();
     delay_ms(100);
 
-    io_write8(0xf4, 0x00);
-    delay_ms(100);
-}
-
-static void try_virtualbox_shutdown(void)
-{
     io_write16(0x4004, 0x3400);
+    io_wait();
     delay_ms(100);
-}
 
-static void try_cloud_hypervisor_shutdown(void)
-{
     io_write16(0x600, 0x34);
+    io_wait();
     delay_ms(100);
 }
 
 /* ============================================================================
- * Метод 4: Port 0xCF9 (PCI Reset)
+ * Метод 4: Port 0xCF9 - Full PCI/CPU Reset
  * ============================================================================ */
 
-static void try_pci_reset(void)
+static void try_cf9_reset(void)
 {
-    uint8_t temp = io_read8(0xCF9);
-    temp |= 0x04;
-    temp |= 0x02;
-    io_write8(0xCF9, temp);
-    delay_ms(100);
-
-    io_write8(0xCF9, 0x0E);
-    delay_ms(100);
-
+    uint8_t v = io_read8(0xCF9) & ~0x0E;
+    io_write8(0xCF9, v | 0x0A);
+    io_wait();
+    io_write8(0xCF9, v | 0x0E);
+    io_wait();
+    delay_ms(500);
     io_write8(0xCF9, 0x06);
-    delay_ms(100);
+    io_wait();
+    delay_ms(500);
 }
 
 /* ============================================================================
- * Метод 5: Keyboard Controller
+ * Метод 5: Keyboard Controller Reset (PS/2)
  * ============================================================================ */
 
-static void try_keyboard_shutdown(void)
+static void try_keyboard_reset(void)
 {
-    uint8_t temp;
-
-    for (int i = 0; i < 1000; i++)
+    for (int i = 0; i < 10000; i++)
     {
-        temp = io_read8(0x64);
-        if ((temp & 0x02) == 0)
+        if (!(io_read8(0x64) & 0x02))
             break;
         io_wait();
     }
-
     io_write8(0x64, 0xFE);
     delay_ms(500);
-
-    for (int i = 0; i < 1000; i++)
-    {
-        temp = io_read8(0x64);
-        if ((temp & 0x02) == 0)
-            break;
-        io_wait();
-    }
-    io_write8(0x64, 0xD1);
-
-    for (int i = 0; i < 1000; i++)
-    {
-        temp = io_read8(0x64);
-        if ((temp & 0x02) == 0)
-            break;
-        io_wait();
-    }
-    io_write8(0x60, 0x00);
-    delay_ms(500);
 }
 
 /* ============================================================================
- * Метод 6: PS/2 Controller
+ * Метод 6: Triple Fault - гарантированная остановка
  * ============================================================================ */
 
-static void try_ps2_shutdown(void)
-{
-    while (io_read8(0x64) & 0x02)
-        io_wait();
-    io_write8(0x64, 0xAD);
-
-    while (io_read8(0x64) & 0x02)
-        io_wait();
-    io_write8(0x64, 0xA7);
-
-    while (io_read8(0x64) & 0x02)
-        io_wait();
-    io_write8(0x64, 0xD0);
-
-    while ((io_read8(0x64) & 0x01) == 0)
-        io_wait();
-    uint8_t port = io_read8(0x60);
-
-    while (io_read8(0x64) & 0x02)
-        io_wait();
-    io_write8(0x64, 0xD1);
-
-    while (io_read8(0x64) & 0x02)
-        io_wait();
-    io_write8(0x60, port & ~0x01);
-
-    delay_ms(500);
-}
-
-/* ============================================================================
- * Метод 7: Triple Fault
- * ============================================================================ */
-
-static void __attribute__((noreturn)) try_triple_fault(void)
+static void __attribute__((noreturn)) do_triple_fault(void)
 {
     struct
     {
         uint16_t limit;
         uint64_t base;
-    } __attribute__((packed)) idtr = {0, 0};
+    } __attribute__((packed)) idtr_null = {0, 0};
 
     __asm__ volatile(
-        "cli\n"
-        "lidt %0\n"
-        "int $0x00\n"
-        : : "m"(idtr));
+        "cli\n\t"
+        "lidt %0\n\t"
+        "int $0x00\n\t"
+        :
+        : "m"(idtr_null)
+        : "memory");
 
     while (1)
     {
+        local_irq_disable();
         halt();
     }
 }
@@ -705,25 +651,16 @@ void __attribute__((noreturn)) universal_shutdown(void)
     try_acpi_bruteforce();
     delay_ms(500);
 
-    try_qemu_shutdown();
-    delay_ms(300);
-
-    try_virtualbox_shutdown();
-    delay_ms(300);
-
-    try_cloud_hypervisor_shutdown();
-    delay_ms(300);
-
-    try_pci_reset();
+    try_emulator_shutdown();
     delay_ms(500);
 
-    try_keyboard_shutdown();
+    try_cf9_reset();
     delay_ms(500);
 
-    try_ps2_shutdown();
+    try_keyboard_reset();
     delay_ms(500);
 
-    try_triple_fault();
+    do_triple_fault();
 
     while (1)
     {
