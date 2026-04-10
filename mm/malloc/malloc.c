@@ -336,35 +336,3 @@ size_t malloc_usable_size(void *ptr)
         return 0;
     return h->size;
 }
-
-static size_t kstrlen(const char *s)
-{
-    size_t i = 0;
-    if (!s)
-        return 0;
-    while (s[i])
-        ++i;
-    return i;
-}
-
-/* Перевод unsigned -> строка десятичная (buf размером >= 32) */
-static char *u32_to_dec(uint32_t v, char *buf)
-{
-    char tmp[32];
-    int i = 0;
-    if (v == 0)
-    {
-        buf[0] = '0';
-        buf[1] = '\0';
-        return buf;
-    }
-    while (v)
-    {
-        tmp[i++] = '0' + (v % 10);
-        v /= 10;
-    }
-    for (int j = 0; j < i; ++j)
-        buf[j] = tmp[i - 1 - j];
-    buf[i] = '\0';
-    return buf;
-}

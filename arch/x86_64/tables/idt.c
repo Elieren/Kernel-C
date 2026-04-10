@@ -9,7 +9,7 @@ static struct idt_entry idt[IDT_ENTRIES];
 static struct idt_ptr idtp;
 
 /* Установка записи IDT для 64-bit handler */
-void idt_set_gate(uint8_t num, void (*handler)(), uint16_t sel, uint8_t flags)
+void idt_set_gate(uint16_t num, void (*handler)(), uint16_t sel, uint8_t flags)
 {
     if (num >= IDT_ENTRIES)
         return;
@@ -33,7 +33,7 @@ void idt_install(void)
     idtp.base = (uint64_t)&idt; /* 64-bit адрес */
 
     /* Массив указателей на stubs - удобно для цикла */
-    static const void (*stubs[32])() = {
+    static void (*stubs[32])() = {
         isr_stub_0, isr_stub_1, isr_stub_2, isr_stub_3,
         isr_stub_4, isr_stub_5, isr_stub_6, isr_stub_7,
         isr_stub_8, isr_stub_9, isr_stub_10, isr_stub_11,

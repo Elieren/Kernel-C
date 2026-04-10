@@ -28,9 +28,6 @@ static task_t *zombie_list = NULL;
 
 char *strdup(const char *s)
 {
-    if (!s)
-        return NULL;
-
     size_t len = strlen(s) + 1; // +1 для '\0'
     char *dup = (char *)malloc(len);
 

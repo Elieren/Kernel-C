@@ -33,7 +33,7 @@ struct __attribute__((packed)) idt_ptr
     uint64_t base;
 };
 
-void idt_set_gate(uint8_t num, void (*handler)(), uint16_t sel, uint8_t flags);
+void idt_set_gate(uint16_t num, void (*handler)(), uint16_t sel, uint8_t flags);
 void idt_install(void);
 
 /* 64-bit wrapper for lidt implemented in asm */

@@ -1,5 +1,5 @@
 #include "panic.h"
-#include "drivers/video/framebuffer/graphics.h"
+#include "drivers/video/video.h"
 #include "kernel/power/power.h"
 #include "kernel/sched/multitask/multitask.h"
 #include "kernel/time/timer.h"
@@ -65,8 +65,8 @@ static void flush_panic_buffer(void)
         return;
 
     panic_output_buffer[panic_output_pos] = '\0';
-    gfx_put_string(panic_output_buffer, 0x00FFFFFF);
-    gfx_update_screen();
+    video_print_string(panic_output_buffer, 0x00FFFFFF);
+    video_update_screen();
 }
 
 static void reset_buffer(void)
@@ -526,7 +526,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
     }
 
     /* ===== ОЧИСТКА ЭКРАНА И ФОРМИРОВАНИЕ ВЫВОДА ===== */
-    gfx_clear(0x00000000);
+    video_clear(0x00000000);
 
     // Проверяем, что буфер выделен
     if (!ensure_buffer_allocated())

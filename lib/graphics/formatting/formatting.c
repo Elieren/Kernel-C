@@ -1,8 +1,7 @@
-#include "drivers/video/framebuffer/graphics.h"
+#include "drivers/video/video.h"
 #include "formatting.h"
 #include "lib/string/string.h"
 #include <stdarg.h>
-#include <stddef.h>
 #include <stdint.h>
 #include <limits.h>
 
@@ -214,7 +213,7 @@ int kprint(const uint8_t type, const char *format, ...)
 {
     if (!format)
     {
-        gfx_put_string("PRINT ERROR: Format string is NULL\n", 0x00FF0000);
+        video_print_string("PRINT ERROR: Format string is NULL\n", 0x00FF0000);
         return -1;
     }
 
@@ -227,7 +226,7 @@ int kprint(const uint8_t type, const char *format, ...)
 
     if (type >= sizeof(colors) / sizeof(colors[0]))
     {
-        gfx_put_string("PRINT ERROR: Invalid 'kprint' argument (type)\n", 0x00FF0000);
+        video_print_string("PRINT ERROR: Invalid 'kprint' argument (type)\n", 0x00FF0000);
         return -1;
     }
 
@@ -239,10 +238,10 @@ int kprint(const uint8_t type, const char *format, ...)
 
     if (r < 0)
     {
-        gfx_put_string("PRINT ERROR: String formatting failed\n", 0x00FF0000);
+        video_print_string("PRINT ERROR: String formatting failed\n", 0x00FF0000);
         return -1;
     }
 
-    gfx_put_string(buffer, colors[type]);
+    video_print_string(buffer, colors[type]);
     return 0;
 }

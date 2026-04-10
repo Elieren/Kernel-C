@@ -27,8 +27,7 @@
 #include "default_files.h"
 #include <boot/bootinfo.h>
 #include "lib/graphics/formatting/formatting.h"
-#include "drivers/video/framebuffer/graphics.h"
-#include "drivers/video/framebuffer/font.h"
+#include "drivers/video/video.h"
 #include "lib/graphics/glyphs/english_glyph.h"
 #include "drivers/block/ide/ide.h"
 #include "drivers/bus/pci/pci.h"
@@ -39,6 +38,7 @@
 
 /* символы из link.ld */
 extern char _heap_start;
+volatile bool graphics_mode = false;
 
 // ============================================================================
 // OPS
@@ -47,6 +47,8 @@ extern char _heap_start;
 extern void ps2_keyboard_register(void);
 extern void ps2_mouse_register(void);
 extern void pcs_sound_driver_init(void);
+extern void vga_register(void);
+extern void gfx_register(void);
 
 // ============================================================================
 // helper functions
@@ -116,43 +118,6 @@ int init_autorun(const char *autorun)
     return 0;
 }
 
-static void u64_to_dec_str(uint64_t val, char *out, size_t out_sz)
-{
-    if (out_sz == 0)
-        return;
-    out[out_sz - 1] = '\0';
-    char tmp[32];
-    int pos = 0;
-    if (val == 0)
-        tmp[pos++] = '0';
-    else
-    {
-        while (val && pos < (int)sizeof(tmp) - 1)
-        {
-            tmp[pos++] = '0' + (val % 10);
-            val /= 10;
-        }
-    }
-    int i;
-    int j = 0;
-    for (i = pos - 1; i >= 0 && j < (int)out_sz - 1; --i, ++j)
-        out[j] = tmp[i];
-    out[j] = '\0';
-}
-
-/* Урезает пробелы справа в строке длины <= len */
-static void rtrim_spaces(char *s)
-{
-    if (!s)
-        return;
-    int len = strlen(s);
-    while (len > 0 && (s[len - 1] == ' ' || s[len - 1] == '\t' || s[len - 1] == '\n' || s[len - 1] == '\r'))
-    {
-        s[len - 1] = '\0';
-        --len;
-    }
-}
-
 /*-------------------------------------------------------------
     Основная функция ядра
 -------------------------------------------------------------*/
@@ -188,17 +153,31 @@ void kmain(uint64_t mb2_addr)
 
     paging_init(info->total_memory);
 
-    gfx_init(&info->fb);
-
-    // Проверка инициализации framebuffer
-    if (!info || info->fb.addr == 0)
+    /* Регистрация видеодрайвера на основе наличия framebuffer */
+    if (info && info->fb.addr != 0)
     {
-        panic("FRAMEBUFFER_INIT_FAILED", true, false);
+        /* Framebuffer доступен - используем графический драйвер */
+        gfx_register();
+        graphics_mode = true;
+    }
+    else
+    {
+        /* Framebuffer недоступен - используем текстовый режим VGA */
+        vga_register();
     }
 
-    // Сохраняем разрешение экрана для использования в драйвере мыши
-    uint32_t g_screen_width = info->fb.width;
-    uint32_t g_screen_height = info->fb.height;
+    /* Инициализация видео */
+    video_init();
+
+    uint32_t g_screen_width = 0;
+    uint32_t g_screen_height = 0;
+
+    /* Настройка разрешения экрана для мыши (только для графического режима) */
+    if (info && info->fb.addr != 0)
+    {
+        g_screen_width = info->fb.width;
+        g_screen_height = info->fb.height;
+    }
 
     pci_init();
 
@@ -213,7 +192,8 @@ void kmain(uint64_t mb2_addr)
         keyboard_enable();
     }
 
-    if (mouse_init())
+    /* Инициализация мыши только если есть framebuffer */
+    if (info && info->fb.addr != 0 && mouse_init())
     {
         /* Устанавливаем границы мыши по размеру экрана */
         mouse_set_bounds(0, 0, g_screen_width - 1, g_screen_height - 1);
@@ -225,7 +205,7 @@ void kmain(uint64_t mb2_addr)
     }
 
     /* Очистим экран чёрный */
-    gfx_clear(0x00000000);
+    video_clear(0x00000000);
 
     ide_disk_t disk;
     ide_init(&disk, IDE_CHANNEL_PRIMARY, 0);

@@ -3,10 +3,11 @@
 #include "kernel/syscall/syscall.h"
 #include "fs/fat16/fs.h"
 #include "lib/string/string.h"
-#include "drivers/video/framebuffer/graphics.h"
+#include "drivers/video/video.h"
 #include <asm/cpu.h>
 
 extern bool screen_refresh_status;
+extern bool graphics_mode;
 
 /* Задача-реапер: бесконечно вызывает reap_zombies() */
 void zombie_reaper_task(void)
@@ -22,9 +23,9 @@ void screen_refresh(void)
 {
     for (;;)
     {
-        if (screen_refresh_status)
+        if (screen_refresh_status && graphics_mode)
         {
-            gfx_update_screen();
+            video_update_screen();
             screen_refresh_status = false;
         }
         halt();

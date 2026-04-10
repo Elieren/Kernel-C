@@ -10,6 +10,7 @@ static bool g_shift = false;
 static bool g_ctrl = false;
 static bool g_caps = false;
 static bool g_enabled = false;
+static bool g_extended = false; // флаг префикса 0xE0
 
 static bool g_initialized = false;
 
@@ -296,6 +297,7 @@ static bool ps2_keyboard_init(void)
     g_caps = false;
     g_ctrl = false;
     g_enabled = false;
+    g_extended = false;
     g_initialized = true;
     return true;
 }
@@ -379,11 +381,34 @@ void ps2_keyboard_handler(void)
 
     uint8_t code = io_read8(KEYBOARD_DATA_PORT);
 
-    // Проверяем Break-код (бит 7 = 1)
-    bool released = code & 0x80;
+    // Префикс расширенного сканкода — запоминаем и ждём следующий байт
+    if (code == 0xE0)
+    {
+        g_extended = true;
+        pic_send_eoi(1);
+        return;
+    }
+
+    bool released = (code & 0x80) != 0;
     uint8_t key = code & 0x7F;
 
-    // Обработка модификаторов
+    // Обработка расширенных сканкодов
+    if (g_extended)
+    {
+        g_extended = false;
+
+        if (key == KEY_RCONTROL_EXT) // правый Ctrl: 0xE0 0x1D
+        {
+            g_ctrl = !released;
+            keyboard_set_modifiers(g_shift, g_ctrl, g_caps);
+        }
+        // Сюда можно добавить KEY_RALT_EXT, KEY_KEYPAD_DIV_EXT и др.
+
+        pic_send_eoi(1);
+        return;
+    }
+
+    // Обработка обычных модификаторов
     if (key == KEY_LSHIFT || key == KEY_RSHIFT)
     {
         g_shift = !released;
@@ -392,7 +417,7 @@ void ps2_keyboard_handler(void)
         return;
     }
 
-    if (key == KEY_LCONTROL || key == KEY_RCONTROL)
+    if (key == KEY_LCONTROL)
     {
         g_ctrl = !released;
         keyboard_set_modifiers(g_shift, g_ctrl, g_caps);

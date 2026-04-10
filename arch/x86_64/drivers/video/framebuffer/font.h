@@ -13,7 +13,13 @@
 #define FONT_GLYPH_WIDTH 8
 #define FONT_GLYPH_HEIGHT 12
 
-static const uint8_t *glyph_table[128] = {
+#ifdef __GNUC__
+#define UNUSED __attribute__((unused))
+#else
+#define UNUSED
+#endif
+
+static const uint8_t *glyph_table[128] UNUSED = {
     /* Upper */
     ['A'] = (const uint8_t *)glyph_A,
     ['B'] = (const uint8_t *)glyph_B,

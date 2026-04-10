@@ -143,11 +143,14 @@
 #define KEY_F11 0x57
 #define KEY_F12 0x58
 
-// Расширенные скан-коды (префикс 0xE0)
-#define KEY_RCONTROL 0xE01D
-#define KEY_RALT 0xE038
-#define KEY_KEYPAD_DIV 0xE035
-#define KEY_PRINT_SCREEN 0xE037
+/*
+ * Расширенные скан-коды (префикс 0xE0).
+ * Эти коды — второй байт после префикса 0xE0, поэтому они помещаются
+ * в uint8_t и обрабатываются отдельно при g_extended == true.
+ */
+#define KEY_RCONTROL_EXT 0x1D   // правый Ctrl  (0xE0 0x1D)
+#define KEY_RALT_EXT 0x38       // правый Alt   (0xE0 0x38)
+#define KEY_KEYPAD_DIV_EXT 0x35 // Keypad /    (0xE0 0x35)
 
 // ============================================================================
 // Размер буфера

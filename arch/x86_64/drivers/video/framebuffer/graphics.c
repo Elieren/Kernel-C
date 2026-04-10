@@ -3,6 +3,7 @@
 #include <string.h>
 #include "mm/malloc/malloc.h"
 #include "font.h"
+#include <boot/bootinfo.h>
 
 const int GLYPH_W = 8;
 const int GLYPH_H = 12;
@@ -20,6 +21,9 @@ static uint32_t g_cx = 0;
 static uint32_t g_cy = 0;
 
 #define TAB_SIZE 8
+
+static void gfx_scroll_cells(void);
+static void gfx_draw_all_from_cells(void);
 
 /* --------------------------------------------------------------------------- */
 
@@ -49,8 +53,8 @@ static inline uint64_t cell_index(uint32_t gx, uint32_t gy)
     return (uint64_t)gy * (uint64_t)g_grid.cols + (uint64_t)gx;
 }
 
-grid_t calc_grid(uint32_t Sw, uint32_t Sh,
-                 uint32_t M)
+static grid_t calc_grid(uint32_t Sw, uint32_t Sh,
+                        uint32_t M)
 {
     grid_t g;
 
@@ -75,7 +79,7 @@ static inline bool in_bounds(int32_t x, int32_t y)
     return true;
 }
 
-void gfx_put_pixel_backbuffer(uint32_t x, uint32_t y, uint32_t color)
+static void gfx_put_pixel_backbuffer(uint32_t x, uint32_t y, uint32_t color)
 {
     if (!g_fb || !g_backbuffer)
         return;
@@ -96,12 +100,11 @@ void gfx_put_pixel_backbuffer(uint32_t x, uint32_t y, uint32_t color)
     }
 }
 
-void gfx_clear_backbuffer(void)
+static void gfx_clear_backbuffer(void)
 {
     if (!g_fb || !g_backbuffer)
         return;
 
-    uint32_t width = g_fb->width;
     uint32_t height = g_fb->height;
     uint32_t pitch = g_fb->pitch;
     uint8_t bpp = g_fb->bpp;
@@ -128,7 +131,7 @@ void gfx_clear_backbuffer(void)
 
 /* --------------------------------------------------------------------------- */
 
-void gfx_create_backbuffer(void)
+static void gfx_create_backbuffer(void)
 {
     if (!g_fb)
         return;
@@ -142,9 +145,15 @@ void gfx_create_backbuffer(void)
     memset(g_backbuffer, 0, size);
 }
 
-void gfx_init(framebuffer_info_t *fb)
+static void gfx_init()
 {
-    g_fb = fb;
+    boot_info_t *boot_info = get_boot_info();
+    if (!boot_info)
+    {
+        // Обработка ошибки: boot_info недоступен
+        return;
+    }
+    g_fb = &boot_info->fb;
 
     g_grid = calc_grid(2, 2, 10);
 
@@ -175,7 +184,7 @@ void gfx_init(framebuffer_info_t *fb)
 
 // ============================ char ============================
 
-void gfx_put_char_position(char ch, uint32_t gx, uint32_t gy, uint32_t color)
+static void gfx_put_char_position(char ch, uint32_t gx, uint32_t gy, uint32_t color)
 {
     if (!g_cells)
         return;
@@ -189,7 +198,7 @@ void gfx_put_char_position(char ch, uint32_t gx, uint32_t gy, uint32_t color)
     gfx_draw_all_from_cells();
 }
 
-void gfx_put_char(char ch, uint32_t color)
+static void gfx_put_char(char ch, uint32_t color)
 {
     if (!g_cells)
         return;
@@ -245,10 +254,10 @@ void gfx_put_char(char ch, uint32_t color)
 
 // ============================ string ============================
 
-void gfx_put_string_position(const char *str,
-                             uint32_t gx,
-                             uint32_t gy,
-                             uint32_t color)
+static void gfx_put_string_position(const char *str,
+                                    uint32_t gx,
+                                    uint32_t gy,
+                                    uint32_t color)
 {
     if (!g_cells || !str)
         return;
@@ -296,7 +305,7 @@ void gfx_put_string_position(const char *str,
     gfx_draw_all_from_cells();
 }
 
-void gfx_put_string(const char *str, uint32_t color)
+static void gfx_put_string(const char *str, uint32_t color)
 {
     if (!g_cells || !str)
         return;
@@ -378,7 +387,7 @@ void gfx_put_string(const char *str, uint32_t color)
 
 // =================================================================
 
-void gfx_scroll_cells(void)
+static void gfx_scroll_cells(void)
 {
     if (!g_cells || g_grid.rows == 0 || g_grid.cols == 0)
         return;
@@ -402,7 +411,7 @@ void gfx_scroll_cells(void)
     gfx_draw_all_from_cells();
 }
 
-void gfx_clear_cells(void)
+static void gfx_clear_cells(void)
 {
     if (!g_cells || g_total_cells == 0)
         return;
@@ -416,7 +425,7 @@ void gfx_clear_cells(void)
     gfx_draw_all_from_cells();
 }
 
-void gfx_backspace(void)
+static void gfx_backspace(void)
 {
     if (!g_cells || g_grid.cols == 0 || g_grid.rows == 0)
         return;
@@ -447,7 +456,7 @@ void gfx_backspace(void)
     gfx_draw_all_from_cells();
 }
 
-void gfx_draw_all_from_cells(void)
+static void gfx_draw_all_from_cells(void)
 {
     if (!g_cells)
         return;
@@ -487,7 +496,7 @@ void gfx_draw_all_from_cells(void)
     }
 }
 
-void gfx_update_screen(void)
+static void gfx_update_screen(void)
 {
     if (!g_fb || !g_backbuffer)
         return;
@@ -500,13 +509,13 @@ void gfx_update_screen(void)
 
 /* --------------------------------------------------------------------------- */
 
-void gfx_draw_point(uint32_t x, uint32_t y, uint32_t color)
+static void gfx_draw_point(uint32_t x, uint32_t y, uint32_t color)
 {
     gfx_put_pixel_backbuffer(x, y, color);
 }
 
 /* Алгоритм Брезенхэма для линий (работает в любом направлении) */
-void gfx_draw_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
+static void gfx_draw_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
 {
     if (!g_fb)
         return;
@@ -601,7 +610,7 @@ static void draw_hline_clipped(int32_t x0, int32_t x1, int32_t y, uint32_t color
 }
 
 /* Алгоритм средней точки — контур окружности */
-void gfx_draw_circle(int32_t xc, int32_t yc, int32_t radius, uint32_t color)
+static void gfx_draw_circle(int32_t xc, int32_t yc, int32_t radius, uint32_t color)
 {
     if (!g_fb)
         return;
@@ -645,7 +654,7 @@ void gfx_draw_circle(int32_t xc, int32_t yc, int32_t radius, uint32_t color)
 }
 
 /* Алгоритм средней точки — заполненная окружность: рисует горизонтальные отрезки между симметричными точками */
-void gfx_fill_circle(int32_t xc, int32_t yc, int32_t radius, uint32_t color)
+static void gfx_fill_circle(int32_t xc, int32_t yc, int32_t radius, uint32_t color)
 {
     if (!g_fb)
         return;
@@ -677,7 +686,7 @@ void gfx_fill_circle(int32_t xc, int32_t yc, int32_t radius, uint32_t color)
 }
 
 /* Рисует контур прямоугольника (x0,y0)-(x1,y1) */
-void gfx_draw_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
+static void gfx_draw_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
 {
     if (!g_fb)
         return;
@@ -727,7 +736,7 @@ void gfx_draw_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t colo
 }
 
 /* Заполняет прямоугольник (x0,y0)-(x1,y1) цветом */
-void gfx_fill_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
+static void gfx_fill_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color)
 {
     if (!g_fb)
         return;
@@ -754,7 +763,7 @@ void gfx_fill_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t colo
 }
 
 /* заполнить весь экран заданным цветом */
-void gfx_clear(uint32_t color)
+static void gfx_clear(uint32_t color)
 {
     if (!g_fb)
         return;
@@ -813,4 +822,30 @@ void gfx_draw_glyph(const uint8_t *glyph, int x0, int y0, uint32_t color, int sc
             }
         }
     }
+}
+
+const video_ops_t gfx_ops = {
+    .name = "framebuffer",
+    .init = gfx_init,
+    .print_char_position = gfx_put_char_position,
+    .print_char = gfx_put_char,
+    .print_string_position = gfx_put_string_position,
+    .print_string = gfx_put_string,
+    .backspace = gfx_backspace,
+    .update_cursor = NULL, /* аппаратного курсора нет */
+    .clean_screen = gfx_clear_cells,
+    .clear = gfx_clear,
+    .scroll = gfx_scroll_cells,
+    .update_screen = gfx_update_screen,
+    .draw_point = gfx_draw_point,
+    .draw_line = gfx_draw_line,
+    .draw_circle = gfx_draw_circle,
+    .fill_circle = gfx_fill_circle,
+    .draw_rect = gfx_draw_rect,
+    .fill_rect = gfx_fill_rect,
+};
+
+void gfx_register(void)
+{
+    video_register(&gfx_ops);
 }

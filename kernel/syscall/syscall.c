@@ -7,7 +7,7 @@
 #include "fs/fat16/fs.h"
 #include "kernel/time/clock/clock.h"
 #include "lib/graphics/formatting/formatting.h"
-#include "drivers/video/framebuffer/graphics.h"
+#include "drivers/video/video.h"
 #include "kernel/panic/panic.h"
 
 #include <stdint.h>
@@ -17,9 +17,6 @@
 #include <asm/cpu.h>
 
 extern volatile uint32_t seconds;
-
-static char str[11];
-static char tmp[11];
 
 uint64_t load_and_run_program(const char *str)
 {
@@ -170,26 +167,26 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     switch ((uint32_t)regs->rax)
     {
     case SYSCALL_PRINT_CHAR_POSITION:
-        gfx_put_char_position((char)regs->rdi, (uint32_t)regs->rsi,
-                              (uint32_t)regs->rdx, (uint32_t)regs->r10);
+        video_print_char_position((char)regs->rdi, (uint32_t)regs->rsi,
+                                  (uint32_t)regs->rdx, (uint32_t)regs->r10);
         return 0;
 
     case SYSCALL_PRINT_STRING_POSITION:
-        gfx_put_string_position((const char *)(uintptr_t)regs->rdi,
-                                (uint32_t)regs->rsi, (uint32_t)regs->rdx,
-                                (uint32_t)regs->r10);
+        video_print_string_position((const char *)(uintptr_t)regs->rdi,
+                                    (uint32_t)regs->rsi, (uint32_t)regs->rdx,
+                                    (uint32_t)regs->r10);
         return 0;
 
     case SYSCALL_PRINT_CHAR:
-        gfx_put_char((char)regs->rdi, (uint32_t)regs->rsi);
+        video_print_char((char)regs->rdi, (uint32_t)regs->rsi);
         return 0;
 
     case SYSCALL_PRINT_STRING:
-        gfx_put_string((const char *)(uintptr_t)regs->rdi, (uint32_t)regs->rsi);
+        video_print_string((const char *)(uintptr_t)regs->rdi, (uint32_t)regs->rsi);
         return 0;
 
     case SYSCALL_BACKSPACE:
-        gfx_backspace();
+        video_backspace();
         return 0;
 
     case SYSCALL_GET_TIME:
@@ -206,7 +203,7 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return (uintptr_t)seconds;
 
     case SYSCALL_CLEAN_SCREEN:
-        gfx_clear_cells();
+        video_clean_screen();
         return 0;
 
     case SYSCALL_MALLOC:
@@ -290,7 +287,7 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     }
 
     case SYSCALL_SETPOSCURSOR:
-        // update_hardware_cursor((uint8_t)regs->rdi, (uint8_t)regs->rsi);
+        video_update_cursor((uint8_t)regs->rdi, (uint8_t)regs->rsi);
         return 0;
 
     case SYSCALL_POWER_OFF:
@@ -325,36 +322,36 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return kprint((uint8_t)regs->rdi, (const char *)(uintptr_t)regs->rsi);
 
     case SYSCALL_GFX_DRAW_POINT:
-        gfx_draw_point((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx);
+        video_draw_point((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx);
         return 0;
 
     case SYSCALL_GFX_DRAW_LINE:
-        gfx_draw_line((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
-                      (uint32_t)regs->r10, (uint32_t)regs->r8);
+        video_draw_line((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
+                        (uint32_t)regs->r10, (uint32_t)regs->r8);
         return 0;
 
     case SYSCALL_GFX_DRAW_CIRCLE:
-        gfx_draw_circle((uint32_t)regs->rdi, (uint32_t)regs->rsi,
-                        (uint32_t)regs->rdx, (uint32_t)regs->r10);
+        video_draw_circle((uint32_t)regs->rdi, (uint32_t)regs->rsi,
+                          (uint32_t)regs->rdx, (uint32_t)regs->r10);
         return 0;
 
     case SYSCALL_GFX_FILL_CIRCLE:
-        gfx_fill_circle((uint32_t)regs->rdi, (uint32_t)regs->rsi,
-                        (uint32_t)regs->rdx, (uint32_t)regs->r10);
+        video_fill_circle((uint32_t)regs->rdi, (uint32_t)regs->rsi,
+                          (uint32_t)regs->rdx, (uint32_t)regs->r10);
         return 0;
 
     case SYSCALL_GFX_DRAW_RECT:
-        gfx_draw_rect((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
-                      (uint32_t)regs->r10, (uint32_t)regs->r8);
+        video_draw_rect((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
+                        (uint32_t)regs->r10, (uint32_t)regs->r8);
         return 0;
 
     case SYSCALL_GFX_FILL_RECT:
-        gfx_fill_rect((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
-                      (uint32_t)regs->r10, (uint32_t)regs->r8);
+        video_fill_rect((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx,
+                        (uint32_t)regs->r10, (uint32_t)regs->r8);
         return 0;
 
     case SYSCALL_GFX_CLEAR:
-        gfx_clear((uint32_t)regs->rdi);
+        video_clear((uint32_t)regs->rdi);
         return 0;
 
     case SYSCALL_CHDIR:
@@ -363,7 +360,7 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     case SYSCALL_GETCWD:
     {
         int result = sys_getcwd((char *)(uintptr_t)regs->rdi, (size_t)regs->rsi);
-        return (result == -1) ? -1 : (uintptr_t)result;
+        return (result == -1) ? (uintptr_t)-1 : (uintptr_t)result;
     }
 
     case SYSCALL_GET_CWD_IDX:
