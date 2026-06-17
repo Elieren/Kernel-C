@@ -9,8 +9,10 @@
 typedef struct
 {
     framebuffer_info_t fb; /* информация о фреймбуфере */
-    uint64_t rsdp_addr;    /* адрес RSDP (ACPI) */
     uint64_t total_memory; /* общий размер памяти */
+#if defined(__x86_64__) || defined(__i386__)
+    uint64_t rsdp_addr; /* адрес RSDP (ACPI) */
+#endif
 } boot_info_t;
 
 // Функция, которую реализует каждая архитектура

@@ -8,6 +8,7 @@ DRIVERS_C_SRCS := \
 	drivers/input/keyboard/keyboard.c \
 	drivers/input/mouse/mouse.c \
 	drivers/sound/sound.c \
-	drivers/video/video.c
+	drivers/video/video.c \
+	drivers/serial/serial.c
 
 SRCS_C += $(DRIVERS_C_SRCS)

@@ -32,6 +32,7 @@
 #include "drivers/block/ide/ide.h"
 #include "drivers/bus/pci/pci.h"
 #include "drivers/sound/sound.h"
+#include "drivers/serial/serial.h"
 #include "kernel/panic/panic.h"
 #include <asm/cpu.h>
 #include "mm/paging/paging.h"
@@ -44,11 +45,14 @@ volatile bool graphics_mode = false;
 // OPS
 // ============================================================================
 
+#if defined(__x86_64__) || defined(__i386__)
 extern void ps2_keyboard_register(void);
 extern void ps2_mouse_register(void);
 extern void pcs_sound_driver_init(void);
 extern void vga_register(void);
 extern void gfx_register(void);
+extern void uart16550_driver_init(void);
+#endif
 
 // ============================================================================
 // helper functions
@@ -124,11 +128,13 @@ int init_autorun(const char *autorun)
 void kmain(uint64_t mb2_addr)
 {
     /* Инициализация прерываний и таймера */
-    idt_install();
     init_system_clock();
+#if defined(__x86_64__) || defined(__i386__)
+    idt_install();
     init_timer(1000);
     io_write8(0x21, 0xF8); // маска прерываний PIC1
     io_write8(0xA1, 0xEF); // маска прерываний PIC2
+#endif
 
     boot_info_t *info = arch_parse_boot_info(mb2_addr);
 
@@ -178,6 +184,10 @@ void kmain(uint64_t mb2_addr)
         g_screen_width = info->fb.width;
         g_screen_height = info->fb.height;
     }
+
+    uart16550_driver_init();
+    if (serial_init(UART_COM1, 115200))
+        serial_write_string(UART_COM1, "[serial] ready\n");
 
     pci_init();
 
