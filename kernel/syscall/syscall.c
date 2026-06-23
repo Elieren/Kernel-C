@@ -9,6 +9,7 @@
 #include "lib/graphics/formatting/formatting.h"
 #include "drivers/video/video.h"
 #include "kernel/panic/panic.h"
+#include "kernel/loader/elf_loader.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -71,7 +72,7 @@ uint64_t load_and_run_program(const char *str)
 
     // 2. Найти файл в /bin
     fs_entry_t entry;
-    int file_idx = fs_find_in_dir(progname, "bin", bin_idx, &entry);
+    int file_idx = fs_find_in_dir(progname, "elf", bin_idx, &entry);
     if (file_idx < 0)
     {
         local_irq_enable();
@@ -83,22 +84,37 @@ uint64_t load_and_run_program(const char *str)
         return 0;
     }
 
-    // 3. Выделить память для файла + хвост для argv/strings
-    size_t alloc_size = (size_t)entry.size + 2048;
-    void *user_mem = malloc(alloc_size);
-    if (!user_mem)
+    // 3. Прочитать ELF-файл целиком во временный буфер
+    void *file_buf = malloc(entry.size);
+    if (!file_buf)
     {
         local_irq_enable();
         return 0;
     }
-    memset(user_mem, 0, alloc_size);
 
-    // 4. Прочитать файл в user_mem
-    fs_read_file_in_dir(progname, "bin", bin_idx, user_mem, entry.size, NULL);
+    if (fs_read_file_in_dir(progname, "elf", bin_idx, file_buf, entry.size, NULL) != 0)
+    {
+        free(file_buf);
+        local_irq_enable();
+        return 0;
+    }
 
-    // 5. Подготовить argv внутри user_mem: разместим массив указателей и строки
-    char *area = (char *)user_mem + entry.size;
-    size_t area_size = alloc_size - entry.size;
+    // 4. Разобрать ELF и загрузить его PT_LOAD-сегменты в новый буфер образа.
+    elf_image_t image;
+    int elf_rc = elf_load_image(file_buf, entry.size, 2048 /* место под argv/строки */, &image);
+    free(file_buf);
+    if (elf_rc != ELF_LOAD_OK)
+    {
+        local_irq_enable();
+        return 0; // битый/неподдерживаемый ELF — отказываемся запускать
+    }
+
+    void *user_mem = image.image_base;
+    size_t alloc_size = image.image_size;
+
+    // 5. Подготовить argv в свободном хвосте образа: разместим массив указателей и строки
+    char *area = (char *)user_mem + image.segments_end;
+    size_t area_size = alloc_size - image.segments_end;
     size_t used = 0;
 
     size_t ptrs_size = (argc + 1) * sizeof(char *);
@@ -133,8 +149,8 @@ uint64_t load_and_run_program(const char *str)
 
     uintptr_t argv_user_ptr = (uintptr_t)argv_user;
 
-    // 6. Создать задачу и передать туда файл + argc/argv
-    uint64_t pid = utask_create((void (*)(void))user_mem, 16384, user_mem, alloc_size, argc, argv_user_ptr, progname);
+    // 6. Создать задачу: точка входа — настоящий e_entry из ELF, а не начало буфера
+    uint64_t pid = utask_create((void (*)(void))(uintptr_t)image.entry, 16384, user_mem, alloc_size, argc, argv_user_ptr, progname);
     if (pid == 0)
     {
         free(user_mem);

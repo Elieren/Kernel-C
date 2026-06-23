@@ -88,6 +88,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Added serial driver.
 
+* [X] Migration of user applications from the raw binary format to the ELF format, and adding support to the kernel for launching user programs in ELF format.
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 

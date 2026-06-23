@@ -1,6 +1,7 @@
 #include "tasks.h"
 #include "kernel/sched/multitask/multitask.h"
 #include "kernel/syscall/syscall.h"
+#include "kernel/loader/elf_loader.h"
 #include "fs/fat16/fs.h"
 #include "lib/string/string.h"
 #include "drivers/video/video.h"
@@ -211,20 +212,24 @@ void load_and_run_from_autorun(void)
                         token = strtok_r(NULL, ";", &saveptr);
                         continue; // Пропустить пустой файл
                     }
-                    // Выделить память для файла
-                    void *user_mem = malloc(file_entry.size + 1024);
-                    if (user_mem)
+                    // Прочитать файл во временный буфер и распарсить как ELF
+                    void *file_buf = malloc(file_entry.size);
+                    if (file_buf)
                     {
-                        // Прочитать файл
-                        if (fs_read_file_in_dir(file_name, ext, parent_idx, user_mem, file_entry.size, NULL) == 0)
+                        if (fs_read_file_in_dir(file_name, ext, parent_idx, file_buf, file_entry.size, NULL) == 0)
                         {
-                            // Запустить задачу с именем файла (без расширения)
-                            utask_create((void (*)(void))user_mem, 0, user_mem, file_entry.size, 0, 0, file_name);
+                            elf_image_t image;
+                            if (elf_load_image(file_buf, file_entry.size, 0, &image) == ELF_LOAD_OK)
+                            {
+                                // Запустить задачу с именем файла (без расширения);
+                                // точка входа — настоящий e_entry из ELF.
+                                utask_create((void (*)(void))(uintptr_t)image.entry,
+                                             0, image.image_base, image.image_size, 0, 0, file_name);
+                            }
+                            /* при ошибке разбора ELF буфер образа не создавался —
+                             * освобождать, кроме file_buf ниже, больше нечего */
                         }
-                        else
-                        {
-                            free(user_mem);
-                        }
+                        free(file_buf);
                     }
                 }
             }

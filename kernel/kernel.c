@@ -13,17 +13,17 @@
 #include "kernel/sched/multitask/multitask.h"
 #include "kernel/sched/tasks/tasks.h"
 #include "fs/fat16/fs.h"
-#include "apps/terminal/main_bin.h"
-#include "apps/ls/main_bin.h"
-#include "apps/memstat/main_bin.h"
-#include "apps/mkdir/main_bin.h"
-#include "apps/rm/main_bin.h"
-#include "apps/pwd/main_bin.h"
-#include "apps/clear/main_bin.h"
-#include "apps/shutdown/main_bin.h"
-#include "apps/reboot/main_bin.h"
-#include "apps/help/main_bin.h"
-#include "apps/time/main_bin.h"
+#include "apps/terminal/main_elf.h"
+#include "apps/ls/main_elf.h"
+#include "apps/memstat/main_elf.h"
+#include "apps/mkdir/main_elf.h"
+#include "apps/rm/main_elf.h"
+#include "apps/pwd/main_elf.h"
+#include "apps/clear/main_elf.h"
+#include "apps/shutdown/main_elf.h"
+#include "apps/reboot/main_elf.h"
+#include "apps/help/main_elf.h"
+#include "apps/time/main_elf.h"
 #include "default_files.h"
 #include <boot/bootinfo.h>
 #include "lib/graphics/formatting/formatting.h"
@@ -227,17 +227,17 @@ void kmain(uint64_t mb2_addr)
 
         init_autorun(autorun);
 
-        load_app_to_fs("bin", "terminal", "bin", terminal_bin, terminal_bin_len);
-        load_app_to_fs("bin", "memstat", "bin", memstat_bin, memstat_bin_len);
-        load_app_to_fs("bin", "clear", "bin", clear_bin, clear_bin_len);
-        load_app_to_fs("bin", "shutdown", "bin", shutdown_bin, shutdown_bin_len);
-        load_app_to_fs("bin", "reboot", "bin", reboot_bin, reboot_bin_len);
-        load_app_to_fs("bin", "help", "bin", help_bin, help_bin_len);
-        load_app_to_fs("bin", "time", "bin", time_bin, time_bin_len);
-        load_app_to_fs("bin", "ls", "bin", ls_bin, ls_bin_len);
-        load_app_to_fs("bin", "pwd", "bin", pwd_bin, pwd_bin_len);
-        load_app_to_fs("bin", "mkdir", "bin", mkdir_bin, mkdir_bin_len);
-        load_app_to_fs("bin", "rm", "bin", rm_bin, rm_bin_len);
+        load_app_to_fs("bin", "terminal", "elf", terminal_elf, terminal_elf_len);
+        load_app_to_fs("bin", "memstat", "elf", memstat_elf, memstat_elf_len);
+        load_app_to_fs("bin", "clear", "elf", clear_elf, clear_elf_len);
+        load_app_to_fs("bin", "shutdown", "elf", shutdown_elf, shutdown_elf_len);
+        load_app_to_fs("bin", "reboot", "elf", reboot_elf, reboot_elf_len);
+        load_app_to_fs("bin", "help", "elf", help_elf, help_elf_len);
+        load_app_to_fs("bin", "time", "elf", time_elf, time_elf_len);
+        load_app_to_fs("bin", "ls", "elf", ls_elf, ls_elf_len);
+        load_app_to_fs("bin", "pwd", "elf", pwd_elf, pwd_elf_len);
+        load_app_to_fs("bin", "mkdir", "elf", mkdir_elf, mkdir_elf_len);
+        load_app_to_fs("bin", "rm", "elf", rm_elf, rm_elf_len);
 
         fs_sync();
     }

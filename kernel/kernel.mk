@@ -10,6 +10,7 @@ KERNEL_C_SRCS := \
 	kernel/syscall/syscall.c \
 	kernel/time/timer.c \
 	kernel/time/clock/clock.c \
-	kernel/exception/exception.c
+	kernel/exception/exception.c \
+	kernel/loader/elf_loader.c
 
 SRCS_C += $(KERNEL_C_SRCS)

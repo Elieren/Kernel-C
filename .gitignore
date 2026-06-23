@@ -4,3 +4,4 @@
 *.c.d
 apps/test/
 apps/memtest/
+fs_test.img

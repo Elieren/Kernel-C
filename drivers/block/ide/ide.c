@@ -376,8 +376,7 @@ int ide_write_sectors(ide_disk_t *disk, uint64_t lba, uint32_t count, const void
                 if (bytes_per_sector == 512)
                 {
                     memcpy(tmp_sector_words, src, 512);
-                    for (int i = 0; i < words_per_sector; ++i)
-                        io_write16(disk->base_port + IDE_DATA, tmp_sector_words[i]);
+                    write_sector_words_from(disk->base_port, tmp_sector_words);
                 }
                 else
                 {
