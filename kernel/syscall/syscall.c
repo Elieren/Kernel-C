@@ -334,6 +334,10 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     case SYSCALL_TASK_IS_ALIVE:
         return task_is_alive((int)regs->rdi);
 
+    case SYSCALL_SET_FOREGROUND:
+        task_set_foreground((int)regs->rdi);
+        return 0;
+
     case THROW_AN_EXCEPTION:
         return kprint((uint8_t)regs->rdi, (const char *)(uintptr_t)regs->rsi);
 

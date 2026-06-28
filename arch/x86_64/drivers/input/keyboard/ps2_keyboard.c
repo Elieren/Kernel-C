@@ -1,5 +1,6 @@
 #include "ps2_keyboard.h"
 #include "drivers/input/keyboard/keyboard.h"
+#include "kernel/sched/multitask/multitask.h"
 #include <asm/io.h>
 #include <asm/pic.h>
 #include <asm/cpu.h>
@@ -402,6 +403,40 @@ void ps2_keyboard_handler(void)
             g_ctrl = !released;
             keyboard_set_modifiers(g_shift, g_ctrl, g_caps);
         }
+        else if (!released)
+        {
+            /*
+             * Генерируем стандартные ANSI/VT100-последовательности:
+             *   ↑  ESC [ A
+             *   ↓  ESC [ B
+             *   →  ESC [ C
+             *   ←  ESC [ D
+             */
+            if (key == KEY_UP)
+            {
+                keyboard_push_char(0x1B);
+                keyboard_push_char('[');
+                keyboard_push_char('A');
+            }
+            else if (key == KEY_DOWN)
+            {
+                keyboard_push_char(0x1B);
+                keyboard_push_char('[');
+                keyboard_push_char('B');
+            }
+            else if (key == KEY_RIGHT)
+            {
+                keyboard_push_char(0x1B);
+                keyboard_push_char('[');
+                keyboard_push_char('C');
+            }
+            else if (key == KEY_LEFT)
+            {
+                keyboard_push_char(0x1B);
+                keyboard_push_char('[');
+                keyboard_push_char('D');
+            }
+        }
         // Сюда можно добавить KEY_RALT_EXT, KEY_KEYPAD_DIV_EXT и др.
 
         pic_send_eoi(1);
@@ -443,7 +478,7 @@ void ps2_keyboard_handler(void)
         // Обработка Ctrl+C
         if (g_ctrl && key == KEY_C)
         {
-            keyboard_push_char(0x03); // ASCII код для Ctrl+C
+            task_kill_foreground();
             pic_send_eoi(1);
             return;
         }

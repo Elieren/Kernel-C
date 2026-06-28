@@ -20,6 +20,8 @@ static task_t *task_ring = NULL; /* tail (последний элемент) */
 static task_t *current = NULL;
 static int next_pid = 1;
 
+static volatile int g_foreground_pid = 0;
+
 /* Статическая init-задача, чтобы в ISR не вызывать malloc */
 static task_t init_task;
 
@@ -495,6 +497,37 @@ int task_is_alive(int pid)
 
     local_irq_enable();
     return 0;
+}
+
+void task_set_foreground(int pid)
+{
+    g_foreground_pid = pid;
+}
+
+void task_kill_foreground(void)
+{
+    int fpid = g_foreground_pid;
+    if (fpid <= 0)
+        return; /* нет foreground-процесса — ничего не делаем */
+
+    local_irq_disable();
+
+    if (task_ring)
+    {
+        task_t *it = task_ring->next;
+        do
+        {
+            if (it->pid == fpid && it->state != TASK_ZOMBIE)
+            {
+                it->state = TASK_ZOMBIE;
+                break;
+            }
+            it = it->next;
+        } while (it != task_ring->next);
+    }
+
+    g_foreground_pid = 0;
+    local_irq_enable();
 }
 
 int sys_chdir(const char *path)

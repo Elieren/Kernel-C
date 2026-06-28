@@ -65,6 +65,9 @@ int sys_chdir(const char *path);
 int sys_getcwd(char *buf, size_t size);
 int sys_get_cwd_idx(uint32_t *out_idx);
 
+void task_set_foreground(int pid);
+void task_kill_foreground(void);
+
 void kill_all_tasks(void);
 void emergency_terminate_all(void);
 
