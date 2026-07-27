@@ -24,6 +24,7 @@
 #include "apps/reboot/main_elf.h"
 #include "apps/help/main_elf.h"
 #include "apps/time/main_elf.h"
+#include "apps/cat/main_elf.h"
 #include "default_files.h"
 #include <boot/bootinfo.h>
 #include "lib/graphics/formatting/formatting.h"
@@ -238,6 +239,7 @@ void kmain(uint64_t mb2_addr)
         load_app_to_fs("bin", "pwd", "elf", pwd_elf, pwd_elf_len);
         load_app_to_fs("bin", "mkdir", "elf", mkdir_elf, mkdir_elf_len);
         load_app_to_fs("bin", "rm", "elf", rm_elf, rm_elf_len);
+        load_app_to_fs("bin", "cat", "elf", cat_elf, cat_elf_len);
 
         fs_sync();
     }

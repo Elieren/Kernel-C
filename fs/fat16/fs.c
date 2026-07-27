@@ -216,10 +216,72 @@ static int save_fat(void)
     return FS_OK;
 }
 
+static void sanitize_entries(void)
+{
+    for (int i = 0; i < FS_MAX_ENTRIES; ++i)
+    {
+        if (!entries[i].used)
+            continue;
+
+        /* Гарантируем NUL-терминацию имени и расширения */
+        entries[i].name[FS_NAME_MAX - 1] = '\0';
+        entries[i].ext[FS_EXT_MAX - 1] = '\0';
+
+        /* parent должен указывать на существующую запись либо быть -1 (только для корня) */
+        if (i == FS_ROOT_IDX)
+        {
+            entries[i].parent = -1;
+        }
+        else if (entries[i].parent < 0 || entries[i].parent >= FS_MAX_ENTRIES ||
+                 entries[i].parent == i)
+        {
+            /* Повреждённая запись - изолируем её, чтобы не сломать обход дерева */
+            entries[i].used = 0;
+            continue;
+        }
+
+        /* Для файлов first_cluster должен лежать в допустимом диапазоне FAT */
+        if (!entries[i].is_dir)
+        {
+            if (entries[i].first_cluster != 0 &&
+                (entries[i].first_cluster < 2 || entries[i].first_cluster >= FAT_ENTRIES))
+            {
+                entries[i].used = 0;
+                continue;
+            }
+        }
+
+        /* Директория не должна иметь ни размера, ни кластера данных */
+        if (entries[i].is_dir)
+        {
+            entries[i].size = 0;
+            entries[i].first_cluster = 0;
+        }
+    }
+
+    /* Корень обязан существовать и быть директорией — иначе ФС повреждена критично*/
+    if (!entries[FS_ROOT_IDX].used || !entries[FS_ROOT_IDX].is_dir)
+    {
+        entries[FS_ROOT_IDX].used = 1;
+        entries[FS_ROOT_IDX].is_dir = 1;
+        entries[FS_ROOT_IDX].parent = -1;
+        entries[FS_ROOT_IDX].name[0] = '/';
+        entries[FS_ROOT_IDX].name[1] = '\0';
+        entries[FS_ROOT_IDX].ext[0] = '\0';
+        entries[FS_ROOT_IDX].first_cluster = 0;
+        entries[FS_ROOT_IDX].size = 0;
+    }
+}
+
 /* Загрузка таблицы записей с диска */
 static int load_entries(void)
 {
-    return disk_read_sectors(ENTRIES_TABLE_START_LBA, ENTRIES_TABLE_SECTORS, entries);
+    int rc = disk_read_sectors(ENTRIES_TABLE_START_LBA, ENTRIES_TABLE_SECTORS, entries);
+    if (rc != FS_OK)
+        return rc;
+
+    sanitize_entries();
+    return FS_OK;
 }
 
 /* Сохранение таблицы записей на диск */
@@ -487,12 +549,12 @@ int fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_
     if (!entries[parent].used || !entries[parent].is_dir)
         return FS_ERR_NOT_DIR;
 
-    // Проверим дубликат
+    const char *ext_cmp = ext ? ext : "";
     for (int i = 0; i < FS_MAX_ENTRIES; ++i)
     {
         if (entries[i].used && entries[i].parent == parent && !entries[i].is_dir &&
             nameeq(entries[i].name, name, FS_NAME_MAX) &&
-            nameeq(entries[i].ext, ext, FS_EXT_MAX))
+            nameeq(entries[i].ext, ext_cmp, FS_EXT_MAX))
             return FS_ERR_EXISTS;
     }
 
@@ -767,13 +829,14 @@ int fs_write_file_in_dir(const char *name, const char *ext, int parent, const vo
     }
     else
     {
-        // файл уже есть - освобождаем старую цепочку и выделяем новый кластер стартовый
         uint16_t old = entries[idx].first_cluster;
-        free_cluster_chain(old);
 
         cluster = alloc_cluster();
         if (cluster == FAT_NO_CLUSTER)
-            return FS_ERR_NO_FAT_SPACE; // нет места
+            return FS_ERR_NO_FAT_SPACE; // нет места, старая цепочка остаётся нетронутой
+
+        free_cluster_chain(old);
+
         entries[idx].first_cluster = cluster;
         fat.entries[cluster] = FAT_EOF;
         fat_dirty = 1;
@@ -870,13 +933,22 @@ int fs_build_path(int idx, char *buf, size_t size)
         return 1;
     }
 
-    int stack[FS_MAX_ENTRIES];
+    size_t sum = 0;
     int top = 0;
     int cur = idx;
 
     while (cur != FS_ROOT_IDX && cur >= 0 && cur < FS_MAX_ENTRIES && entries[cur].used)
     {
-        stack[top++] = cur;
+        size_t name_len = strlen(entries[cur].name);
+        if (name_len > FS_NAME_MAX - 1)
+            name_len = FS_NAME_MAX - 1;
+
+        /* Защита от переполнения size_t при накоплении суммы */
+        if (sum > (size_t)-1 - name_len - 2)
+            return 0;
+
+        sum += name_len;
+        top++;
         int p = entries[cur].parent;
         if (p == -1)
             break;
@@ -885,23 +957,28 @@ int fs_build_path(int idx, char *buf, size_t size)
             break;
     }
 
-    size_t sum = 0;
-    for (int i = 0; i < top; ++i)
-        sum += strlen(entries[stack[i]].name);
-
     size_t required = sum + (size_t)top + 1;
     if (required > size)
         return 0;
 
-    size_t pos = 0;
-    for (int i = top - 1; i >= 0; --i)
-    {
-        buf[pos++] = '/';
-        const char *n = entries[stack[i]].name;
-        size_t ln = strlen(n);
-        memcpy(buf + pos, n, ln);
-        pos += ln;
-    }
+    size_t pos = required - 1;
     buf[pos] = '\0';
+    cur = idx;
+
+    for (int i = 0; i < top; ++i)
+    {
+        const char *n = entries[cur].name;
+        size_t ln = strlen(n);
+        if (ln > FS_NAME_MAX - 1)
+            ln = FS_NAME_MAX - 1;
+        if (ln > pos)
+            return 0;
+        pos -= ln;
+        memcpy(buf + pos, n, ln);
+        pos -= 1;
+        buf[pos] = '/';
+        cur = entries[cur].parent;
+    }
+
     return 1;
 }

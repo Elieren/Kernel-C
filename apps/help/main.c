@@ -18,6 +18,7 @@ const char cmd_pwd[] = "pwd      - prints the current working directory\n";
 const char cmd_cd[] = "cd       - changes the current working directory\n";
 const char cmd_mkdir[] = "mkdir    - creates a new directory\n";
 const char cmd_rm[] = "rm       - removes a file or directory\n";
+const char cmd_cat[] = "cat      - displays the contents of a file\n";
 
 void _start(void)
 {
