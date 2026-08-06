@@ -65,8 +65,12 @@ void scheduler_init(void)
 /* Создаёт kernel-thread */
 void task_create(void (*entry)(void), size_t stack_size, const char *name)
 {
+    unsigned long flags = save_flags();
+    local_irq_disable();
+
     if (!entry)
     {
+        restore_flags(flags);
         panic("TASK_CREATE_NULL_ENTRY", false, true);
     }
 
@@ -76,6 +80,7 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
     task_t *t = (task_t *)malloc(sizeof(task_t));
     if (!t)
     {
+        restore_flags(flags);
         panic("TASK_ALLOCATION_FAILED", false, false);
     }
 
@@ -83,6 +88,7 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
     if (!kstack)
     {
         free(t);
+        restore_flags(flags);
         panic("TASK_STACK_ALLOCATION_FAILED", false, false);
     }
 
@@ -106,8 +112,6 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
                                     0); /* kernel mode */
 
     /* Вставляем в кольцо как новый tail */
-    unsigned long flags = save_flags();
-    local_irq_disable();
     if (!task_ring)
     {
         task_ring = t;
@@ -266,17 +270,15 @@ void reap_zombies(void)
     local_irq_disable();
     task_t *z = zombie_list;
     zombie_list = NULL;
-    local_irq_enable();
 
     while (z)
     {
         task_t *next_z = z->znext;
-        local_irq_disable();
         unlink_from_ring(z);
-        local_irq_enable();
         free_task_resources(z);
         z = next_z;
     }
+    local_irq_enable();
 }
 
 int task_list(task_info_t *buf, size_t max)
@@ -388,13 +390,18 @@ uint64_t utask_create(void (*entry)(void),
                       uintptr_t argv_ptr,
                       const char *name)
 {
+    unsigned long flags = save_flags();
+    local_irq_disable();
+
     if (!entry)
     {
+        restore_flags(flags);
         panic("UTASK_CREATE_NULL_ENTRY", false, true);
     }
 
     if (!user_mem || user_mem_size == 0)
     {
+        restore_flags(flags);
         panic("UTASK_CREATE_INVALID_MEMORY", false, true);
     }
 
@@ -404,6 +411,7 @@ uint64_t utask_create(void (*entry)(void),
     task_t *t = (task_t *)malloc(sizeof(task_t));
     if (!t)
     {
+        restore_flags(flags);
         return 0;
     }
 
@@ -411,6 +419,7 @@ uint64_t utask_create(void (*entry)(void),
     if (!kstack)
     {
         free(t);
+        restore_flags(flags);
         return 0;
     }
 
@@ -428,6 +437,7 @@ uint64_t utask_create(void (*entry)(void),
         // Не удалось создать таблицы страниц — задачу запускать нельзя.
         free(kstack);
         free(t);
+        restore_flags(flags);
         return 0;
     }
 
@@ -448,8 +458,6 @@ uint64_t utask_create(void (*entry)(void),
     else
         t->cwd_idx = FS_ROOT_IDX;
 
-    unsigned long flags = save_flags();
-    local_irq_disable();
     if (!task_ring)
     {
         task_ring = t;

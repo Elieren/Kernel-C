@@ -157,7 +157,7 @@ align 4096
 pd_table0:
 %assign j 0
 %rep 512
-    dq j * 0x200000 + 0x087
+    dq j * 0x200000 + 0x083
 %assign j j + 1
 %endrep
 
@@ -166,7 +166,7 @@ align 4096
 pd_table1:
 %assign j 512
 %rep 512
-    dq j * 0x200000 + 0x087
+    dq j * 0x200000 + 0x083
 %assign j j + 1
 %endrep
 
@@ -175,7 +175,7 @@ align 4096
 pd_table2:
 %assign j 1024
 %rep 512
-    dq j * 0x200000 + 0x087
+    dq j * 0x200000 + 0x083
 %assign j j + 1
 %endrep
 
@@ -184,7 +184,7 @@ align 4096
 pd_table3:
 %assign j 1536
 %rep 512
-    dq j * 0x200000 + 0x087
+    dq j * 0x200000 + 0x083
 %assign j j + 1
 %endrep
 

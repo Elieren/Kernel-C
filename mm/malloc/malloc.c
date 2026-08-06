@@ -2,6 +2,7 @@
 #include "malloc.h"
 #include <stdint.h>
 #include <stddef.h>
+#include <asm/cpu.h>
 #include "kernel/syscall/syscall.h"
 #include "kernel/panic/panic.h"
 
@@ -174,6 +175,10 @@ void *malloc(size_t size)
 {
     if (size == 0)
         return NULL;
+
+    unsigned long flags = save_flags();
+    local_irq_disable();
+
     size = align_up(size);
 
     block_header_t *fit = find_fit(size);
@@ -184,23 +189,21 @@ void *malloc(size_t size)
     {
         if (++expansion_attempts > MAX_EXPANSION_ATTEMPTS)
         {
+            restore_flags(flags);
             panic("KERNEL_HEAP_EXHAUSTED", false, false);
         }
 
         if (!heap_expand(size))
         {
+            restore_flags(flags);
             panic("KERNEL_HEAP_EXPANSION_FAILED", false, false);
         }
         fit = find_fit(size);
     }
 
-    if (!fit)
-    {
-        panic("MALLOC_CRITICAL_FAILURE", false, false);
-    }
-
     split_block(fit, size);
     fit->free = 0;
+    restore_flags(flags);
     return header_to_payload(fit);
 }
 
@@ -210,17 +213,22 @@ void free(void *ptr)
     if (!ptr)
         return;
 
+    unsigned long flags = save_flags();
+    local_irq_disable();
+
     block_header_t *h = payload_to_header(ptr);
 
     /* проверяем magic */
     if (h->magic != MAGIC)
     {
+        restore_flags(flags);
         panic("HEAP_CORRUPTION_INVALID_MAGIC", false, true);
     }
 
     /* проверка на многократное освобождение */
     if (h->free)
     {
+        restore_flags(flags);
         panic("DOUBLE_FREE_DETECTED", false, true);
     }
 
@@ -228,6 +236,7 @@ void free(void *ptr)
 
     /* объединяем соседние свободные блоки */
     coalesce(h);
+    restore_flags(flags);
 }
 
 /* realloc */
@@ -241,14 +250,21 @@ void *realloc(void *ptr, size_t new_size)
         return NULL;
     }
 
+    unsigned long flags = save_flags();
+    local_irq_disable();
+
     block_header_t *h = payload_to_header(ptr);
     if (h->magic != MAGIC)
+    {
+        restore_flags(flags);
         return NULL;
+    }
 
     new_size = align_up(new_size);
     if (new_size <= h->size)
     {
         split_block(h, new_size);
+        restore_flags(flags);
         return ptr;
     }
 
@@ -276,6 +292,7 @@ void *realloc(void *ptr, size_t new_size)
                 to->prev = h;
             split_block(h, new_size);
             h->free = 0;
+            restore_flags(flags);
             return ptr;
         }
     }
@@ -283,10 +300,14 @@ void *realloc(void *ptr, size_t new_size)
     /* Нельзя in-place — выделяем новый, копируем и освобождаем старый */
     void *newp = malloc(new_size);
     if (!newp)
+    {
+        restore_flags(flags);
         return NULL;
+    }
     size_t copy = (h->size < new_size) ? h->size : new_size;
     memcpy(newp, ptr, copy);
     free(ptr);
+    restore_flags(flags);
     return newp;
 }
 

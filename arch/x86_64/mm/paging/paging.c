@@ -229,6 +229,9 @@ int paging_map_user_region(uint64_t *pml4, void *addr, size_t size)
     uint64_t start = ALIGN_DOWN_4KB((uint64_t)(uintptr_t)addr);
     uint64_t end = ALIGN_UP_4KB((uint64_t)(uintptr_t)addr + size);
 
+    if (start >= phys_mem_total)
+        return 0;
+
     for (uint64_t page = start; page < end; page += PAGE_SIZE)
     {
         if (page >= phys_mem_total)

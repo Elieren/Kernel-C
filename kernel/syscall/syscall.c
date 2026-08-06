@@ -229,10 +229,17 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         if (ptr)
         {
             task_t *cur = get_current_task();
-            if (cur && cur->page_table)
+            if (!cur || !cur->page_table)
             {
-                size_t actual = malloc_usable_size(ptr);
-                paging_map_user_region(cur->page_table, ptr, actual);
+                free(ptr);
+                return 0;
+            }
+
+            size_t actual = malloc_usable_size(ptr);
+            if (!paging_map_user_region(cur->page_table, ptr, actual))
+            {
+                free(ptr);
+                return 0;
             }
         }
         return (uintptr_t)ptr;
@@ -271,13 +278,23 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
 
         void *new_ptr = realloc(old_ptr, new_size);
 
-        if (new_ptr && cur && cur->page_table)
+        if (new_ptr)
         {
+            if (!cur || !cur->page_table)
+            {
+                free(new_ptr);
+                return 0;
+            }
+
             /* Добавить маппинг нового блока (может быть тот же адрес или новый) */
             size_t new_actual = malloc_usable_size(new_ptr);
-            paging_map_user_region(cur->page_table, new_ptr, new_actual);
+            if (!paging_map_user_region(cur->page_table, new_ptr, new_actual))
+            {
+                free(new_ptr);
+                return 0;
+            }
         }
-        else if (!new_ptr && old_ptr && cur && cur->page_table)
+        else if (old_ptr && cur && cur->page_table)
         {
             /*
              * realloc вернул NULL — по стандарту old_ptr остаётся валидным.
