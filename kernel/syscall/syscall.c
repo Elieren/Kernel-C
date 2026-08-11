@@ -218,6 +218,17 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     case SYSCALL_GET_TIME_UP:
         return (uintptr_t)seconds;
 
+    case SYSCALL_GET_DATE:
+        if (regs->rdi && regs->rsi >= 4)
+        {
+            uint8_t *buf = (uint8_t *)(uintptr_t)regs->rdi;
+            buf[0] = system_date.day;
+            buf[1] = system_date.month;
+            buf[2] = (uint8_t)(system_date.year & 0xFF);        // год, младший байт
+            buf[3] = (uint8_t)((system_date.year >> 8) & 0xFF); // год, старший байт
+        }
+        return 0;
+
     case SYSCALL_CLEAN_SCREEN:
         video_clean_screen();
         return 0;

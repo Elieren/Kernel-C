@@ -30,6 +30,7 @@
 #define FS_ERR_NOT_FOUND -7       // запись не найдена
 #define FS_ERR_DISK_IO -8         // ошибка чтения/записи диска
 #define FS_ERR_NOT_INITIALIZED -9 // файловая система не инициализирована
+#define FS_ERR_DISK_TOO_SMALL -10 // диск не позволяет построить корректный том FAT16 (мало/слишком много кластеров)
 
 #define FS_HAS_CHILDREN 1
 #define FS_NO_CHILDREN 0

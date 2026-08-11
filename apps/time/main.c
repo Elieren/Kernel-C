@@ -6,28 +6,44 @@ typedef unsigned char uint8_t;
 #define SYSCALL_PRINT_STRING 3
 #define SYSCALL_GET_TIME 5
 #define SYSCALL_GET_TIME_UP 7
+#define SYSCALL_GET_DATE 8
 #define SYSCALL_TASK_EXIT 204
 
 #define WHITE 0x00FFFFFF
 
+const char cmd_date[] = "Date:    ";
 const char cmd_time[] = "Time:    ";
 const char cmd_up[] = "Time up: ";
 const char newline[] = "\n";
 
 static uint8_t clock_buf[3]; /* hh, mm, ss */
+static uint8_t date_buf[4];  /* day, month, year (2 байта, little-endian) */
 static char time_str[10];    /* "HH:MM:SS\n" + '\0' */
+static char date_str[12];    /* "DD.MM.YYYY\n" + '\0' */
 static char up_str[10];      /* "HH:MM:SS\n" + '\0' */
 
 void format_clock(char *out, const uint8_t *clock);
+void format_date(char *out, const uint8_t *date);
 void format_up_time(char *out, unsigned long total_seconds);
 
 void _do_syscall_print(const char *p);
 void _do_syscall_get_time(uint8_t *buf, unsigned long count);
+void _do_syscall_get_date(uint8_t *buf, unsigned long count);
 unsigned long _do_syscall_get_time_up(void);
 void _do_syscall_exit(unsigned long code);
 
 void _start(void)
 {
+    /* Получаем текущую дату (заполняет date_buf: day, month, year lo/hi) */
+    _do_syscall_get_date(date_buf, 4);
+
+    /* Форматируем текущую дату в "DD.MM.YYYY\n" */
+    format_date(date_str, date_buf);
+
+    /* Печатаем метку и дату */
+    _do_syscall_print(cmd_date);
+    _do_syscall_print(date_str);
+
     /* Получаем текущее время (заполняет clock_buf: hh,mm,ss) */
     _do_syscall_get_time(clock_buf, 3);
 
@@ -93,6 +109,43 @@ void format_clock(char *out, const uint8_t *clock)
 }
 
 /* ------------------------------
+   Форматирование "DD.MM.YYYY\n\0"
+   out  - буфер длиной >=11
+   date - указатель на 4 байта: day, month, year_lo, year_hi
+   ------------------------------ */
+void format_date(char *out, const uint8_t *date)
+{
+    uint32_t day = (uint32_t)date[0];
+    uint32_t month = (uint32_t)date[1];
+    uint32_t year = (uint32_t)date[2] | ((uint32_t)date[3] << 8);
+
+    /* день */
+    unsigned char tens = (unsigned char)(day / 10);
+    unsigned char ones = (unsigned char)(day % 10);
+    out[0] = (char)('0' + tens);
+    out[1] = (char)('0' + ones);
+
+    out[2] = '.';
+
+    /* месяц */
+    tens = (unsigned char)(month / 10);
+    ones = (unsigned char)(month % 10);
+    out[3] = (char)('0' + tens);
+    out[4] = (char)('0' + ones);
+
+    out[5] = '.';
+
+    /* год (4 цифры) */
+    out[6] = (char)('0' + (year / 1000) % 10);
+    out[7] = (char)('0' + (year / 100) % 10);
+    out[8] = (char)('0' + (year / 10) % 10);
+    out[9] = (char)('0' + year % 10);
+
+    out[10] = '\n';
+    out[11] = '\0';
+}
+
+/* ------------------------------
    Форматирование uptime (total_seconds -> "HH:MM:SS\n\0")
    ------------------------------ */
 void format_up_time(char *out, unsigned long total_seconds)
@@ -150,6 +203,16 @@ void _do_syscall_get_time(uint8_t *buf, unsigned long count)
         "int $0x80"
         :
         : "a"(SYSCALL_GET_TIME), "D"(buf), "S"(count)
+        : "rcx", "r11", "memory");
+}
+
+/* get_date: rax=8, rdi=buf, rsi=count */
+void _do_syscall_get_date(uint8_t *buf, unsigned long count)
+{
+    asm volatile(
+        "int $0x80"
+        :
+        : "a"(SYSCALL_GET_DATE), "D"(buf), "S"(count)
         : "rcx", "r11", "memory");
 }
 

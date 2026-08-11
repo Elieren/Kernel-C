@@ -575,23 +575,6 @@ int sys_chdir(const char *path)
         while (*p == '/')
             p++;
 
-        if (strcmp(comp, ".") == 0)
-            continue;
-
-        if (strcmp(comp, "..") == 0)
-        {
-            int parent = fs_get_parent_idx((int)idx);
-            if (parent < 0)
-            {
-                idx = FS_ROOT_IDX;
-            }
-            else
-            {
-                idx = (uint32_t)parent;
-            }
-            continue;
-        }
-
         fs_entry_t entry;
         int found = fs_find_in_dir(comp, NULL, (int)idx, &entry);
         if (found < 0)

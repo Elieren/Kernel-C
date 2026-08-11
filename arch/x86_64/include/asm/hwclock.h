@@ -10,5 +10,6 @@
 #define TIMEZONE_OFFSET 0
 
 void read_rtc_time(uint32_t *hour, uint32_t *minute, uint32_t *second);
+void read_rtc_date(uint32_t *day, uint32_t *month, uint32_t *year);
 
 #endif
