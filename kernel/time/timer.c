@@ -167,16 +167,7 @@ void mwait(uint32_t delay_milliseconds)
 
 void timer_tick(void)
 {
-    static uint32_t accumulated_error = 0;
-
     tick_time++;
-
-    accumulated_error += 180;
-    if (accumulated_error >= 1000)
-    {
-        tick_time++;
-        accumulated_error -= 1000;
-    }
 
     if (tick_time >= 1000)
     {
@@ -185,8 +176,8 @@ void timer_tick(void)
         clock_tick();
     }
 
-    /* Экран обновляется каждые ~33 мс (при частоте ~30 Гц) */
-    if ((tick_time % 33) == 0)
+    /* Экран обновляется каждые 10 мс (при частоте 100 Гц) */
+    if ((tick_time % 10) == 0)
     {
         screen_refresh_status = true;
     }

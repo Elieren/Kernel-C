@@ -33,7 +33,7 @@ include rules.mk
 # Цели
 # =============================================================================
 
-.PHONY: all clean builddir run debug iso help
+.PHONY: all clean builddir run debug iso help disk full
 
 # Цель по умолчанию
 all: builddir $(BUILD_KERNEL)
@@ -47,12 +47,12 @@ debug: EXTRA_CFLAGS = $(DEBUG_CFLAGS)
 debug: ASMFLAGS = $(ASMFLAGS_DEBUG)
 debug: clean all
 	@echo "Debug build complete"
-	 $(QEMU) -kernel $(BUILD_KERNEL) -serial stdio $(QEMU_OPTS)
+	$(QEMU) -kernel $(BUILD_KERNEL) -serial stdio $(QEMU_OPTS)
 
 # Запуск в QEMU
 run: all
 	@echo "Starting QEMU..."
-	 $(QEMU) -kernel $(BUILD_KERNEL) $(QEMU_OPTS)
+	$(QEMU) -kernel $(BUILD_KERNEL) $(QEMU_OPTS)
 
 # Создание ISO образа
 iso: all
@@ -60,28 +60,41 @@ iso: all
 	grub-mkrescue -o kernel.iso $(ISO_DIR)
 	@echo "ISO created: kernel.iso"
 
+# Создание виртуального диска
+disk:
+	@echo "Creating virtual disk fs_test.img..."
+	rm -f fs_test.img && truncate -s 100M fs_test.img
+	@echo "Disk created: fs_test.img (100MB)"
+
+# Полная сборка: компиляция, ISO образ и виртуальный диск
+full: all iso disk
+	@echo "Full build complete: Kernel, ISO, and Disk are ready."
+
 # Очистка
 clean:
 	@echo "Cleaning build artifacts..."
 	@rm -rf $(BUILD_DIR)
 	@rm -f $(BOOT_DIR)/kernel.elf
 	@rm -f kernel.iso
+	@rm -f fs_test.img
 	@echo "Clean complete"
 
 # Помощь
 help:
 	@echo "Available targets:"
-	@echo "  all     - Build kernel (default)"
-	@echo "  debug   - Build with debug info and run in QEMU"
-	@echo "  run     - Build and run in QEMU"
-	@echo "  iso     - Create bootable ISO image"
-	@echo "  clean   - Remove build artifacts"
-	@echo "  help    - Show this help"
+	@echo "  all      - Build kernel (default)"
+	@echo "  debug    - Build with debug info and run in QEMU"
+	@echo "  run      - Build and run in QEMU"
+	@echo "  iso      - Create bootable ISO image"
+	@echo "  disk     - Create 100MB virtual disk (fs_test.img)"
+	@echo "  full     - Compile project, create ISO and create virtual disk"
+	@echo "  clean    - Remove build artifacts"
+	@echo "  help     - Show this help"
 
 # Подключение файлов зависимостей
 -include $(DEPS)
 
 # Информация о сборке
 $(info =============================================================================)
- $(info Building project with $(words  $(SRCS_C)) C files and $(words $(SRCS_ASM)) ASM files)
+$(info Building project with $(words  $(SRCS_C)) C files and $(words $(SRCS_ASM)) ASM files)
 $(info =============================================================================)

@@ -50,10 +50,7 @@ void timer_init(uint32_t frequency)
         return; /* Некорректная частота */
     }
 
-    uint64_t divisor_precise = ((uint64_t)PIT_FREQUENCY * 1000ULL + (frequency / 2)) / frequency;
-    divisor_precise = (divisor_precise + 500) / 1000;
-
-    uint32_t divisor = (uint32_t)divisor_precise;
+    uint32_t divisor = (PIT_FREQUENCY + frequency / 2) / frequency;
 
     if (divisor > 0xFFFF)
     {

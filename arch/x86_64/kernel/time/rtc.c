@@ -68,9 +68,10 @@ void read_rtc_date(uint32_t *day, uint32_t *month, uint32_t *year)
 {
     rtc_wait_ready();
 
-    uint8_t dd = cmos_read(0x07); // день месяца
-    uint8_t mo = cmos_read(0x08); // месяц
-    uint8_t yy = cmos_read(0x09); // год (две последние цифры)
+    uint8_t dd = cmos_read(0x07);      // день месяца
+    uint8_t mo = cmos_read(0x08);      // месяц
+    uint8_t yy = cmos_read(0x09);      // год (две последние цифры)
+    uint8_t century = cmos_read(0x32); // де-факто индекс века
     uint8_t regB = cmos_read(0x0B);
 
     // Если данные в BCD-формате, сконвертировать
@@ -79,9 +80,10 @@ void read_rtc_date(uint32_t *day, uint32_t *month, uint32_t *year)
         dd = bcd_to_bin(dd);
         mo = bcd_to_bin(mo);
         yy = bcd_to_bin(yy);
+        century = bcd_to_bin(century);
     }
 
     *day = dd;
     *month = mo;
-    *year = 2000u + yy;
+    *year = (uint32_t)century * 100u + yy;
 }

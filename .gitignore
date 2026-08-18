@@ -5,3 +5,4 @@
 apps/test/
 apps/memtest/
 fs_test.img
+apps/vim

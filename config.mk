@@ -11,7 +11,7 @@ QEMU    := qemu-system-x86_64
 # Флаги компилятора (добавлен -I. для использования полных путей)
 BASE_CFLAGS := -m64 -I. -Iinclude -Iarch/x86_64/include \
 	           -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
-	           -mno-red-zone -Wall -Wextra
+	           -mno-red-zone -Wall -Wextra -O2 -mgeneral-regs-only -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=0
 
 DEBUG_CFLAGS := -m64 -I. -Iinclude -Iarch/x86_64/include \
 	            -g -O0 -DDEBUG -ffreestanding -nostdlib -fno-builtin \

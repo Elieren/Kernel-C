@@ -5,8 +5,6 @@
 #include <asm/pic.h>
 #include <asm/cpu.h>
 
-#define INTERNAL_SPACE 0x01
-
 static bool g_shift = false;
 static bool g_ctrl = false;
 static bool g_caps = false;
@@ -14,6 +12,24 @@ static bool g_enabled = false;
 static bool g_extended = false; // флаг префикса 0xE0
 
 static bool g_initialized = false;
+
+static volatile bool g_led_update_pending = false;
+
+static void keyboard_update_leds(void);
+
+/* Фоновая задача для обработки блокирующих операций PS/2 */
+static void ps2_keyboard_worker(void)
+{
+    for (;;)
+    {
+        if (g_led_update_pending)
+        {
+            keyboard_update_leds(); // Здесь безопасно крутиться в циклах ожидания ACK
+            g_led_update_pending = false;
+        }
+        halt();
+    }
+}
 
 // Таблица сканкодов -> ASCII
 static const char scancode_to_ascii[256] = {
@@ -67,11 +83,11 @@ static const char scancode_to_ascii[256] = {
     [KEY_APOSTROPHE] = '\'',
     [KEY_GRAVE] = '`',
 
-    [KEY_SPACE] = INTERNAL_SPACE,
+    [KEY_SPACE] = ' ',
     [KEY_ENTER] = '\n',
     [KEY_TAB] = '\t',
     [KEY_BACKSPACE] = '\b',
-};
+    [KEY_ESC] = '\x1B'};
 
 static const char scancode_to_ascii_shifted[256] = {
     [KEY_A] = 'A',
@@ -124,11 +140,11 @@ static const char scancode_to_ascii_shifted[256] = {
     [KEY_APOSTROPHE] = '\"',
     [KEY_GRAVE] = '~',
 
-    [KEY_SPACE] = INTERNAL_SPACE,
+    [KEY_SPACE] = ' ',
     [KEY_ENTER] = '\n',
     [KEY_TAB] = '\t',
     [KEY_BACKSPACE] = '\b',
-};
+    [KEY_ESC] = '\x1B'};
 
 // ============================================================================
 // Вспомогательные функции
@@ -188,9 +204,8 @@ static char get_ascii_char(uint8_t scancode)
         return upper ? my_toupper(base) : base;
     }
 
-    char c = g_shift ? scancode_to_ascii_shifted[scancode]
-                     : scancode_to_ascii[scancode];
-    return (c == INTERNAL_SPACE) ? ' ' : c;
+    return g_shift ? scancode_to_ascii_shifted[scancode]
+                   : scancode_to_ascii[scancode];
 }
 
 // ============================================================================
@@ -292,6 +307,8 @@ static bool ps2_keyboard_init(void)
     response = kbd_read_data();
     if (response != KBD_RESPONSE_ACK)
         return false;
+
+    task_create(ps2_keyboard_worker, 0, "PS2KbdWorker");
 
     // Инициализация состояния
     g_shift = false;
@@ -465,7 +482,7 @@ void ps2_keyboard_handler(void)
         g_caps = !g_caps;
 
         // Обновляем LED
-        keyboard_update_leds();
+        g_led_update_pending = true;
         keyboard_set_modifiers(g_shift, g_ctrl, g_caps);
 
         pic_send_eoi(1);

@@ -5,8 +5,6 @@ extern syscall_handler
 global isr80
 
 isr80:
-    sub     rsp, 8      ; выравнивание
-    
     ; Сохраняем остальные регистры (они не в структуре, но сохранены для контекста)
     push    r15
     push    r14
@@ -47,7 +45,6 @@ isr80:
     pop     r13
     pop     r14
     pop     r15
-    add     rsp, 8
     
     iretq
 

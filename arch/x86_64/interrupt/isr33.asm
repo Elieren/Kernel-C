@@ -23,9 +23,7 @@ isr33:
     push r15
 
     ; вызываем C-обработчик
-    sub rsp, 8
     call ps2_keyboard_handler
-    add rsp, 8
 
     ; восстанавливаем регистры
     pop r15

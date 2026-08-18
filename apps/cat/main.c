@@ -128,7 +128,8 @@ void _start(int argc, char **argv)
     if (entry.size == 0)
         die(NULL, 0);
 
-    void *buf = _do_syscall_malloc(entry.size);
+    // Выделяем память с запасом в 1 байт для финального нуль-терминатора
+    void *buf = _do_syscall_malloc(entry.size + 1);
     if (!buf)
         die("Error: out of memory\n", 1);
 
@@ -141,9 +142,22 @@ void _start(int argc, char **argv)
         die("'\n", 1);
     }
 
-    const unsigned char *p = (const unsigned char *)buf;
+    char *str = (char *)buf;
+
+    // Проходим по всему файлу и заменяем нуль-байты
     for (size_t i = 0; i < entry.size; ++i)
-        _do_syscall_print_char((char)p[i], WHITE);
+    {
+        if (str[i] == '\0')
+        {
+            str[i] = '.'; // Заменяем \0 на точку
+        }
+    }
+
+    // Ставим настоящий нуль-терминатор в самом конце буфера
+    str[entry.size] = '\0';
+
+    // Теперь строка выведется целиком за один системный вызов
+    _do_syscall_print_string(str, WHITE);
     _do_syscall_print_char('\n', WHITE);
 
     _do_syscall_free(buf);

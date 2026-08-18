@@ -26,11 +26,6 @@ void s_memset(void *p, unsigned char v, size_t n);
 
 void show_prompt(void);
 
-/* история команд */
-void history_push(const char *cmd);
-void history_show_prev(void);
-void history_show_next(void);
-
 /* ---- Константы ---------------------------------------------------- */
 #define SYSCALL_PRINT_CHAR 2
 #define SYSCALL_PRINT_STRING 3
@@ -52,14 +47,11 @@ void history_show_next(void);
 #define ESC '\x1B'     /* 0x1B */
 #define NUL '\0'       /* 0x00 */
 #define SPACE ' '      /* 0x20 */
-#define INTERNAL_SPACE ((char)0x01)
+#define INTERNAL_ESC '\x1B'
 
 #define DIR_BUF_SIZE 1024
 #define INPUT_BUF_SIZE 8192
 #define ERRMSG_BUF_SIZE 256
-
-#define HISTORY_MAX 64        /* макс. число команд в истории */
-#define HISTORY_LINE_SIZE 512 /* макс. длина одной команды в истории */
 
 /* ---- Глобальные переменные ---------------------------------------- */
 const char prompt_msg[] = "$ ";
@@ -74,13 +66,6 @@ char errmsg[ERRMSG_BUF_SIZE];
 unsigned long cwd_res = 0;
 uint64_t child_pid = 0;
 
-/* история команд */
-char *history_buf = 0;
-char *history_temp = 0;
-int history_count = 0;
-int history_start = 0;
-int history_pos = 0;
-
 /* ESC-автомат: 0=нормальный, 1=получили ESC, 2=получили ESC[ */
 int esc_state = 0;
 
@@ -91,19 +76,14 @@ void _start(void)
 {
     input_buf = (char *)_do_syscall_malloc(INPUT_BUF_SIZE);
     dir_buf = (char *)_do_syscall_malloc(DIR_BUF_SIZE);
-    history_buf = (char *)_do_syscall_malloc(HISTORY_MAX * HISTORY_LINE_SIZE);
-    history_temp = (char *)_do_syscall_malloc(INPUT_BUF_SIZE);
 
-    if (!input_buf || !dir_buf || !history_buf || !history_temp)
+    if (!input_buf || !dir_buf)
         for (;;)
             asm volatile("pause");
 
     input_len = 0;
     child_pid = 0;
     esc_state = 0;
-    history_count = 0;
-    history_start = 0;
-    history_pos = 0;
 
     _do_syscall_set_foreground(0);
 
@@ -139,11 +119,7 @@ void _start(void)
         if (esc_state == 2)
         {
             esc_state = 0;
-            /* ESC [ A/B/C/D (стрелки) */
-            if (ch == 'A') /* вверх — более старая команда */
-                history_show_prev();
-            else if (ch == 'B') /* вниз — более новая команда */
-                history_show_next();
+            /* ESC [ A/B/C/D (стрелки) — история отключена, игнорируем */
             asm volatile("pause");
             continue;
         }
@@ -158,8 +134,6 @@ void _start(void)
 
             if (input_buf && input_len > 0)
             {
-                history_push(input_buf);
-
                 /* -- команда cd -- */
                 if (strncmp(input_buf, "cd", 2) == 0 &&
                     (input_buf[2] == '\0' || input_buf[2] == ' '))
@@ -244,8 +218,8 @@ void _start(void)
         /* ---- Обычный символ -------------------------------------- */
         esc_state = 0;
 
-        if (ch == (unsigned char)INTERNAL_SPACE)
-            ch = (unsigned char)SPACE;
+        if (ch == (unsigned char)INTERNAL_ESC)
+            continue;
 
         if (input_buf && input_len + 1 < INPUT_BUF_SIZE)
         {
@@ -317,101 +291,6 @@ void s_memset(void *p, unsigned char v, size_t n)
     unsigned char *d = (unsigned char *)p;
     for (size_t i = 0; i < n; i++)
         d[i] = v;
-}
-
-/* ============================================================
- * История команд (кольцевой буфер в памяти)
- * ============================================================ */
-
-/* Указатель на физический слот логического индекса 0..history_count-1 */
-char *history_slot(int logical_index)
-{
-    int phys = (history_start + logical_index) % HISTORY_MAX;
-    return history_buf + (size_t)phys * HISTORY_LINE_SIZE;
-}
-
-/* Добавить только что введённую команду в историю (вызывается по Enter) */
-void history_push(const char *cmd)
-{
-    if (!history_buf || !cmd || !cmd[0])
-        return;
-
-    if (history_count < HISTORY_MAX)
-    {
-        s_strlcpy(history_slot(history_count), cmd, HISTORY_LINE_SIZE);
-        history_count++;
-    }
-    else
-    {
-        /* буфер полон — затираем самую старую запись новой (кольцевой буфер) */
-        char *slot = history_buf + (size_t)history_start * HISTORY_LINE_SIZE;
-        s_strlcpy(slot, cmd, HISTORY_LINE_SIZE);
-        history_start = (history_start + 1) % HISTORY_MAX;
-    }
-
-    /* после отправки команды курсор истории снова "внизу" */
-    history_pos = history_count;
-}
-
-/* Стереть строку ввода на экране и вывести вместо неё text */
-void redraw_input_line(const char *text)
-{
-    while (input_len > 0)
-    {
-        _do_syscall_backspace();
-        input_len--;
-    }
-
-    size_t len = s_strlen(text);
-    if (len >= INPUT_BUF_SIZE)
-        len = INPUT_BUF_SIZE - 1;
-
-    if (input_buf)
-    {
-        s_memcpy(input_buf, text, len);
-        input_buf[len] = '\0';
-    }
-    input_len = len;
-
-    if (input_len)
-        _do_syscall_print_string(input_buf, WHITE);
-}
-
-/* Стрелка вверх — показать более старую команду из истории */
-void history_show_prev(void)
-{
-    if (history_count == 0)
-        return;
-
-    if (history_pos == history_count && history_temp)
-    {
-        /* ещё не отправленную строку сохраняем, чтобы вернуться к ней стрелкой вниз */
-        size_t len = input_len;
-        if (len >= INPUT_BUF_SIZE)
-            len = INPUT_BUF_SIZE - 1;
-        if (input_buf)
-            s_memcpy(history_temp, input_buf, len);
-        history_temp[len] = '\0';
-    }
-
-    if (history_pos > 0)
-    {
-        history_pos--;
-        redraw_input_line(history_slot(history_pos));
-    }
-}
-
-/* Стрелка вниз — показать более новую команду (или вернуть недописанную строку) */
-void history_show_next(void)
-{
-    if (history_pos >= history_count)
-        return;
-
-    history_pos++;
-    if (history_pos == history_count)
-        redraw_input_line(history_temp ? history_temp : "");
-    else
-        redraw_input_line(history_slot(history_pos));
 }
 
 /* ============================================================
