@@ -24,11 +24,13 @@ typedef struct task
     void *kstack;
     size_t kstack_size;
     int exit_code;
-    struct task *next;    /* кольцевой список задач */
-    struct task *znext;   /* список зомби (отдельный указатель!) */
-    void *user_mem;       // указатель на .user память
-    size_t user_mem_size; // размер .user памяти
-    uint32_t cwd_idx;     /* индекс директории в FS (FS_ROOT_IDX для корня) */
+    struct task *next;      /* кольцевой список задач */
+    struct task *znext;     /* список зомби (отдельный указатель!) */
+    void *user_mem;         // указатель на .user память
+    size_t user_mem_size;   // размер .user памяти
+    void *user_stack;       // отдельный, замапленный буфер под user-mode стек
+    size_t user_stack_size; // его размер
+    uint32_t cwd_idx;       /* индекс директории в FS (FS_ROOT_IDX для корня) */
     char *name;
     uint64_t *page_table;
 } task_t;

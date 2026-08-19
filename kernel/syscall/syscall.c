@@ -110,11 +110,11 @@ uint64_t load_and_run_program(const char *str)
     }
 
     void *user_mem = image.image_base;
-    size_t alloc_size = image.image_size;
+    size_t user_mem_size = image.image_size;
 
     // 5. Подготовить argv в свободном хвосте образа: разместим массив указателей и строки
     char *area = (char *)user_mem + image.segments_end;
-    size_t area_size = alloc_size - image.segments_end;
+    size_t area_size = user_mem_size - image.segments_end;
     size_t used = 0;
 
     size_t ptrs_size = (argc + 1) * sizeof(char *);
@@ -150,7 +150,7 @@ uint64_t load_and_run_program(const char *str)
     uintptr_t argv_user_ptr = (uintptr_t)argv_user;
 
     // 6. Создать задачу: точка входа — настоящий e_entry из ELF, а не начало буфера
-    uint64_t pid = utask_create((void (*)(void))(uintptr_t)image.entry, 16384, user_mem, alloc_size, argc, argv_user_ptr, progname);
+    uint64_t pid = utask_create((void (*)(void))(uintptr_t)image.entry, 0, user_mem, user_mem_size, argc, argv_user_ptr, progname);
     if (pid == 0)
     {
         free(user_mem);

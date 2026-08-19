@@ -250,6 +250,13 @@ static void free_task_resources(task_t *t)
         t->user_mem_size = 0;
     }
 
+    if (t->user_stack)
+    {
+        free(t->user_stack);
+        t->user_stack = NULL;
+        t->user_stack_size = 0;
+    }
+
     if (t->name)
     { // Освобождаем память, выделенную для имени
         free(t->name);
@@ -435,13 +442,42 @@ uint64_t utask_create(void (*entry)(void),
     if (!t->page_table)
     {
         // Не удалось создать таблицы страниц — задачу запускать нельзя.
+        if (t->name)
+            free(t->name);
         free(kstack);
         free(t);
         restore_flags(flags);
         return 0;
     }
 
-    void *user_stack_top = (char *)user_mem + user_mem_size;
+    void *user_stack = malloc(stack_size);
+    if (!user_stack)
+    {
+        if (t->name)
+            free(t->name);
+        paging_destroy_user_task(t->page_table);
+        free(kstack);
+        free(t);
+        restore_flags(flags);
+        return 0;
+    }
+
+    if (!paging_map_user_region(t->page_table, user_stack, stack_size))
+    {
+        free(user_stack);
+        if (t->name)
+            free(t->name);
+        paging_destroy_user_task(t->page_table);
+        free(kstack);
+        free(t);
+        restore_flags(flags);
+        return 0;
+    }
+
+    t->user_stack = user_stack;
+    t->user_stack_size = stack_size;
+
+    void *user_stack_top = (char *)user_stack + stack_size;
     void *kstack_top = (char *)kstack + stack_size;
 
     /* Передаём user_mode=1 и user_stack_top */
