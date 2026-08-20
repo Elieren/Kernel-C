@@ -21,7 +21,7 @@ typedef struct
 #define WHITE 0x00FFFFFF
 
 void u64_to_dec(const uint64_t *value_ptr, char *out_buf);
-void print_field(const char *label, const uint64_t *field_ptr);
+void print_field(const char *label, const uint64_t *field_ptr, size_t max_len);
 void _do_syscall_print(const char *p);
 void _do_syscall_kmalloc_stats(void *buf);
 void _do_syscall_exit(unsigned long code);
@@ -43,14 +43,22 @@ void _start(void)
     /* Запрос ядра заполнить kmalloc_stats */
     _do_syscall_kmalloc_stats(&kmalloc_stats);
 
-    /* Печатаем поля в том же порядке, что в ASM */
-    print_field(lbl_total_managed, &kmalloc_stats.total_managed);
-    print_field(lbl_used_payload, &kmalloc_stats.used_payload);
-    print_field(lbl_free_payload, &kmalloc_stats.free_payload);
-    print_field(lbl_largest_free, &kmalloc_stats.largest_free);
-    print_field(lbl_num_blocks, &kmalloc_stats.num_blocks);
-    print_field(lbl_num_used, &kmalloc_stats.num_used);
-    print_field(lbl_num_free, &kmalloc_stats.num_free);
+    /* Вычисляем длину total_managed для использования в качестве эталона выравнивания */
+    u64_to_dec(&kmalloc_stats.total_managed, numbuf_out);
+    size_t max_len = 0;
+    while (numbuf_out[max_len] != '\0')
+    {
+        max_len++;
+    }
+
+    /* Печатаем поля, передавая max_len для расчета отступа */
+    print_field(lbl_total_managed, &kmalloc_stats.total_managed, max_len);
+    print_field(lbl_used_payload, &kmalloc_stats.used_payload, max_len);
+    print_field(lbl_free_payload, &kmalloc_stats.free_payload, max_len);
+    print_field(lbl_largest_free, &kmalloc_stats.largest_free, max_len);
+    print_field(lbl_num_blocks, &kmalloc_stats.num_blocks, max_len);
+    print_field(lbl_num_used, &kmalloc_stats.num_used, max_len);
+    print_field(lbl_num_free, &kmalloc_stats.num_free, max_len);
 
     /* Завершение задачи с кодом 0 */
     _do_syscall_exit(0);
@@ -91,12 +99,29 @@ void u64_to_dec(const uint64_t *value_ptr, char *out_buf)
     *dst = '\0';
 }
 
-/* Печать поля: печатаем label, затем значение из указателя (qword), затем перевод строки. */
-void print_field(const char *label, const uint64_t *field_ptr)
+/* Печать поля с выравниванием по правому краю */
+void print_field(const char *label, const uint64_t *field_ptr, size_t max_len)
 {
     _do_syscall_print(label);
 
     u64_to_dec(field_ptr, numbuf_out);
+
+    /* Считаем длину получившейся строки текущего значения */
+    size_t current_len = 0;
+    while (numbuf_out[current_len] != '\0')
+    {
+        current_len++;
+    }
+
+    /* Добавляем пробелы, если текущая длина меньше максимальной */
+    if (max_len > current_len)
+    {
+        size_t pad = max_len - current_len;
+        for (size_t i = 0; i < pad; i++)
+        {
+            _do_syscall_print(" ");
+        }
+    }
 
     _do_syscall_print(numbuf_out);
     _do_syscall_print(newline);

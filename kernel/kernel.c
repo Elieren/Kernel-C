@@ -13,19 +13,6 @@
 #include "kernel/sched/multitask/multitask.h"
 #include "kernel/sched/tasks/tasks.h"
 #include "fs/fat16/fs.h"
-#include "apps/terminal/main_elf.h"
-#include "apps/ls/main_elf.h"
-#include "apps/memstat/main_elf.h"
-#include "apps/mkdir/main_elf.h"
-#include "apps/rm/main_elf.h"
-#include "apps/pwd/main_elf.h"
-#include "apps/clear/main_elf.h"
-#include "apps/shutdown/main_elf.h"
-#include "apps/reboot/main_elf.h"
-#include "apps/help/main_elf.h"
-#include "apps/time/main_elf.h"
-#include "apps/cat/main_elf.h"
-#include "default_files.h"
 #include <boot/bootinfo.h>
 #include "lib/graphics/formatting/formatting.h"
 #include "drivers/video/video.h"
@@ -54,74 +41,6 @@ extern void vga_register(void);
 extern void gfx_register(void);
 extern void uart16550_driver_init(void);
 #endif
-
-// ============================================================================
-// helper functions
-// ============================================================================
-
-void load_app_to_fs(char *folder, char *name, char *ext, unsigned char *data, unsigned int dat)
-{
-    // Найти/создать каталог /bin
-    int bin_idx = fs_find_in_dir(folder, NULL, FS_ROOT_IDX, NULL);
-    if (bin_idx < 0)
-    {
-        bin_idx = fs_mkdir(folder, FS_ROOT_IDX);
-        if (bin_idx < 0)
-        {
-            // обработка ошибки: не удалось создать /bin
-            return;
-        }
-    }
-
-    // Записать файл terminal.elf в каталог /bin
-    int rc = fs_write_file_in_dir(name, ext, bin_idx, data, dat);
-    if (rc != 0)
-    {
-        // ошибка записи (можно вывести код rc)
-    }
-}
-
-int init_autorun(const char *autorun)
-{
-    if (!autorun)
-        return -1;
-
-    // Найти или создать директорию boot.d в корне
-    fs_entry_t boot_dir;
-    int boot_idx = fs_find_in_dir("boot.d", NULL, FS_ROOT_IDX, &boot_dir);
-    if (boot_idx < 0)
-    {
-        // Директория не найдена — создаём
-        boot_idx = fs_mkdir("boot.d", FS_ROOT_IDX);
-        if (boot_idx < 0)
-            return -2; // Ошибка создания директории
-    }
-    else
-    {
-        if (!boot_dir.is_dir)
-            return -3; // Есть файл с именем boot.d, но это не директория — ошибка
-    }
-
-    // Проверить, есть ли файл autorun.rc внутри boot_dir
-    fs_entry_t autorun_file;
-    int autorun_idx = fs_find_in_dir("autorun", "rc", boot_idx, &autorun_file);
-    if (autorun_idx >= 0)
-    {
-        // Файл существует — ничего не делаем
-        return 0;
-    }
-
-    // Файла нет — создаём и записываем autorun
-    int create_idx = fs_create_file("autorun", "rc", boot_idx, NULL);
-    if (create_idx < 0)
-        return -4; // Ошибка создания файла
-
-    int res = fs_write_file_in_dir("autorun", "rc", boot_idx, autorun, strlen(autorun));
-    if (res != 0)
-        return -5; // Ошибка записи файла
-
-    return 0;
-}
 
 /*-------------------------------------------------------------
     Основная функция ядра
@@ -221,27 +140,9 @@ void kmain(uint64_t mb2_addr)
     ide_disk_t disk;
     ide_init(&disk, IDE_CHANNEL_PRIMARY, 0);
 
-    // Первый запуск - форматирование
     if (fs_init(&disk) == FS_ERR_NOT_FOUND)
     {
-        fs_format(&disk);
-
-        init_autorun(autorun);
-
-        load_app_to_fs("bin", "terminal", "elf", terminal_elf, terminal_elf_len);
-        load_app_to_fs("bin", "memstat", "elf", memstat_elf, memstat_elf_len);
-        load_app_to_fs("bin", "clear", "elf", clear_elf, clear_elf_len);
-        load_app_to_fs("bin", "shutdown", "elf", shutdown_elf, shutdown_elf_len);
-        load_app_to_fs("bin", "reboot", "elf", reboot_elf, reboot_elf_len);
-        load_app_to_fs("bin", "help", "elf", help_elf, help_elf_len);
-        load_app_to_fs("bin", "time", "elf", time_elf, time_elf_len);
-        load_app_to_fs("bin", "ls", "elf", ls_elf, ls_elf_len);
-        load_app_to_fs("bin", "pwd", "elf", pwd_elf, pwd_elf_len);
-        load_app_to_fs("bin", "mkdir", "elf", mkdir_elf, mkdir_elf_len);
-        load_app_to_fs("bin", "rm", "elf", rm_elf, rm_elf_len);
-        load_app_to_fs("bin", "cat", "elf", cat_elf, cat_elf_len);
-
-        fs_sync();
+        panic("FILESYSTEM_NOT_FOUND", true, false);
     }
 
     scheduler_init();

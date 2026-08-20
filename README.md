@@ -97,63 +97,94 @@ To view the list of available commands, use the "help" command.
 
 ### Quick Start
 ```bash
-# Building the kernel and creating an ISO image
-make iso
-# Running in QEMU
+# Build the kernel, pack it onto a disk image with GRUB, and run in QEMU
 make run
 ```
+
 ### Basic Build Commands
 | Command | Description |
 |---------|----------|
 | `make` or `make all` | Build the kernel (default) |
-| `make iso` | Build the kernel and create a bootable ISO image |
-| `make run` | Build, create ISO, and run in QEMU |
-| `make debug` | Run with debug information and gdb stub |
+| `make image` | Build the kernel and pack it onto `fs_test.img` (FAT16 partition + GRUB) |
+| `make run` | Build the kernel, pack it into the disk image, and run in QEMU |
+| `make build` | Build the kernel and pack it into the disk image, without starting QEMU |
+| `make debug` | Clean rebuild with debug symbols, pack into the disk image, and run in QEMU |
+| `make disk` | Create an empty 100MB virtual disk (`fs_test.img`) |
 | `make clean` | Remove all build artifacts |
-| `make help` | Help for available commands |
+| `make help` | Show available commands |
+
 ### Prerequisites
 Make sure the necessary tools are installed:
 ```bash
-sudo apt install grub-pc-bin xorriso mtools qemu-system-x86
+sudo apt install grub-pc-bin dosfstools mtools util-linux qemu-system-x86
 ```
+
 ### Detailed Description of Targets
+
 #### Basic Build
 ```bash
 make
 ```
-- All build artifacts (.o files and final binary) are placed in the `build/` folder
+- Compiles all sources (ASM and C) into object files
+- All build artifacts (`.o` files, dependency files, and the final binary) are placed in the `build/` folder
 - Final binary: `build/kernel.elf`
+
+#### Building the Disk Image
+```bash
+make image
+```
+- Creates a fresh 100MB `fs_test.img`
+- Partitions it with `fdisk` (single FAT16 partition)
+- Formats the partition as FAT16 via `mkfs.fat`
+- Mounts it, copies over the compiled apps (`apps/*/main.elf`), the kernel (`build/boot/kernel.elf`), and `autorun.rc`
+- Generates `boot/grub/grub.cfg` with a multiboot2 entry for the kernel
+- Installs GRUB (`i386-pc`, BIOS boot) onto the image via `grub-install`
+- Unmounts the image and detaches the loop device
+
 #### Running in QEMU
-**Normal Run:**
+**Normal run:**
 ```bash
 make run
 ```
-Creates an ISO image and runs the kernel in the QEMU emulator
+Builds the kernel, packs it into `fs_test.img` with GRUB, and boots the image in QEMU.
 
-**Run with Debugging:**
+**Build without running:**
+```bash
+make build
+```
+Same steps as `run`, but QEMU is not started — useful for just producing the disk image.
+
+**Debug run:**
 ```bash
 make debug
 ```
-Build with debug information, create ISO, and run in QEMU with serial output and gdb support
+Cleans previous build artifacts, rebuilds the kernel with debug flags (`DEBUG_CFLAGS`, `ASMFLAGS_DEBUG`), packs the fresh image, and boots it in QEMU with serial output enabled (`-serial stdio`).
 
 ### Custom QEMU Options
-Pass options through the `QEMU_OPTS` variable:
+Pass extra flags through the `QEMU_OPTS` variable:
 ```bash
-# Running with gdb stub and 512 MB of RAM
+# Run with gdb stub and 512 MB of RAM
 make run QEMU_OPTS="-s -S -m 512"
-# Debugging with gdb
+
+# Debug build with gdb stub
 make debug QEMU_OPTS="-s -S"
 ```
-> **Note:** the `-s -S` flags enable gdb stub and pause the CPU until the debugger is connected
+> **Note:** the `-s -S` flags start a gdb stub on port 1234 and pause the CPU until a debugger connects.
+
+### Creating an Empty Disk
+```bash
+make disk
+```
+Creates a blank 100MB `fs_test.img`, without partitioning it or installing GRUB — use `make image` if you need a bootable disk.
 
 ### Cleanup
 ```bash
 make clean
 ```
-Removes the `build/` folder and all build artifacts
+Removes the `build/` folder, the kernel binary, `kernel.iso`, and `fs_test.img`.
 
 ### Additional
-For a detailed list of all available commands, run:
+For a full list of available commands, run:
 ```bash
 make help
 ```

@@ -148,6 +148,12 @@ static uint16_t fat_table[FAT_MAX_ENTRIES];
 static uint16_t fat_table2[FAT_MAX_ENTRIES]; /* временный буфер, нужен только при монтировании */
 static int fat_dirty = 0;
 
+/* Смещение тома от физического начала диска, в секторах.
+   0 — том занимает весь диск с LBA 0 (superfloppy, без таблицы разделов).
+   >0 — том это раздел MBR, начинающийся с данного LBA. */
+static uint32_t g_partition_lba = 0;
+static uint32_t g_partition_sectors = 0; /* размер раздела в секторах; 0, если том занимает весь диск */
+
 /* ===================== Низкоуровневый ввод-вывод ===================== */
 
 static int disk_read_sectors(uint64_t lba, uint32_t count, void *buffer)
@@ -155,7 +161,7 @@ static int disk_read_sectors(uint64_t lba, uint32_t count, void *buffer)
     if (!g_disk || !fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
 
-    int rc = ide_read_sectors(g_disk, lba, count, buffer);
+    int rc = ide_read_sectors(g_disk, lba + g_partition_lba, count, buffer);
     if (rc != IDE_OK)
         return FS_ERR_DISK_IO;
 
@@ -167,7 +173,7 @@ static int disk_write_sectors(uint64_t lba, uint32_t count, const void *buffer)
     if (!g_disk || !fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
 
-    int rc = ide_write_sectors(g_disk, lba, count, buffer);
+    int rc = ide_write_sectors(g_disk, lba + g_partition_lba, count, buffer);
     if (rc != IDE_OK)
         return FS_ERR_DISK_IO;
 
@@ -438,13 +444,10 @@ static int is_valid_sfn_char(unsigned char c)
     }
 }
 
-/* name/ext -> 11-байтное короткое имя FAT: обрезка до 8.3, верхний регистр, недопустимые символы -> '_'; выставляет NTRes для регистра в Linux. */
+/* name/ext -> 11-байтное короткое имя FAT: обрезка до 8.3, строго верхний регистр (по спецификации FAT),
+   недопустимые символы -> '_'. NTRes всегда 0 — регистр не запоминается, младшего/строчного отображения нет. */
 static void make_short_name(const char *name, const char *ext, uint8_t out11[11], uint8_t *nt_res_out)
 {
-    uint8_t nt = 0;
-    int name_has_lower = 0, name_has_upper = 0;
-    int ext_has_lower = 0, ext_has_upper = 0;
-
     for (int i = 0; i < 11; ++i)
         out11[i] = ' ';
 
@@ -455,14 +458,7 @@ static void make_short_name(const char *name, const char *ext, uint8_t out11[11]
     {
         unsigned char c = (unsigned char)name[i];
         if (c >= 'a' && c <= 'z')
-        {
-            name_has_lower = 1;
             c = (unsigned char)(c - 'a' + 'A');
-        }
-        else if (c >= 'A' && c <= 'Z')
-        {
-            name_has_upper = 1;
-        }
         if (!is_valid_sfn_char(c))
             c = '_';
         out11[i] = c;
@@ -477,31 +473,22 @@ static void make_short_name(const char *name, const char *ext, uint8_t out11[11]
     {
         unsigned char c = (unsigned char)ext[i];
         if (c >= 'a' && c <= 'z')
-        {
-            ext_has_lower = 1;
             c = (unsigned char)(c - 'a' + 'A');
-        }
-        else if (c >= 'A' && c <= 'Z')
-        {
-            ext_has_upper = 1;
-        }
         if (!is_valid_sfn_char(c))
             c = '_';
         out11[8 + i] = c;
     }
 
-    if (name_has_lower && !name_has_upper)
-        nt |= NTRES_NAME_LOWER;
-    if (ext_has_lower && !ext_has_upper)
-        nt |= NTRES_EXT_LOWER;
-
     if (nt_res_out)
-        *nt_res_out = nt;
+        *nt_res_out = 0;
 }
 
-/* Обратное преобразование: короткое имя -> name/ext, пробелы справа обрезаются, регистр — по NTRes. */
+/* Обратное преобразование: короткое имя -> name/ext, пробелы справа обрезаются.
+   Регистр не восстанавливается — короткое имя FAT всегда в верхнем регистре по спецификации. */
 static void parse_short_name(const uint8_t in11[11], uint8_t nt_res, char *name_out, size_t name_cap, char *ext_out, size_t ext_cap)
 {
+    (void)nt_res;
+
     uint8_t buf[11];
     memcpy(buf, in11, 11);
     if (buf[0] == 0x05)
@@ -520,12 +507,7 @@ static void parse_short_name(const uint8_t in11[11], uint8_t nt_res, char *name_
     if (copy_n < 0)
         copy_n = 0;
     for (int i = 0; i < copy_n; ++i)
-    {
-        char c = (char)buf[i];
-        if ((nt_res & NTRES_NAME_LOWER) && c >= 'A' && c <= 'Z')
-            c = (char)(c - 'A' + 'a');
-        name_out[i] = c;
-    }
+        name_out[i] = (char)buf[i];
     if (name_cap > 0)
         name_out[copy_n] = '\0';
 
@@ -535,12 +517,7 @@ static void parse_short_name(const uint8_t in11[11], uint8_t nt_res, char *name_
     if (copy_e < 0)
         copy_e = 0;
     for (int i = 0; i < copy_e; ++i)
-    {
-        char c = (char)buf[8 + i];
-        if ((nt_res & NTRES_EXT_LOWER) && c >= 'A' && c <= 'Z')
-            c = (char)(c - 'A' + 'a');
-        ext_out[i] = c;
-    }
+        ext_out[i] = (char)buf[8 + i];
     if (ext_cap > 0)
         ext_out[copy_e] = '\0';
 }
@@ -758,27 +735,111 @@ static int find_or_alloc_node(int16_t parent, uint16_t parent_dir_cluster, uint1
     return FS_ERR_NO_SPACE;
 }
 
+/* ===================== MBR / таблица разделов ===================== */
+
+#define MBR_SIGNATURE 0xAA55u
+#define MBR_PART_TABLE_OFFSET 0x1BEu
+#define MBR_PART_ENTRY_SIZE 16u
+#define MBR_PART_COUNT 4u
+
+#define PART_TYPE_EMPTY 0x00u
+#define PART_TYPE_FAT16_SMALL 0x04u /* FAT16, том < 32 МБ */
+#define PART_TYPE_FAT16 0x06u       /* FAT16 */
+#define PART_TYPE_FAT16_LBA 0x0Eu   /* FAT16, LBA-адресация */
+
+/* Стандартная 16-байтная запись таблицы разделов MBR. */
+typedef struct __attribute__((packed))
+{
+    uint8_t status; // 0x80 = активный (загрузочный), 0x00 = нет
+    uint8_t chs_first[3];
+    uint8_t type;
+    uint8_t chs_last[3];
+    uint32_t lba_first;   // первый сектор раздела (абсолютный LBA от начала диска)
+    uint32_t num_sectors; // размер раздела в секторах
+} mbr_part_entry_t;
+
+_Static_assert(sizeof(mbr_part_entry_t) == 16, "mbr_part_entry_t must be exactly 16 bytes");
+
+static int is_fat16_partition_type(uint8_t type)
+{
+    return type == PART_TYPE_FAT16_SMALL || type == PART_TYPE_FAT16 || type == PART_TYPE_FAT16_LBA;
+}
+
+/* Ищет первый раздел FAT16 в MBR физического сектора 0. При успехе возвращает FS_OK
+   и заполняет *out_lba *out_sectors (оба — в физических секторах от начала диска). */
+static int mbr_find_fat16_partition(uint32_t *out_lba, uint32_t *out_sectors)
+{
+    uint8_t sector[BYTES_PER_SECTOR];
+
+    uint32_t saved = g_partition_lba;
+    g_partition_lba = 0; /* MBR всегда читаем с физического начала диска */
+    int rc = disk_read_sectors(0, 1, sector);
+    g_partition_lba = saved;
+    if (rc != FS_OK)
+        return rc;
+
+    uint16_t sig;
+    memcpy(&sig, sector + 510, sizeof(sig));
+    if (sig != MBR_SIGNATURE)
+        return FS_ERR_NOT_FOUND;
+
+    for (uint32_t i = 0; i < MBR_PART_COUNT; ++i)
+    {
+        mbr_part_entry_t entry;
+        memcpy(&entry, sector + MBR_PART_TABLE_OFFSET + i * MBR_PART_ENTRY_SIZE, sizeof(entry));
+
+        if (entry.type == PART_TYPE_EMPTY || entry.num_sectors == 0)
+            continue;
+
+        if (is_fat16_partition_type(entry.type))
+        {
+            *out_lba = entry.lba_first;
+            *out_sectors = entry.num_sectors;
+            return FS_OK;
+        }
+    }
+
+    return FS_ERR_NOT_FOUND;
+}
+
+/* Пишет минимальный MBR */
+static int mbr_write(uint32_t part_start_lba, uint32_t part_sectors)
+{
+    uint8_t sector[BYTES_PER_SECTOR];
+    memset(sector, 0, sizeof(sector));
+
+    mbr_part_entry_t entry;
+    memset(&entry, 0, sizeof(entry));
+    entry.status = 0x80;
+    entry.type = PART_TYPE_FAT16_LBA;
+    entry.lba_first = part_start_lba;
+    entry.num_sectors = part_sectors;
+
+    memcpy(sector + MBR_PART_TABLE_OFFSET, &entry, sizeof(entry));
+
+    uint16_t sig = MBR_SIGNATURE;
+    memcpy(sector + 510, &sig, sizeof(sig));
+
+    uint32_t saved = g_partition_lba;
+    g_partition_lba = 0;
+    int rc = disk_write_sectors(0, 1, sector);
+    g_partition_lba = saved;
+    return rc;
+}
+
 /* ===================== Форматирование и монтирование ===================== */
 
-int fs_format(ide_disk_t *disk)
+/* Общая часть fs_format()/fs_format_mbr(): создаёт FAT16-том, начинающийся с текущего g_partition_lba
+   и занимающий volume_sectors физических секторов. Сам g_partition_lba должен быть уже выставлен
+   вызывающей стороной (0 — для superfloppy, LBA раздела — для MBR-варианта). */
+static int format_volume(uint32_t volume_sectors)
 {
-    if (!disk)
-        return FS_ERR_INVALID_ARG;
-
-    g_disk = disk;
-    fs_initialized = 1;
-
-    uint32_t phys_sectors = (disk->total_sectors > 0xFFFFFFFFull) ? 0xFFFFFFFFu : (uint32_t)disk->total_sectors;
-
     uint8_t spc;
     uint16_t fatsz;
     uint32_t total_used;
-    int rc = choose_layout(phys_sectors, &spc, &fatsz, &total_used);
+    int rc = choose_layout(volume_sectors, &spc, &fatsz, &total_used);
     if (rc != FS_OK)
-    {
-        fs_initialized = 0;
         return rc;
-    }
 
     fat16_bpb_t bpb;
     memset(&bpb, 0, sizeof(bpb));
@@ -805,7 +866,7 @@ int fs_format(ide_disk_t *disk)
     bpb.fat_size_16 = fatsz;
     bpb.sectors_per_track = 63;
     bpb.num_heads = 255;
-    bpb.hidden_sectors = 0;
+    bpb.hidden_sectors = g_partition_lba;
     bpb.drive_number = 0x80;
     bpb.reserved1 = 0;
     bpb.boot_signature = BOOT_SIG_EXT;
@@ -817,10 +878,7 @@ int fs_format(ide_disk_t *disk)
 
     rc = disk_write_sectors(0, 1, &bpb);
     if (rc != FS_OK)
-    {
-        fs_initialized = 0;
         return rc;
-    }
 
     apply_layout(&bpb);
 
@@ -830,10 +888,7 @@ int fs_format(ide_disk_t *disk)
     fat_table[1] = FAT_EOF;
     rc = save_fat();
     if (rc != FS_OK)
-    {
-        fs_initialized = 0;
         return rc;
-    }
 
     /* --- корневой каталог: обнуляем всю область --- */
     uint8_t zero_sector[BYTES_PER_SECTOR];
@@ -842,10 +897,7 @@ int fs_format(ide_disk_t *disk)
     {
         rc = disk_write_sectors(g_root_dir_lba + s, 1, zero_sector);
         if (rc != FS_OK)
-        {
-            fs_initialized = 0;
             return rc;
-        }
     }
 
     /* метка тома первой записью корня — необязательно, но помогает опознать диск (lsblk/blkid) */
@@ -858,10 +910,7 @@ int fs_format(ide_disk_t *disk)
     label.crt_time = label.wrt_time = FS_DEFAULT_TIME;
     rc = dirent_write(0, 0, &label);
     if (rc != FS_OK)
-    {
-        fs_initialized = 0;
         return rc;
-    }
 
     memset(nodes, 0, sizeof(nodes));
     nodes[FS_ROOT_IDX].used = 1;
@@ -873,6 +922,73 @@ int fs_format(ide_disk_t *disk)
     return FS_OK;
 }
 
+int fs_format(ide_disk_t *disk)
+{
+    if (!disk)
+        return FS_ERR_INVALID_ARG;
+
+    g_disk = disk;
+    fs_initialized = 1;
+    g_partition_lba = 0; /* superfloppy: том занимает весь диск с LBA 0 */
+    g_partition_sectors = 0;
+
+    uint32_t phys_sectors = (disk->total_sectors > 0xFFFFFFFFull) ? 0xFFFFFFFFu : (uint32_t)disk->total_sectors;
+
+    int rc = format_volume(phys_sectors);
+    if (rc != FS_OK)
+    {
+        fs_initialized = 0;
+        g_partition_lba = 0;
+        return rc;
+    }
+
+    return FS_OK;
+}
+
+int fs_format_mbr(ide_disk_t *disk, uint32_t partition_start_lba)
+{
+    if (!disk)
+        return FS_ERR_INVALID_ARG;
+
+    g_disk = disk;
+    fs_initialized = 1;
+
+    uint32_t phys_sectors = (disk->total_sectors > 0xFFFFFFFFull) ? 0xFFFFFFFFu : (uint32_t)disk->total_sectors;
+
+    if (partition_start_lba == 0 || partition_start_lba >= phys_sectors)
+    {
+        fs_initialized = 0;
+        return FS_ERR_INVALID_ARG;
+    }
+
+    uint32_t partition_sectors = phys_sectors - partition_start_lba;
+
+    /* 1. Пишем MBR с одной записью раздела — всегда на физическое начало диска. */
+    g_partition_lba = 0;
+    int rc = mbr_write(partition_start_lba, partition_sectors);
+    if (rc != FS_OK)
+    {
+        fs_initialized = 0;
+        return rc;
+    }
+
+    /* 2. Форматируем сам раздел как FAT16 — все дальнейшие обращения к диску
+          прозрачно сдвигаются на partition_start_lba. */
+    g_partition_lba = partition_start_lba;
+    g_partition_sectors = partition_sectors;
+
+    rc = format_volume(partition_sectors);
+    if (rc != FS_OK)
+    {
+        fs_initialized = 0;
+        g_partition_lba = 0;
+        g_partition_sectors = 0;
+        return rc;
+    }
+
+    return FS_OK;
+}
+
 int fs_init(ide_disk_t *disk)
 {
     if (!disk)
@@ -880,6 +996,8 @@ int fs_init(ide_disk_t *disk)
 
     g_disk = disk;
     fs_initialized = 1;
+    g_partition_lba = 0;
+    g_partition_sectors = 0;
 
     fat16_bpb_t bpb;
     int rc = disk_read_sectors(0, 1, &bpb);
@@ -889,13 +1007,39 @@ int fs_init(ide_disk_t *disk)
         return rc;
     }
 
-    if (bpb.signature != BOOT_SECTOR_SIGNATURE ||
-        bpb.bytes_per_sector != BYTES_PER_SECTOR ||
-        bpb.num_fats == 0 ||
-        bpb.sectors_per_cluster == 0 ||
-        memcmp(bpb.fs_type, "FAT16   ", 8) != 0)
+    int bpb_valid = (bpb.signature == BOOT_SECTOR_SIGNATURE &&
+                     bpb.bytes_per_sector == BYTES_PER_SECTOR &&
+                     bpb.num_fats != 0 &&
+                     bpb.sectors_per_cluster != 0 &&
+                     memcmp(bpb.fs_type, "FAT16   ", 8) == 0);
+
+    if (!bpb_valid)
+    {
+        /* Сектор 0 — не BPB. Возможно, это MBR с разделом FAT16: ищем такой раздел
+           и, если найден, пробуем прочитать BPB уже с его смещения. */
+        uint32_t part_lba, part_sectors;
+        if (mbr_find_fat16_partition(&part_lba, &part_sectors) == FS_OK)
+        {
+            g_partition_lba = part_lba;
+            g_partition_sectors = part_sectors;
+
+            rc = disk_read_sectors(0, 1, &bpb); /* теперь читаем сектор 0 ТОМА, т.е. LBA part_lba физически */
+            if (rc == FS_OK)
+            {
+                bpb_valid = (bpb.signature == BOOT_SECTOR_SIGNATURE &&
+                             bpb.bytes_per_sector == BYTES_PER_SECTOR &&
+                             bpb.num_fats != 0 &&
+                             bpb.sectors_per_cluster != 0 &&
+                             memcmp(bpb.fs_type, "FAT16   ", 8) == 0);
+            }
+        }
+    }
+
+    if (!bpb_valid)
     {
         fs_initialized = 0;
+        g_partition_lba = 0;
+        g_partition_sectors = 0;
         return FS_ERR_NOT_FOUND;
     }
 
@@ -905,6 +1049,8 @@ int fs_init(ide_disk_t *disk)
         g_count_of_clusters < FAT16_MIN_CLUSTERS || g_count_of_clusters > FAT16_MAX_CLUSTERS)
     {
         fs_initialized = 0;
+        g_partition_lba = 0;
+        g_partition_sectors = 0;
         return FS_ERR_NOT_FOUND;
     }
 
@@ -912,6 +1058,8 @@ int fs_init(ide_disk_t *disk)
     if (rc != FS_OK)
     {
         fs_initialized = 0;
+        g_partition_lba = 0;
+        g_partition_sectors = 0;
         return rc;
     }
 
