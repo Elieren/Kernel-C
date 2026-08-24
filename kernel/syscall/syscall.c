@@ -21,20 +21,13 @@ extern volatile uint32_t seconds;
 
 uint64_t load_and_run_program(const char *str)
 {
-    local_irq_disable();
     if (!str || str[0] == '\0')
-    {
-        local_irq_enable();
         return -1;
-    }
 
     // 1. Найти /bin
     int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
     if (bin_idx < 0)
-    {
-        local_irq_enable();
         return 0; // нет /bin
-    }
 
 // Токенизация cmdline
 #define MAX_ARGC 64
@@ -64,38 +57,25 @@ uint64_t load_and_run_program(const char *str)
     }
 
     if (argc == 0)
-    {
-        local_irq_enable();
         return -1;
-    }
     const char *progname = argv_storage[0];
 
     // 2. Найти файл в /bin
     fs_entry_t entry;
     int file_idx = fs_find_in_dir(progname, "elf", bin_idx, &entry);
     if (file_idx < 0)
-    {
-        local_irq_enable();
         return 0; // файл не найден
-    }
     if (entry.size == 0)
-    {
-        local_irq_enable();
         return 0;
-    }
 
     // 3. Прочитать ELF-файл целиком во временный буфер
     void *file_buf = malloc(entry.size);
     if (!file_buf)
-    {
-        local_irq_enable();
         return 0;
-    }
 
     if (fs_read_file_in_dir(progname, "elf", bin_idx, file_buf, entry.size, NULL) != 0)
     {
         free(file_buf);
-        local_irq_enable();
         return 0;
     }
 
@@ -104,10 +84,7 @@ uint64_t load_and_run_program(const char *str)
     int elf_rc = elf_load_image(file_buf, entry.size, 2048 /* место под argv/строки */, &image);
     free(file_buf);
     if (elf_rc != ELF_LOAD_OK)
-    {
-        local_irq_enable();
         return 0; // битый/неподдерживаемый ELF — отказываемся запускать
-    }
 
     void *user_mem = image.image_base;
     size_t user_mem_size = image.image_size;
@@ -121,7 +98,6 @@ uint64_t load_and_run_program(const char *str)
     if (used + ptrs_size > area_size)
     {
         free(user_mem);
-        local_irq_enable();
         return 0;
     }
     char **argv_user = (char **)(area + used);
@@ -133,7 +109,6 @@ uint64_t load_and_run_program(const char *str)
         if (used + len > area_size)
         {
             free(user_mem);
-            local_irq_enable();
             return 0;
         }
         char *dst = area + used;
@@ -154,11 +129,9 @@ uint64_t load_and_run_program(const char *str)
     if (pid == 0)
     {
         free(user_mem);
-        local_irq_enable();
         return 0;
     }
 
-    local_irq_enable();
     return pid;
 }
 
