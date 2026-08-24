@@ -24,7 +24,7 @@ void screen_refresh(void)
 {
     for (;;)
     {
-        if (screen_refresh_status && graphics_mode)
+        if (screen_refresh_status)
         {
             video_update_screen();
             screen_refresh_status = false;
@@ -247,5 +247,6 @@ void tasks_init(void)
     load_and_run_from_autorun();
 
     task_create(zombie_reaper_task, 0, "ZombieReap");
-    task_create(screen_refresh, 0, "ScreenRefresh");
+    if (graphics_mode)
+        task_create(screen_refresh, 0, "ScreenRefresh");
 }

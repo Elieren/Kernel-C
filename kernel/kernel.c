@@ -58,10 +58,25 @@ void kmain(uint64_t mb2_addr)
 
     boot_info_t *info = arch_parse_boot_info(mb2_addr);
 
+    uart16550_driver_init();
+    if (serial_init(1, 115200))
+        serial_write_string(1, "[serial] ready\n");
+
     if (info->total_memory == 0)
     {
-        panic("MULTIBOOT2_MEMORY_INFO_INVALID", true, false);
+        serial_write_string(1, "\r\n*** EARLY BOOT FATAL: ");
+        serial_write_string(1, "MULTIBOOT2_MEMORY_INFO_INVALID");
+        serial_write_string(1, "\r\n");
+
+        for (;;)
+        {
+            halt();
+        }
     }
+
+    paging_init(info->total_memory);
+
+    scheduler_init();
 
     /* Устанавливаем конец кучи на конец ОЗУ (с небольшим запасом) */
     uint64_t reserved = 1024 * 1024; /* Резервируем 1 MiB для безопасности */
@@ -76,8 +91,6 @@ void kmain(uint64_t mb2_addr)
     }
 
     malloc_init(&_heap_start, heap_size);
-
-    paging_init(info->total_memory);
 
     /* Регистрация видеодрайвера на основе наличия framebuffer */
     if (info && info->fb.addr != 0)
@@ -95,6 +108,9 @@ void kmain(uint64_t mb2_addr)
     /* Инициализация видео */
     video_init();
 
+    /* Очистим экран чёрный */
+    video_clear(0x00000000);
+
     uint32_t g_screen_width = 0;
     uint32_t g_screen_height = 0;
 
@@ -104,10 +120,6 @@ void kmain(uint64_t mb2_addr)
         g_screen_width = info->fb.width;
         g_screen_height = info->fb.height;
     }
-
-    uart16550_driver_init();
-    if (serial_init(UART_COM1, 115200))
-        serial_write_string(UART_COM1, "[serial] ready\n");
 
     pci_init();
 
@@ -134,9 +146,6 @@ void kmain(uint64_t mb2_addr)
         mouse_enable();
     }
 
-    /* Очистим экран чёрный */
-    video_clear(0x00000000);
-
     ide_disk_t disk;
     ide_init(&disk, IDE_CHANNEL_PRIMARY, 0);
 
@@ -145,7 +154,6 @@ void kmain(uint64_t mb2_addr)
         panic("FILESYSTEM_NOT_FOUND", true, false);
     }
 
-    scheduler_init();
     tasks_init();
 
     /* Разрешаем прерывания */

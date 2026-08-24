@@ -1,5 +1,5 @@
 #include <asm/panic.h>
-#include "mm/malloc/malloc.h"
+#include <stddef.h>
 
 /* ================= ПОЛУЧЕНИЕ РЕГИСТРОВ ================= */
 
@@ -226,132 +226,88 @@ enum value_type stack_dump_classify_value(uint64_t value)
     return VALUE_UNKNOWN;
 }
 
+/* ================= ГРУППЫ РЕГИСТРОВ ДЛЯ ВЫВОДА ================= */
+
+static struct register_entry g_group0_regs[8];
+static struct register_entry g_group1_regs[8];
+static struct register_entry g_group2_regs[2];
+static struct register_entry g_group3_regs[6];
+static struct register_entry g_group4_regs[4];
+static struct register_group g_groups[5];
+static struct register_groups g_register_groups;
+
 struct register_groups *get_register_groups(const RegistersState *regs)
 {
-    // Выделяем память для структуры групп
-    struct register_groups *result = malloc(sizeof(struct register_groups));
-    if (!result)
+    if (!regs)
         return NULL;
-
-    // Выделяем память для 5 групп
-    result->groups = malloc(5 * sizeof(struct register_group));
-    if (!result->groups)
-    {
-        free(result);
-        return NULL;
-    }
-    result->group_count = 5;
 
     // ===== Группа 0: Основные регистры =====
-    result->groups[0].registers = malloc(8 * sizeof(struct register_entry));
-    if (!result->groups[0].registers)
-        goto cleanup_fail;
+    g_group0_regs[0] = (struct register_entry){"RAX", &regs->rax, REG_SIZE_64};
+    g_group0_regs[1] = (struct register_entry){"RBX", &regs->rbx, REG_SIZE_64};
+    g_group0_regs[2] = (struct register_entry){"RCX", &regs->rcx, REG_SIZE_64};
+    g_group0_regs[3] = (struct register_entry){"RDX", &regs->rdx, REG_SIZE_64};
+    g_group0_regs[4] = (struct register_entry){"RSI", &regs->rsi, REG_SIZE_64};
+    g_group0_regs[5] = (struct register_entry){"RDI", &regs->rdi, REG_SIZE_64};
+    g_group0_regs[6] = (struct register_entry){"RIP", &regs->rip, REG_SIZE_64};
+    g_group0_regs[7] = (struct register_entry){"RFLAGS", &regs->rflags, REG_SIZE_64};
 
-    result->groups[0].header = NULL;
-    result->groups[0].count = 8;
-    result->groups[0].columns = 2;
-
-    result->groups[0].registers[0] = (struct register_entry){"RAX", &regs->rax, REG_SIZE_64};
-    result->groups[0].registers[1] = (struct register_entry){"RBX", &regs->rbx, REG_SIZE_64};
-    result->groups[0].registers[2] = (struct register_entry){"RCX", &regs->rcx, REG_SIZE_64};
-    result->groups[0].registers[3] = (struct register_entry){"RDX", &regs->rdx, REG_SIZE_64};
-    result->groups[0].registers[4] = (struct register_entry){"RSI", &regs->rsi, REG_SIZE_64};
-    result->groups[0].registers[5] = (struct register_entry){"RDI", &regs->rdi, REG_SIZE_64};
-    result->groups[0].registers[6] = (struct register_entry){"RIP", &regs->rip, REG_SIZE_64};
-    result->groups[0].registers[7] = (struct register_entry){"RFLAGS", &regs->rflags, REG_SIZE_64};
+    g_groups[0].header = NULL;
+    g_groups[0].registers = g_group0_regs;
+    g_groups[0].count = 8;
+    g_groups[0].columns = 2;
 
     // ===== Группа 1: Расширенные регистры =====
-    result->groups[1].registers = malloc(8 * sizeof(struct register_entry));
-    if (!result->groups[1].registers)
-        goto cleanup_fail;
+    g_group1_regs[0] = (struct register_entry){"R8 ", &regs->r8, REG_SIZE_64};
+    g_group1_regs[1] = (struct register_entry){"R9 ", &regs->r9, REG_SIZE_64};
+    g_group1_regs[2] = (struct register_entry){"R10", &regs->r10, REG_SIZE_64};
+    g_group1_regs[3] = (struct register_entry){"R11", &regs->r11, REG_SIZE_64};
+    g_group1_regs[4] = (struct register_entry){"R12", &regs->r12, REG_SIZE_64};
+    g_group1_regs[5] = (struct register_entry){"R13", &regs->r13, REG_SIZE_64};
+    g_group1_regs[6] = (struct register_entry){"R14", &regs->r14, REG_SIZE_64};
+    g_group1_regs[7] = (struct register_entry){"R15", &regs->r15, REG_SIZE_64};
 
-    result->groups[1].header = NULL;
-    result->groups[1].count = 8;
-    result->groups[1].columns = 2;
-
-    result->groups[1].registers[0] = (struct register_entry){"R8 ", &regs->r8, REG_SIZE_64};
-    result->groups[1].registers[1] = (struct register_entry){"R9 ", &regs->r9, REG_SIZE_64};
-    result->groups[1].registers[2] = (struct register_entry){"R10", &regs->r10, REG_SIZE_64};
-    result->groups[1].registers[3] = (struct register_entry){"R11", &regs->r11, REG_SIZE_64};
-    result->groups[1].registers[4] = (struct register_entry){"R12", &regs->r12, REG_SIZE_64};
-    result->groups[1].registers[5] = (struct register_entry){"R13", &regs->r13, REG_SIZE_64};
-    result->groups[1].registers[6] = (struct register_entry){"R14", &regs->r14, REG_SIZE_64};
-    result->groups[1].registers[7] = (struct register_entry){"R15", &regs->r15, REG_SIZE_64};
+    g_groups[1].header = NULL;
+    g_groups[1].registers = g_group1_regs;
+    g_groups[1].count = 8;
+    g_groups[1].columns = 2;
 
     // ===== Группа 2: Указатели стека =====
-    result->groups[2].registers = malloc(2 * sizeof(struct register_entry));
-    if (!result->groups[2].registers)
-        goto cleanup_fail;
+    g_group2_regs[0] = (struct register_entry){"RBP", &regs->rbp, REG_SIZE_64};
+    g_group2_regs[1] = (struct register_entry){"RSP", &regs->rsp, REG_SIZE_64};
 
-    result->groups[2].header = NULL;
-    result->groups[2].count = 2;
-    result->groups[2].columns = 2;
-
-    result->groups[2].registers[0] = (struct register_entry){"RBP", &regs->rbp, REG_SIZE_64};
-    result->groups[2].registers[1] = (struct register_entry){"RSP", &regs->rsp, REG_SIZE_64};
+    g_groups[2].header = NULL;
+    g_groups[2].registers = g_group2_regs;
+    g_groups[2].count = 2;
+    g_groups[2].columns = 2;
 
     // ===== Группа 3: Сегментные регистры =====
-    result->groups[3].registers = malloc(6 * sizeof(struct register_entry));
-    if (!result->groups[3].registers)
-        goto cleanup_fail;
+    g_group3_regs[0] = (struct register_entry){"CS", &regs->cs, REG_SIZE_16};
+    g_group3_regs[1] = (struct register_entry){"DS", &regs->ds, REG_SIZE_16};
+    g_group3_regs[2] = (struct register_entry){"ES", &regs->es, REG_SIZE_16};
+    g_group3_regs[3] = (struct register_entry){"FS", &regs->fs, REG_SIZE_16};
+    g_group3_regs[4] = (struct register_entry){"GS", &regs->gs, REG_SIZE_16};
+    g_group3_regs[5] = (struct register_entry){"SS", &regs->ss, REG_SIZE_16};
 
-    result->groups[3].header = NULL;
-    result->groups[3].count = 6;
-    result->groups[3].columns = 2;
-
-    result->groups[3].registers[0] = (struct register_entry){"CS", &regs->cs, REG_SIZE_16};
-    result->groups[3].registers[1] = (struct register_entry){"DS", &regs->ds, REG_SIZE_16};
-    result->groups[3].registers[2] = (struct register_entry){"ES", &regs->es, REG_SIZE_16};
-    result->groups[3].registers[3] = (struct register_entry){"FS", &regs->fs, REG_SIZE_16};
-    result->groups[3].registers[4] = (struct register_entry){"GS", &regs->gs, REG_SIZE_16};
-    result->groups[3].registers[5] = (struct register_entry){"SS", &regs->ss, REG_SIZE_16};
+    g_groups[3].header = NULL;
+    g_groups[3].registers = g_group3_regs;
+    g_groups[3].count = 6;
+    g_groups[3].columns = 2;
 
     // ===== Группа 4: Управляющие регистры =====
-    result->groups[4].registers = malloc(4 * sizeof(struct register_entry));
-    if (!result->groups[4].registers)
-        goto cleanup_fail;
+    g_group4_regs[0] = (struct register_entry){"CR0", &regs->cr0, REG_SIZE_64};
+    g_group4_regs[1] = (struct register_entry){"CR2", &regs->cr2, REG_SIZE_64};
+    g_group4_regs[2] = (struct register_entry){"CR3", &regs->cr3, REG_SIZE_64};
+    g_group4_regs[3] = (struct register_entry){"CR4", &regs->cr4, REG_SIZE_64};
 
-    result->groups[4].header = NULL;
-    result->groups[4].count = 4;
-    result->groups[4].columns = 2;
+    g_groups[4].header = NULL;
+    g_groups[4].registers = g_group4_regs;
+    g_groups[4].count = 4;
+    g_groups[4].columns = 2;
 
-    result->groups[4].registers[0] = (struct register_entry){"CR0", &regs->cr0, REG_SIZE_64};
-    result->groups[4].registers[1] = (struct register_entry){"CR2", &regs->cr2, REG_SIZE_64};
-    result->groups[4].registers[2] = (struct register_entry){"CR3", &regs->cr3, REG_SIZE_64};
-    result->groups[4].registers[3] = (struct register_entry){"CR4", &regs->cr4, REG_SIZE_64};
+    g_register_groups.groups = g_groups;
+    g_register_groups.group_count = 5;
 
-    return result;
-
-cleanup_fail:
-    // Освобождаем все, что успели выделить
-    for (size_t i = 0; i < result->group_count; i++)
-    {
-        if (result->groups[i].registers)
-            free(result->groups[i].registers);
-    }
-    free(result->groups);
-    free(result);
-    return NULL;
-}
-
-void free_register_groups(struct register_groups *groups)
-{
-    if (!groups)
-        return;
-
-    // Освобождаем массивы регистров в каждой группе
-    for (size_t i = 0; i < groups->group_count; i++)
-    {
-        if (groups->groups[i].registers)
-            free(groups->groups[i].registers);
-    }
-
-    // Освобождаем массив групп
-    if (groups->groups)
-        free(groups->groups);
-
-    // Освобождаем саму структуру
-    free(groups);
+    return &g_register_groups;
 }
 
 void print_flags(const RegistersState *regs)

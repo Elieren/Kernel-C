@@ -4,11 +4,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Базовые адреса стандартных COM-портов (x86 ISA legacy)
-#define UART_COM1 0x3F8
-#define UART_COM2 0x2F8
-#define UART_COM3 0x3E8
-#define UART_COM4 0x2E8
+// Номера стандартных COM-портов.
+#define UART_COM1 1
+#define UART_COM2 2
+#define UART_COM3 3
+#define UART_COM4 4
 
 // Регистры UART 16550 (смещения от базового порта, DLAB = 0)
 #define UART_REG_DATA 0x00         // RBR (чтение) / THR (запись)

@@ -140,9 +140,6 @@ struct register_groups
 // Получить все группы регистров для отображения
 struct register_groups *get_register_groups(const RegistersState *regs);
 
-// Освободить ресурсы
-void free_register_groups(struct register_groups *groups);
-
 // Печать флагов
 void print_flags(const RegistersState *regs);
 

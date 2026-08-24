@@ -1,5 +1,6 @@
 #include "panic.h"
 #include "drivers/video/video.h"
+#include "drivers/serial/serial.h"
 #include "kernel/power/power.h"
 #include "kernel/sched/multitask/multitask.h"
 #include "kernel/time/timer.h"
@@ -7,7 +8,6 @@
 #include "kernel/syscall/syscall.h"
 #include "lib/string/string.h"
 #include "lib/graphics/formatting/formatting.h"
-#include "mm/malloc/malloc.h"
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdarg.h>
@@ -15,76 +15,25 @@
 
 volatile bool is_panic = false;
 
-/* Буфер для накопления всего вывода */
-#define PANIC_OUTPUT_BUFFER_SIZE (64 * 1024)
-static char *panic_output_buffer = NULL;
-static size_t panic_output_pos = 0;
-
-/* ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ БУФЕРА ================= */
-
-static bool ensure_buffer_allocated(void)
-{
-    if (panic_output_buffer)
-        return true;
-
-    panic_output_buffer = (char *)malloc(PANIC_OUTPUT_BUFFER_SIZE);
-    if (!panic_output_buffer)
-        return false;
-
-    panic_output_pos = 0;
-    return true;
-}
-
+/* ================= ВЫВОД СООБЩЕНИЙ ПАНИКИ (video + serial) ================= */
 void append_to_buffer(const char *str)
 {
-    if (!str || !ensure_buffer_allocated())
+    if (!str)
         return;
 
-    while (*str && panic_output_pos < PANIC_OUTPUT_BUFFER_SIZE - 1)
-    {
-        panic_output_buffer[panic_output_pos++] = *str++;
-    }
+    video_print_string(str, 0x00FFFFFF);
+    video_update_screen();
+    serial_write_string(1, str);
 }
 
 static void append_formatted(const char *format, ...)
 {
-    if (!ensure_buffer_allocated())
-        return;
-
     char temp[512];
     va_list args;
     va_start(args, format);
     kformat(temp, sizeof(temp), format, args);
     va_end(args);
     append_to_buffer(temp);
-}
-
-static void flush_panic_buffer(void)
-{
-    if (!panic_output_buffer || panic_output_pos == 0)
-        return;
-
-    panic_output_buffer[panic_output_pos] = '\0';
-    video_print_string(panic_output_buffer, 0x00FFFFFF);
-    video_update_screen();
-}
-
-static void reset_buffer(void)
-{
-    if (panic_output_buffer)
-    {
-        panic_output_pos = 0;
-    }
-}
-
-static void free_buffer(void)
-{
-    if (panic_output_buffer)
-    {
-        free(panic_output_buffer);
-        panic_output_buffer = NULL;
-        panic_output_pos = 0;
-    }
 }
 
 /* ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ФОРМАТИРОВАНИЯ ================= */
@@ -407,9 +356,6 @@ void print_registers(const RegistersState *regs)
 
     // Печать флагов (если поддерживается)
     print_flags(regs);
-
-    // Освобождаем ресурсы
-    free_register_groups(groups);
 }
 
 /* ================= ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ОСТАНОВКИ СИСТЕМЫ ================= */
@@ -426,12 +372,9 @@ static void halt_system()
 static void reboot_with_message()
 {
     append_to_buffer("System is rebooting...\n");
-    flush_panic_buffer();
     wait(1);
 
-    reset_buffer();
     append_to_buffer("Preparing to reboot...\n");
-    flush_panic_buffer();
 
     for (volatile int i = 0; i < 5000000; i++)
         ;
@@ -439,11 +382,8 @@ static void reboot_with_message()
     reboot_system();
 
     // Если перезагрузка не удалась
-    reset_buffer();
     append_to_buffer("\nReboot failed! System halted.\n");
-    flush_panic_buffer();
 
-    free_buffer();
     halt_system();
 }
 
@@ -456,16 +396,9 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
     {
         keyboard_disable();
 
-        // Пытаемся выделить буфер для сообщения об ошибке
-        if (ensure_buffer_allocated())
-        {
-            reset_buffer();
-            append_to_buffer("\n");
-            append_to_buffer("!!! DOUBLE PANIC DETECTED !!!\n");
-            append_to_buffer("Critical error - CPU will be stopped.\n\n");
-            flush_panic_buffer();
-            free_buffer();
-        }
+        append_to_buffer("\n");
+        append_to_buffer("!!! DOUBLE PANIC DETECTED !!!\n");
+        append_to_buffer("Critical error - CPU will be stopped.\n\n");
 
         local_irq_disable();
         halt_system();
@@ -528,15 +461,6 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
     /* ===== ОЧИСТКА ЭКРАНА И ФОРМИРОВАНИЕ ВЫВОДА ===== */
     video_clear(0x00000000);
 
-    // Проверяем, что буфер выделен
-    if (!ensure_buffer_allocated())
-    {
-        // Если не можем выделить буфер - просто останавливаем систему
-        halt_system();
-    }
-
-    reset_buffer();
-
     append_to_buffer("\n\n");
     append_to_buffer("+--------------------------------------------------------------+\n");
     append_to_buffer("|                      KERNEL PANIC                            |\n");
@@ -573,7 +497,7 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
     /* ===== РАЗДЕЛИТЕЛЬНАЯ ЛИНИЯ ===== */
     append_to_buffer("\n");
     for (int i = 0; i < 60; i++)
-        append_to_buffer("═");
+        append_to_buffer("=");
     append_to_buffer("\n\n");
 
     /* ===== НОВАЯ УПРОЩЕННАЯ ЛОГИКА ===== */
@@ -584,9 +508,6 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
         append_to_buffer("+------------------------------------+\n");
         append_to_buffer("| SYSTEM REBOOT IN PROGRESS          |\n");
         append_to_buffer("+------------------------------------+\n\n");
-
-        flush_panic_buffer();
-        free_buffer();
 
         kill_all_tasks();
         reboot_with_message();
@@ -607,9 +528,6 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             append_to_buffer("\n[OK] System recovered!\n");
             append_to_buffer("Continuing operation...\n\n");
 
-            flush_panic_buffer();
-            free_buffer();
-
             keyboard_enable();
             is_panic = false;
 
@@ -624,9 +542,6 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
             append_to_buffer("Resetting panic state...\n");
             append_to_buffer("\n[OK] System recovered!\n");
             append_to_buffer("Continuing operation...\n\n");
-
-            flush_panic_buffer();
-            free_buffer();
 
             keyboard_enable();
             is_panic = false;
@@ -644,9 +559,6 @@ int panic(const char *error_msg, bool do_reboot, bool can_continue)
         append_to_buffer("| SYSTEM HALTED                      |\n");
         append_to_buffer("| Please reboot your computer        |\n");
         append_to_buffer("+------------------------------------+\n\n");
-
-        flush_panic_buffer();
-        free_buffer();
 
         halt_system();
     }

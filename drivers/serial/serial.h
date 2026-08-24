@@ -4,11 +4,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define UART_COM1 0x3F8
-#define UART_COM2 0x2F8
-#define UART_COM3 0x3E8
-#define UART_COM4 0x2E8
-
 typedef struct
 {
     const char *name;
