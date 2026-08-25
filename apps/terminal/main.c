@@ -448,14 +448,21 @@ void set_input_line(const char *text, size_t len)
 {
     clear_input_line();
     size_t copy = (len < INPUT_BUF_SIZE - 1) ? len : INPUT_BUF_SIZE - 1;
+    size_t start_pos = input_len; // Запоминаем начало добавляемого текста
+
+    // 1. Копируем данные в буфер
     for (size_t i = 0; i < copy; i++)
     {
-        unsigned char c = (unsigned char)text[i];
-        if (!c)
+        if (!text[i])
             break;
-        input_buf[input_len++] = (char)c;
-        _do_syscall_print_char((unsigned long)c, WHITE);
+        input_buf[input_len++] = text[i];
     }
+
+    // 2. Ставим нуль-терминатор
+    input_buf[input_len] = '\0';
+
+    // 3. Выводим добавленную строку за один системный вызов
+    _do_syscall_print_string(&input_buf[start_pos], WHITE);
 }
 
 void history_nav_up(void)
