@@ -1,7 +1,6 @@
 #include "drivers/video/video.h"
 #include "formatting.h"
 #include "lib/string/string.h"
-#include <stdarg.h>
 #include <stdint.h>
 #include <limits.h>
 
@@ -194,6 +193,14 @@ static int simple_vsnprintf(char *buf, size_t size, const char *fmt, va_list arg
 
     *p = '\0';
     return (int)(p - buf);
+}
+
+int vkformat(char *buffer, size_t size, const char *format, va_list args)
+{
+    if (!buffer || size == 0 || !format)
+        return -1;
+
+    return simple_vsnprintf(buffer, size, format, args);
 }
 
 int kformat(char *buffer, size_t size, const char *format, ...)

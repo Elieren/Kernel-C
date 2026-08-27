@@ -31,7 +31,7 @@ static void append_formatted(const char *format, ...)
     char temp[512];
     va_list args;
     va_start(args, format);
-    kformat(temp, sizeof(temp), format, args);
+    vkformat(temp, sizeof(temp), format, args);
     va_end(args);
     append_to_buffer(temp);
 }

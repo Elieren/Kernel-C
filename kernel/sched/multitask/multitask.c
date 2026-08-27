@@ -189,7 +189,14 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
     paging_switch(current->page_table);
 }
 
-task_t *get_current_task(void) { return current; }
+task_t *get_current_task(void)
+{
+    if (current)
+    {
+        return current;
+    }
+    return &init_task;
+}
 
 static void add_to_zombie_list(task_t *t)
 {
