@@ -147,12 +147,12 @@ static int parse_path(const char *path, char *parent_dir_path, char *file_name, 
 
 void load_and_run_from_autorun(void)
 {
-    // 1. Найти директорию boot.d в корне
-    int boot_idx = fs_find_in_dir("boot.d", NULL, FS_ROOT_IDX, NULL);
+    // 1. Найти директорию boot_d в корне
+    int boot_idx = fs_find_in_dir("boot_d", NULL, FS_ROOT_IDX, NULL);
     if (boot_idx < 0)
-        return; // Нет boot.d
+        return; // Нет boot_d
 
-    // 2. Найти файл autorun.rc в boot.d
+    // 2. Найти файл autorun.rc в boot_d
     fs_entry_t autorun_entry;
     int autorun_idx = fs_find_in_dir("autorun", "rc", boot_idx, &autorun_entry);
     if (autorun_idx < 0)

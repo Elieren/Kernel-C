@@ -19,15 +19,251 @@
 
 extern volatile uint32_t seconds;
 
+#define MAX_PATH_DIRS 16
+
+static int resolve_dir_path(const char *path, uint32_t start_idx, int *out_idx)
+{
+    if (!path || path[0] == '\0')
+        return FS_ERR_INVALID_ARG;
+
+    uint32_t idx = start_idx;
+    const char *p = path;
+
+    if (p[0] == '/')
+    {
+        idx = FS_ROOT_IDX;
+        while (*p == '/')
+            p++;
+    }
+
+    while (*p)
+    {
+        char comp[FS_NAME_MAX + 1];
+        size_t i = 0;
+        while (p[i] && p[i] != '/')
+        {
+            if (i >= FS_NAME_MAX)
+                return FS_ERR_INVALID_ARG;
+            comp[i] = p[i];
+            i++;
+        }
+        comp[i] = '\0';
+
+        p += i;
+        while (*p == '/')
+            p++;
+
+        fs_entry_t entry;
+        int found = fs_find_in_dir(comp, NULL, (int)idx, &entry);
+        if (found < 0)
+            return found;
+        if (!entry.is_dir)
+            return FS_ERR_NOT_DIR;
+
+        idx = (uint32_t)found;
+    }
+
+    *out_idx = (int)idx;
+    return FS_OK;
+}
+
+static int get_path_dirs(int *out_dirs, int max_dirs)
+{
+    int n = 0;
+
+    int boot_idx = fs_find_in_dir("boot_d", NULL, FS_ROOT_IDX, NULL);
+
+    fs_entry_t entry;
+    int path_idx = (boot_idx >= 0)
+                       ? fs_find_in_dir("path", "rc", boot_idx, &entry)
+                       : -1;
+
+    if (path_idx < 0 || entry.size == 0)
+    {
+        // нет /boot_d/path.rc — поведение по умолчанию: только /bin
+        int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+        if (bin_idx < 0)
+            return 0;
+        out_dirs[n++] = bin_idx;
+        return n;
+    }
+
+    char *buf = (char *)malloc(entry.size + 1);
+    if (!buf)
+        return 0;
+
+    if (fs_read_file_in_dir("path", "rc", boot_idx, buf, entry.size, NULL) != 0)
+    {
+        free(buf);
+        return 0;
+    }
+    buf[entry.size] = '\0';
+
+    char *saveptr = NULL;
+    char *token = strtok_r(buf, ";", &saveptr);
+    while (token && n < max_dirs)
+    {
+        while (*token == ' ' || *token == '\t' || *token == '\r' || *token == '\n')
+            token++;
+
+        size_t len = strlen(token);
+        while (len > 0 && (token[len - 1] == ' ' || token[len - 1] == '\t' ||
+                           token[len - 1] == '\r' || token[len - 1] == '\n'))
+            token[--len] = '\0';
+
+        if (*token != '\0' && *token != '#')
+        {
+            int dir_idx;
+            if (resolve_dir_path(token, (uint32_t)FS_ROOT_IDX, &dir_idx) == FS_OK)
+                out_dirs[n++] = dir_idx;
+        }
+
+        token = strtok_r(NULL, ";", &saveptr);
+    }
+
+    free(buf);
+
+    if (n == 0)
+    {
+        // path.rc есть, но ни один каталог не разрешился — fallback на /bin
+        int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
+        if (bin_idx >= 0)
+            out_dirs[n++] = bin_idx;
+    }
+
+    return n;
+}
+
+static int resolve_program_path(const char *path,
+                                uint32_t cwd_idx,
+                                int *out_dir_idx,
+                                char *name_out, size_t name_out_sz,
+                                char *ext_out, size_t ext_out_sz)
+{
+    if (!path || path[0] == '\0')
+        return FS_ERR_INVALID_ARG;
+
+    uint32_t idx = cwd_idx;
+    const char *p = path;
+
+    if (p[0] == '/')
+    {
+        idx = FS_ROOT_IDX;
+        while (*p == '/')
+            p++;
+    }
+
+    if (*p == '\0')
+        return FS_ERR_INVALID_ARG; // путь указывает на каталог, а не на файл
+
+    char comp[FS_NAME_MAX + 1];
+
+    for (;;)
+    {
+        size_t i = 0;
+        while (p[i] && p[i] != '/')
+        {
+            if (i >= FS_NAME_MAX)
+                return FS_ERR_INVALID_ARG;
+            comp[i] = p[i];
+            i++;
+        }
+        comp[i] = '\0';
+
+        const char *rest = p + i;
+        while (*rest == '/')
+            rest++;
+
+        if (*rest == '\0')
+        {
+            int dot_pos = -1;
+            for (int k = (int)i - 1; k >= 0; --k)
+            {
+                if (comp[k] == '.')
+                {
+                    dot_pos = k;
+                    break;
+                }
+            }
+
+            if (dot_pos > 0)
+            {
+                size_t nlen = (size_t)dot_pos;
+                size_t elen = i - nlen - 1;
+                if (nlen >= name_out_sz || elen >= ext_out_sz)
+                    return FS_ERR_INVALID_ARG;
+                memcpy(name_out, comp, nlen);
+                name_out[nlen] = '\0';
+                memcpy(ext_out, comp + dot_pos + 1, elen);
+                ext_out[elen] = '\0';
+            }
+            else
+            {
+                if (i >= name_out_sz)
+                    return FS_ERR_INVALID_ARG;
+                memcpy(name_out, comp, i + 1);
+                ext_out[0] = '\0';
+            }
+
+            *out_dir_idx = (int)idx;
+            return FS_OK;
+        }
+
+        fs_entry_t entry;
+        int found = fs_find_in_dir(comp, NULL, (int)idx, &entry);
+        if (found < 0)
+            return found;
+        if (!entry.is_dir)
+            return FS_ERR_NOT_DIR;
+
+        idx = (uint32_t)found;
+        p = rest;
+    }
+}
+
+static void split_name_ext(const char *fullname,
+                           char *name_out, size_t name_out_sz,
+                           char *ext_out, size_t ext_out_sz)
+{
+    if (!fullname || !name_out || !ext_out || name_out_sz == 0 || ext_out_sz == 0)
+        return;
+
+    // Ищем последнее вхождение символа '.'
+    const char *dot = strrchr(fullname, '.');
+
+    if (dot && dot > fullname)
+    {
+        // Вычисляем длину имени (разница указателей) и расширения
+        size_t nlen = (size_t)(dot - fullname);
+        size_t elen = strlen(dot + 1);
+
+        if (nlen >= name_out_sz)
+            nlen = name_out_sz - 1;
+        if (elen >= ext_out_sz)
+            elen = ext_out_sz - 1;
+
+        memcpy(name_out, fullname, nlen);
+        name_out[nlen] = '\0';
+
+        memcpy(ext_out, dot + 1, elen);
+        ext_out[elen] = '\0';
+    }
+    else
+    {
+        size_t len = strlen(fullname);
+        if (len >= name_out_sz)
+            len = name_out_sz - 1;
+
+        memcpy(name_out, fullname, len);
+        name_out[len] = '\0';
+        ext_out[0] = '\0';
+    }
+}
+
 uint64_t load_and_run_program(const char *str)
 {
     if (!str || str[0] == '\0')
         return -1;
-
-    // 1. Найти /bin
-    int bin_idx = fs_find_in_dir("bin", NULL, FS_ROOT_IDX, NULL);
-    if (bin_idx < 0)
-        return 0; // нет /bin
 
 // Токенизация cmdline
 #define MAX_ARGC 64
@@ -60,11 +296,56 @@ uint64_t load_and_run_program(const char *str)
         return -1;
     const char *progname = argv_storage[0];
 
-    // 2. Найти файл в /bin
+    // 1. Разрешить путь программы в (каталог, имя, расширение)
+    int dir_idx;
+    char fname[FS_NAME_MAX];
+    char fext[FS_EXT_MAX];
+
+    if (!strchr(progname, '/'))
+    {
+        // Голое имя (без '/') — ищем по PATH из /boot_d/path.rc
+        int path_dirs[MAX_PATH_DIRS];
+        int npaths = get_path_dirs(path_dirs, MAX_PATH_DIRS);
+        if (npaths == 0)
+            return 0;
+
+        // Разбиваем progname на имя и расширение (по последней точке)
+        split_name_ext(progname, fname, sizeof(fname), fext, sizeof(fext));
+
+        dir_idx = -1;
+        for (int i = 0; i < npaths; ++i)
+        {
+            fs_entry_t probe;
+            // Ищем с фактическими fname и fext (пустое расширение допустимо)
+            if (fs_find_in_dir(fname, fext, path_dirs[i], &probe) >= 0 && !probe.is_dir)
+            {
+                dir_idx = path_dirs[i];
+                break;
+            }
+        }
+        if (dir_idx < 0)
+            return 0; // команда не найдена ни в одном каталоге PATH
+    }
+    else
+    {
+        // Путь содержит '/': абсолютный ("/..."), относительный ("./...", "../...", "a/b...")
+        task_t *cur = get_current_task();
+        uint32_t cwd_idx = cur ? cur->cwd_idx : (uint32_t)FS_ROOT_IDX;
+
+        int rc = resolve_program_path(progname, cwd_idx, &dir_idx,
+                                      fname, sizeof(fname),
+                                      fext, sizeof(fext));
+        if (rc != FS_OK)
+            return 0; // путь не найден или некорректен
+    }
+
+    // 2. Найти файл в разрешённом каталоге
     fs_entry_t entry;
-    int file_idx = fs_find_in_dir(progname, "elf", bin_idx, &entry);
+    int file_idx = fs_find_in_dir(fname, fext, dir_idx, &entry);
     if (file_idx < 0)
         return 0; // файл не найден
+    if (entry.is_dir)
+        return 0; // это каталог, а не исполняемый файл
     if (entry.size == 0)
         return 0;
 
@@ -73,7 +354,7 @@ uint64_t load_and_run_program(const char *str)
     if (!file_buf)
         return 0;
 
-    if (fs_read_file_in_dir(progname, "elf", bin_idx, file_buf, entry.size, NULL) != 0)
+    if (fs_read_file_in_dir(fname, fext, dir_idx, file_buf, entry.size, NULL) != 0)
     {
         free(file_buf);
         return 0;

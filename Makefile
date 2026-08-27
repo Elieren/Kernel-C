@@ -102,13 +102,15 @@ image: builddir $(BUILD_KERNEL)
 	for app in apps/*/; do
 		appname=$$(basename "$$app")
 		if [ -f "$$app/main.elf" ]; then
-			sudo cp "$$app/main.elf" "$(MOUNT_DIR)/bin/$$appname.elf"
+			sudo cp "$$app/main.elf" "$(MOUNT_DIR)/bin/$$appname"
 		else
 			echo "Warning: $$app/main.elf not found, skipping"
 		fi
 	done
 
 	sudo cp autorun.rc $(MOUNT_DIR)/boot_d/autorun.rc
+
+	sudo cp path.rc $(MOUNT_DIR)/boot_d/path.rc
 
 	sudo cp $(BUILD_KERNEL) $(MOUNT_DIR)/boot/kernel.elf
 
