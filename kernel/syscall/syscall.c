@@ -134,6 +134,45 @@ static int get_path_dirs(int *out_dirs, int max_dirs)
     return n;
 }
 
+static int split_name_ext(const char *fullname,
+                          char *name_out, size_t name_out_sz,
+                          char *ext_out, size_t ext_out_sz)
+{
+    if (!fullname || !name_out || !ext_out || name_out_sz == 0 || ext_out_sz == 0)
+        return FS_ERR_INVALID_ARG;
+
+    // Ищем последнее вхождение символа '.'
+    const char *dot = strrchr(fullname, '.');
+
+    if (dot && dot > fullname)
+    {
+        // Вычисляем длину имени (разница указателей) и расширения
+        size_t nlen = (size_t)(dot - fullname);
+        size_t elen = strlen(dot + 1);
+
+        if (nlen >= name_out_sz || elen >= ext_out_sz)
+            return FS_ERR_INVALID_ARG;
+
+        memcpy(name_out, fullname, nlen);
+        name_out[nlen] = '\0';
+
+        memcpy(ext_out, dot + 1, elen);
+        ext_out[elen] = '\0';
+    }
+    else
+    {
+        size_t len = strlen(fullname);
+        if (len >= name_out_sz)
+            return FS_ERR_INVALID_ARG;
+
+        memcpy(name_out, fullname, len);
+        name_out[len] = '\0';
+        ext_out[0] = '\0';
+    }
+
+    return FS_OK;
+}
+
 static int resolve_program_path(const char *path,
                                 uint32_t cwd_idx,
                                 int *out_dir_idx,
@@ -176,34 +215,9 @@ static int resolve_program_path(const char *path,
 
         if (*rest == '\0')
         {
-            int dot_pos = -1;
-            for (int k = (int)i - 1; k >= 0; --k)
-            {
-                if (comp[k] == '.')
-                {
-                    dot_pos = k;
-                    break;
-                }
-            }
-
-            if (dot_pos > 0)
-            {
-                size_t nlen = (size_t)dot_pos;
-                size_t elen = i - nlen - 1;
-                if (nlen >= name_out_sz || elen >= ext_out_sz)
-                    return FS_ERR_INVALID_ARG;
-                memcpy(name_out, comp, nlen);
-                name_out[nlen] = '\0';
-                memcpy(ext_out, comp + dot_pos + 1, elen);
-                ext_out[elen] = '\0';
-            }
-            else
-            {
-                if (i >= name_out_sz)
-                    return FS_ERR_INVALID_ARG;
-                memcpy(name_out, comp, i + 1);
-                ext_out[0] = '\0';
-            }
+            int rc = split_name_ext(comp, name_out, name_out_sz, ext_out, ext_out_sz);
+            if (rc != FS_OK)
+                return rc;
 
             *out_dir_idx = (int)idx;
             return FS_OK;
@@ -218,45 +232,6 @@ static int resolve_program_path(const char *path,
 
         idx = (uint32_t)found;
         p = rest;
-    }
-}
-
-static void split_name_ext(const char *fullname,
-                           char *name_out, size_t name_out_sz,
-                           char *ext_out, size_t ext_out_sz)
-{
-    if (!fullname || !name_out || !ext_out || name_out_sz == 0 || ext_out_sz == 0)
-        return;
-
-    // Ищем последнее вхождение символа '.'
-    const char *dot = strrchr(fullname, '.');
-
-    if (dot && dot > fullname)
-    {
-        // Вычисляем длину имени (разница указателей) и расширения
-        size_t nlen = (size_t)(dot - fullname);
-        size_t elen = strlen(dot + 1);
-
-        if (nlen >= name_out_sz)
-            nlen = name_out_sz - 1;
-        if (elen >= ext_out_sz)
-            elen = ext_out_sz - 1;
-
-        memcpy(name_out, fullname, nlen);
-        name_out[nlen] = '\0';
-
-        memcpy(ext_out, dot + 1, elen);
-        ext_out[elen] = '\0';
-    }
-    else
-    {
-        size_t len = strlen(fullname);
-        if (len >= name_out_sz)
-            len = name_out_sz - 1;
-
-        memcpy(name_out, fullname, len);
-        name_out[len] = '\0';
-        ext_out[0] = '\0';
     }
 }
 
@@ -310,7 +285,8 @@ uint64_t load_and_run_program(const char *str)
             return 0;
 
         // Разбиваем progname на имя и расширение (по последней точке)
-        split_name_ext(progname, fname, sizeof(fname), fext, sizeof(fext));
+        if (split_name_ext(progname, fname, sizeof(fname), fext, sizeof(fext)) != FS_OK)
+            return 0; // имя команды не помещается в буфер FS_NAME_MAX/FS_EXT_MAX
 
         dir_idx = -1;
         for (int i = 0; i < npaths; ++i)
