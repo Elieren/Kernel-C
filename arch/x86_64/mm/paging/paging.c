@@ -13,6 +13,7 @@
 #define PTE_W (1ULL << 1)  /* Writable                        */
 #define PTE_U (1ULL << 2)  /* User-accessible (ring-3 может)  */
 #define PTE_PS (1ULL << 7) /* Page Size: 2MB large page       */
+#define PTE_NX (1ULL << 63) /* No-Execute (требует EFER.NXE)   */
 
 /* ─── Индексы уровней ───────────────────────────────────────────── */
 #define PML4_IDX(va) (((uint64_t)(va) >> 39) & 0x1FF)
@@ -221,7 +222,7 @@ fail:
     return NULL;
 }
 
-int paging_map_user_region(uint64_t *pml4, void *addr, size_t size)
+static int map_user_region(uint64_t *pml4, void *addr, size_t size, int nx)
 {
     if (!pml4 || !addr || size == 0)
         return 0;
@@ -241,11 +242,30 @@ int paging_map_user_region(uint64_t *pml4, void *addr, size_t size)
         if (!pt)
             return 0;
 
-        pt[PT_IDX(page)] |= PTE_U;
+        uint64_t *pte = &pt[PT_IDX(page)];
+        int was_user = (*pte & PTE_U) != 0;
+
+        *pte |= PTE_U;
+        /* NX ставим только на страницы, которые ещё не были user-страницами:
+           страница может делить границу с образом программы (код). */
+        if (nx && !was_user)
+            *pte |= PTE_NX;
+        else if (!nx)
+            *pte &= ~PTE_NX;
         invlpg(page);
     }
 
     return 1;
+}
+
+int paging_map_user_region(uint64_t *pml4, void *addr, size_t size)
+{
+    return map_user_region(pml4, addr, size, 0);
+}
+
+int paging_map_user_region_nx(uint64_t *pml4, void *addr, size_t size)
+{
+    return map_user_region(pml4, addr, size, 1);
 }
 
 void paging_unmap_user_region(uint64_t *pml4, void *addr, size_t size)

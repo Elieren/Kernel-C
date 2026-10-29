@@ -44,6 +44,7 @@ char *strdup(const char *s)
 void scheduler_init(void)
 {
     memset(&init_task, 0, sizeof(init_task));
+    fpu_state_reset(init_task.fpu_state);
     init_task.pid = 0;
     init_task.state = TASK_RUNNING;
     init_task.name = "INIT";
@@ -93,6 +94,7 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
     }
 
     memset(t, 0, sizeof(*t));
+    fpu_state_reset(t->fpu_state);
     t->pid = next_pid++;
     t->state = TASK_READY;
     t->kstack = kstack;
@@ -182,11 +184,14 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
         return;
     }
 
+    fpu_save(current->fpu_state);
+
     current = next;
     current->state = TASK_RUNNING;
     *out_regs_ptr = current->regs;
     update_kernel_stack((uint64_t)current->kstack + current->kstack_size);
     paging_switch(current->page_table);
+    fpu_restore(current->fpu_state);
 }
 
 task_t *get_current_task(void)
@@ -202,6 +207,15 @@ static void add_to_zombie_list(task_t *t)
 {
     if (!t)
         return;
+
+    /* Не добавляем дважды: иначе список замкнётся в цикл и задача будет
+       освобождена повторно (например, Ctrl+C и task_exit почти одновременно). */
+    for (task_t *z = zombie_list; z; z = z->znext)
+    {
+        if (z == t)
+            return;
+    }
+
     t->znext = zombie_list;
     zombie_list = t;
 }
@@ -247,6 +261,22 @@ static void free_task_resources(task_t *t)
     if (!t || t == &init_task)
         return;
 
+    /* Блоки кучи, выданные задаче SYSCALL_MALLOC и не освобождённые ею:
+       без этого они утекают из кучи ядра навсегда.
+       Заголовок блока лежит на user-странице и мог быть испорчен задачей —
+       освобождаем только блок, чей заголовок цел и размер совпадает с записанным
+       при выдаче; иначе пропускаем. */
+    for (int i = 0; i < USER_ALLOC_MAX; i++)
+    {
+        user_alloc_t *ua = &t->user_allocs[i];
+        if (!ua->ptr)
+            continue;
+        if (malloc_checked_size(ua->ptr) == ua->size)
+            free(ua->ptr);
+        ua->ptr = NULL;
+        ua->size = 0;
+    }
+
     if (t->kstack)
         free(t->kstack);
 
@@ -284,14 +314,26 @@ void reap_zombies(void)
     local_irq_disable();
     task_t *z = zombie_list;
     zombie_list = NULL;
+    task_t *deferred = NULL;
 
     while (z)
     {
         task_t *next_z = z->znext;
-        unlink_from_ring(z);
-        free_task_resources(z);
+        if (z == current)
+        {
+            /* Задачу убили (Ctrl+C), но она ещё исполняется на своём стеке ядра
+               до ближайшего тика планировщика — освободим её в следующий раз. */
+            z->znext = deferred;
+            deferred = z;
+        }
+        else
+        {
+            unlink_from_ring(z);
+            free_task_resources(z);
+        }
         z = next_z;
     }
+    zombie_list = deferred;
     local_irq_enable();
 }
 
@@ -312,7 +354,15 @@ int task_list(task_info_t *buf, size_t max)
             break;
         buf[count].pid = it->pid;
         buf[count].state = it->state;
-        buf[count].name = strdup(it->name);
+
+        /* Копируем имя в массив внутри структуры: без malloc,
+           без указателей на кучу ядра и без последующего free(). */
+        if (it->name)
+            strncpy(buf[count].name, it->name, TASK_NAME_MAX - 1);
+        else
+            buf[count].name[0] = '\0';
+        buf[count].name[TASK_NAME_MAX - 1] = '\0';
+
         count++;
         it = it->next;
     } while (it != task_ring->next);
@@ -364,6 +414,14 @@ int task_stop(int pid)
             local_irq_enable();
             halt();
         }
+    }
+
+    /* Зомби уже стоит в zombie_list — его освободит reap_zombies().
+       Освободить здесь значило бы освободить дважды. */
+    if (found->state == TASK_ZOMBIE)
+    {
+        local_irq_enable();
+        return 0;
     }
 
     unlink_from_ring(found);
@@ -438,6 +496,7 @@ uint64_t utask_create(void (*entry)(void),
     }
 
     memset(t, 0, sizeof(*t));
+    fpu_state_reset(t->fpu_state);
     t->pid = next_pid++;
     t->state = TASK_READY;
     t->kstack = kstack;
@@ -469,7 +528,7 @@ uint64_t utask_create(void (*entry)(void),
         return 0;
     }
 
-    if (!paging_map_user_region(t->page_table, user_stack, stack_size))
+    if (!paging_map_user_region_nx(t->page_table, user_stack, stack_size))
     {
         free(user_stack);
         if (t->name)
@@ -570,7 +629,9 @@ void task_kill_foreground(void)
         {
             if (it->pid == fpid && it->state != TASK_ZOMBIE)
             {
+                it->exit_code = -2; /* SIGINT */
                 it->state = TASK_ZOMBIE;
+                add_to_zombie_list(it);
                 break;
             }
             it = it->next;

@@ -15,6 +15,8 @@ void paging_switch(uint64_t *pml4);
 uint64_t *paging_create_user_task(void *user_mem, size_t user_size);
 void paging_destroy_user_task(uint64_t *pml4);
 int paging_map_user_region(uint64_t *pml4, void *addr, size_t size);
+/* Новые user-страницы неисполняемые (NX): стек, куча. */
+int paging_map_user_region_nx(uint64_t *pml4, void *addr, size_t size);
 void paging_unmap_user_region(uint64_t *pml4, void *addr, size_t size);
 
 #endif

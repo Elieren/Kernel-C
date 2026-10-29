@@ -10,6 +10,7 @@
 #include "drivers/video/video.h"
 #include "kernel/panic/panic.h"
 #include "kernel/loader/elf_loader.h"
+#include "mm/uaccess/uaccess.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -403,6 +404,57 @@ struct syscall_regs
     uint64_t r9;
 };
 
+/* Все адреса из ring-3 проверяются до использования: диапазон целиком в
+   user-страницах текущей задачи (user_range_ok), строки — с '\0' в пределах лимита. */
+#define SYS_ERR ((uintptr_t)-1)
+#define USER_PRINT_MAX (1u << 20)
+#define USER_PATH_MAX 4096
+
+static int uptr_ok(const void *p, size_t n)
+{
+    return user_range_ok_current((uint64_t)(uintptr_t)p, n);
+}
+
+static int ustr_ok(const char *s, size_t cap)
+{
+    return user_str_len(s, cap) >= 0;
+}
+
+/* Размер блока, если ptr — живой блок кучи, целиком лежащий в user-страницах
+   задачи и не являющийся её образом/стеком; иначе 0. */
+static size_t user_heap_block_size(task_t *cur, void *ptr)
+{
+    if (!cur || !cur->page_table || ptr == cur->user_mem || ptr == cur->user_stack)
+        return 0;
+
+    size_t size = malloc_checked_size(ptr);
+    if (size == 0 || !user_range_ok(cur->page_table, (uint64_t)(uintptr_t)ptr, size))
+        return 0;
+    return size;
+}
+
+/* Освободить блок, выданный задаче SYSCALL_MALLOC. Только блоки из таблицы задачи:
+   чужие и соседние объекты кучи (в т.ч. ядра), делящие с ней страницу, освободить
+   нельзя. U/S снимается лишь со страниц, которые больше никем не заняты. */
+static void user_free_block(task_t *cur, void *ptr)
+{
+    user_alloc_t *ua = user_alloc_find(cur, ptr);
+    if (!ua)
+        return; /* не наш блок — игнорируем */
+
+    size_t size = ua->size;
+    /* заголовок блока лежит на user-странице и мог быть испорчен задачей:
+       в этом случае блок не освобождаем */
+    int sane = (user_heap_block_size(cur, ptr) == size);
+
+    ua->ptr = NULL;
+    ua->size = 0;
+    user_pages_release(cur, ptr, size);
+
+    if (sane)
+        free(ptr);
+}
+
 uintptr_t syscall_handler(const struct syscall_regs *regs)
 {
     if (!regs)
@@ -418,6 +470,8 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return 0;
 
     case SYSCALL_PRINT_STRING_POSITION:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, USER_PRINT_MAX))
+            return SYS_ERR;
         video_print_string_position((const char *)(uintptr_t)regs->rdi,
                                     (uint32_t)regs->rsi, (uint32_t)regs->rdx,
                                     (uint32_t)regs->r10);
@@ -428,6 +482,8 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return 0;
 
     case SYSCALL_PRINT_STRING:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, USER_PRINT_MAX))
+            return SYS_ERR;
         video_print_string((const char *)(uintptr_t)regs->rdi, (uint32_t)regs->rsi);
         return 0;
 
@@ -438,6 +494,8 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     case SYSCALL_GET_TIME:
         if (regs->rdi && regs->rsi >= sizeof(ClockTime))
         {
+            if (!uptr_ok((void *)(uintptr_t)regs->rdi, 3))
+                return SYS_ERR;
             uint8_t *buf = (uint8_t *)(uintptr_t)regs->rdi;
             buf[0] = system_clock.hh;
             buf[1] = system_clock.mm;
@@ -451,6 +509,8 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     case SYSCALL_GET_DATE:
         if (regs->rdi && regs->rsi >= 4)
         {
+            if (!uptr_ok((void *)(uintptr_t)regs->rdi, 4))
+                return SYS_ERR;
             uint8_t *buf = (uint8_t *)(uintptr_t)regs->rdi;
             buf[0] = system_date.day;
             buf[1] = system_date.month;
@@ -466,23 +526,29 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     case SYSCALL_MALLOC:
     {
         size_t sz = (size_t)regs->rdi;
-        void *ptr = malloc(sz);
-        if (ptr)
-        {
-            task_t *cur = get_current_task();
-            if (!cur || !cur->page_table)
-            {
-                free(ptr);
-                return 0;
-            }
+        task_t *cur = get_current_task();
+        if (!cur || !cur->page_table)
+            return 0;
 
-            size_t actual = malloc_usable_size(ptr);
-            if (!paging_map_user_region(cur->page_table, ptr, actual))
-            {
-                free(ptr);
-                return 0;
-            }
+        /* слот резервируем до malloc: нет места в таблице — отказ без побочных эффектов */
+        user_alloc_t *slot = user_alloc_slot(cur);
+        if (!slot)
+            return 0;
+
+        void *ptr = malloc(sz);
+        if (!ptr)
+            return 0;
+
+        size_t actual = malloc_usable_size(ptr);
+        if (!paging_map_user_region_nx(cur->page_table, ptr, actual))
+        {
+            user_pages_release(cur, ptr, actual);
+            free(ptr);
+            return 0;
         }
+
+        slot->ptr = ptr;
+        slot->size = actual;
         return (uintptr_t)ptr;
     }
 
@@ -490,16 +556,7 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
     {
         void *ptr = (void *)(uintptr_t)regs->rdi;
         if (ptr)
-        {
-            task_t *cur = get_current_task();
-            if (cur && cur->page_table)
-            {
-                size_t actual = malloc_usable_size(ptr);
-                if (actual > 0)
-                    paging_unmap_user_region(cur->page_table, ptr, actual);
-            }
-            free(ptr);
-        }
+            user_free_block(get_current_task(), ptr);
         return 0;
     }
 
@@ -509,49 +566,72 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         size_t new_size = (size_t)regs->rsi;
         task_t *cur = get_current_task();
 
-        /* Снять маппинг старого блока (пока он ещё жив) */
-        if (old_ptr && cur && cur->page_table)
+        if (!cur || !cur->page_table)
+            return 0;
+
+        if (new_size == 0)
         {
-            size_t old_actual = malloc_usable_size(old_ptr);
-            if (old_actual > 0)
-                paging_unmap_user_region(cur->page_table, old_ptr, old_actual);
+            if (old_ptr)
+                user_free_block(cur, old_ptr);
+            return 0;
         }
 
+        user_alloc_t *ua;
+        size_t old_size = 0;
+
+        if (old_ptr)
+        {
+            ua = user_alloc_find(cur, old_ptr);
+            if (!ua)
+                return 0; /* не наш блок */
+            old_size = ua->size;
+            if (user_heap_block_size(cur, old_ptr) != old_size)
+                return 0; /* заголовок испорчен */
+        }
+        else
+        {
+            ua = user_alloc_slot(cur);
+            if (!ua)
+                return 0;
+        }
+
+        /* Старый блок остаётся живым и замапленным, пока realloc не вернул успех:
+           при NULL по стандарту old_ptr остаётся валидным — ничего восстанавливать не надо. */
         void *new_ptr = realloc(old_ptr, new_size);
+        if (!new_ptr)
+            return 0;
 
-        if (new_ptr)
-        {
-            if (!cur || !cur->page_table)
-            {
-                free(new_ptr);
-                return 0;
-            }
+        size_t new_actual = malloc_usable_size(new_ptr);
 
-            /* Добавить маппинг нового блока (может быть тот же адрес или новый) */
-            size_t new_actual = malloc_usable_size(new_ptr);
-            if (!paging_map_user_region(cur->page_table, new_ptr, new_actual))
-            {
-                free(new_ptr);
-                return 0;
-            }
-        }
-        else if (old_ptr && cur && cur->page_table)
+        /* Сначала записываем новый блок */
+        ua->ptr = new_ptr;
+        ua->size = new_actual;
+
+        if (!paging_map_user_region_nx(cur->page_table, new_ptr, new_actual))
         {
-            /*
-             * realloc вернул NULL — по стандарту old_ptr остаётся валидным.
-             * Восстанавливаем маппинг.
-             */
-            size_t old_actual = malloc_usable_size(old_ptr);
-            if (old_actual > 0)
-                paging_map_user_region(cur->page_table, old_ptr, old_actual);
+            ua->ptr = NULL;
+            ua->size = 0;
+            user_pages_release(cur, new_ptr, new_actual);
+            if (old_ptr)
+                user_pages_release(cur, old_ptr, old_size);
+            free(new_ptr);
+            return 0;
         }
+
+        /* затем снимаем U/S со страниц старого диапазона, которые больше не нужны. */
+        if (old_ptr)
+            user_pages_release(cur, old_ptr, old_size);
 
         return (uintptr_t)new_ptr;
     }
 
     case SYSCALL_KMALLOC_STATS:
         if (regs->rdi)
+        {
+            if (!uptr_ok((void *)(uintptr_t)regs->rdi, sizeof(kmalloc_stats_t)))
+                return SYS_ERR;
             get_kmalloc_stats((void *)(uintptr_t)regs->rdi);
+        }
         return 0;
 
     case SYSCALL_GETCHAR:
@@ -573,10 +653,24 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return 0;
 
     case SYSCALL_TASK_CREATE:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, USER_PATH_MAX))
+            return SYS_ERR;
         return load_and_run_program((const char *)(uintptr_t)regs->rdi);
 
     case SYSCALL_TASK_LIST:
-        return (uintptr_t)task_list((void *)(uintptr_t)regs->rdi, (size_t)regs->rsi);
+    {
+        size_t max = (size_t)regs->rsi;
+        if (max > 256)
+            max = 256;
+        if (!regs->rdi || max == 0)
+            return 0;
+        if (!uptr_ok((void *)(uintptr_t)regs->rdi, max * sizeof(task_info_t)))
+            return SYS_ERR;
+
+        task_info_t *out = (task_info_t *)(uintptr_t)regs->rdi;
+
+        return (uintptr_t)task_list(out, max);
+    }
 
     case SYSCALL_TASK_STOP:
         return (uintptr_t)task_stop((int)regs->rdi);
@@ -597,7 +691,10 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return 0;
 
     case THROW_AN_EXCEPTION:
-        return kprint((uint8_t)regs->rdi, (const char *)(uintptr_t)regs->rsi);
+        /* строка пользователя — данные, а не format string */
+        if (!ustr_ok((const char *)(uintptr_t)regs->rsi, KPRINT_BUFFER_SIZE))
+            return SYS_ERR;
+        return kprint((uint8_t)regs->rdi, "%s", (const char *)(uintptr_t)regs->rsi);
 
     case SYSCALL_GFX_DRAW_POINT:
         video_draw_point((uint32_t)regs->rdi, (uint32_t)regs->rsi, (uint32_t)regs->rdx);
@@ -633,24 +730,37 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return 0;
 
     case SYSCALL_CHDIR:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, USER_PATH_MAX))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)sys_chdir((const char *)(uintptr_t)regs->rdi);
 
     case SYSCALL_GETCWD:
     {
+        if (!regs->rdi || !uptr_ok((void *)(uintptr_t)regs->rdi, (size_t)regs->rsi))
+            return SYS_ERR;
         int result = sys_getcwd((char *)(uintptr_t)regs->rdi, (size_t)regs->rsi);
         return (result == -1) ? (uintptr_t)-1 : (uintptr_t)result;
     }
 
     case SYSCALL_GET_CWD_IDX:
+        if (!uptr_ok((void *)(uintptr_t)regs->rdi, sizeof(uint32_t)))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)sys_get_cwd_idx((uint32_t *)(uintptr_t)regs->rdi);
 
     case SYSCALL_FS_MKDIR:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, FS_NAME_MAX))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_mkdir((const char *)(uintptr_t)regs->rdi, (int)regs->rsi);
 
     case SYSCALL_FS_RMDIR:
         return (uintptr_t)fs_rmdir((int)regs->rdi);
 
     case SYSCALL_FS_CREATE_FILE:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, FS_NAME_MAX) ||
+            (regs->rsi && !ustr_ok((const char *)(uintptr_t)regs->rsi, FS_EXT_MAX)))
+            return FS_ERR_INVALID_ARG;
+        if (regs->r10 && !uptr_ok((void *)(uintptr_t)regs->r10, sizeof(uint16_t)))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_create_file(
             (const char *)(uintptr_t)regs->rdi,
             (const char *)(uintptr_t)regs->rsi,
@@ -661,6 +771,11 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         return (uintptr_t)fs_remove_entry((int)regs->rdi);
 
     case SYSCALL_FS_FIND_IN_DIR:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, FS_NAME_MAX) ||
+            (regs->rsi && !ustr_ok((const char *)(uintptr_t)regs->rsi, FS_EXT_MAX)))
+            return FS_ERR_INVALID_ARG;
+        if (regs->r10 && !uptr_ok((void *)(uintptr_t)regs->r10, sizeof(fs_entry_t)))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_find_in_dir(
             (const char *)(uintptr_t)regs->rdi,
             (const char *)(uintptr_t)regs->rsi,
@@ -668,24 +783,40 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
             (fs_entry_t *)(uintptr_t)regs->r10);
 
     case SYSCALL_FS_GET_ALL_IN_DIR:
+    {
+        int max = (int)regs->rsi;
+        if (max > FS_MAX_ENTRIES)
+            max = FS_MAX_ENTRIES;
+        if (max > 0 && !uptr_ok((void *)(uintptr_t)regs->rdi, (size_t)max * sizeof(fs_entry_t)))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_get_all_in_dir(
             (fs_entry_t *)(uintptr_t)regs->rdi,
-            (int)regs->rsi,
+            max,
             (int)regs->rdx);
+    }
 
     case SYSCALL_FS_READ:
+        if (!uptr_ok((void *)(uintptr_t)regs->rsi, (size_t)regs->rdx))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_read(
             (uint16_t)regs->rdi,
             (void *)(uintptr_t)regs->rsi,
             (size_t)regs->rdx);
 
     case SYSCALL_FS_WRITE:
+        if (!uptr_ok((const void *)(uintptr_t)regs->rsi, (size_t)regs->rdx))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_write(
             (uint16_t)regs->rdi,
             (const void *)(uintptr_t)regs->rsi,
             (size_t)regs->rdx);
 
     case SYSCALL_FS_WRITE_FILE_IN_DIR:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, FS_NAME_MAX) ||
+            (regs->rsi && !ustr_ok((const char *)(uintptr_t)regs->rsi, FS_EXT_MAX)))
+            return FS_ERR_INVALID_ARG;
+        if (!uptr_ok((const void *)(uintptr_t)regs->r10, (size_t)regs->r8))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_write_file_in_dir(
             (const char *)(uintptr_t)regs->rdi,
             (const char *)(uintptr_t)regs->rsi,
@@ -694,6 +825,12 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
             (size_t)regs->r8);
 
     case SYSCALL_FS_READ_FILE_IN_DIR:
+        if (!ustr_ok((const char *)(uintptr_t)regs->rdi, FS_NAME_MAX) ||
+            (regs->rsi && !ustr_ok((const char *)(uintptr_t)regs->rsi, FS_EXT_MAX)))
+            return FS_ERR_INVALID_ARG;
+        if (!uptr_ok((void *)(uintptr_t)regs->r10, (size_t)regs->r8) ||
+            (regs->r9 && !uptr_ok((void *)(uintptr_t)regs->r9, sizeof(size_t))))
+            return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_read_file_in_dir(
             (const char *)(uintptr_t)regs->rdi,
             (const char *)(uintptr_t)regs->rsi,

@@ -5,8 +5,11 @@
 #include <stddef.h>
 
 #include <asm/multitask.h>
+#include <asm/fpu.h>
+#include "mm/uaccess/uaccess.h"
 
 #define KSTACK_SIZE (8 * 1024) /* дефолтный размер */
+#define TASK_NAME_MAX 32
 
 typedef enum
 {
@@ -33,13 +36,15 @@ typedef struct task
     uint32_t cwd_idx;       /* индекс директории в FS (FS_ROOT_IDX для корня) */
     char *name;
     uint64_t *page_table;
+    user_alloc_t user_allocs[USER_ALLOC_MAX];                       /* блоки из SYSCALL_MALLOC */
+    uint8_t fpu_state[FPU_STATE_SIZE] __attribute__((aligned(16))); /* FXSAVE */
 } task_t;
 
 typedef struct task_info
 {
     int pid;
-    int state; // TASK_RUNNING, TASK_READY и т. д.
-    char *name;
+    int state;                // TASK_RUNNING, TASK_READY и т. д.
+    char name[TASK_NAME_MAX]; // '\0'-терминированная копия имени
 } task_info_t;
 
 void scheduler_init(void);

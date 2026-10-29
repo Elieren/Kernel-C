@@ -64,10 +64,12 @@ start:
     mov eax, pml4_table
     mov cr3, eax
 
-    ; --- Включаем LME через MSR IA32_EFER (0xC0000080) ---
+    ; --- Включаем LME (бит 8) и NXE (бит 11) через MSR IA32_EFER (0xC0000080) ---
+    ; Без NXE бит 63 (NX) в page-таблицах игнорируется.
     mov ecx, 0xC0000080
     rdmsr
     bts eax, 8
+    bts eax, 11
     wrmsr
 
     ; --- Включаем paging (CR0.PG = 1) ---
@@ -87,6 +89,15 @@ long_mode_entry:
     mov ds, ax
     mov es, ax
     mov ss, ax
+
+    ; --- FPU/SSE: CR0.EM=0, CR0.TS=0, CR0.MP=1; CR4.OSFXSR=1, CR4.OSXMMEXCPT=1 ---
+    mov rax, cr0
+    and rax, ~((1 << 2) | (1 << 3))
+    or  rax, (1 << 1)
+    mov cr0, rax
+    mov rax, cr4
+    or  rax, (1 << 9) | (1 << 10)
+    mov cr4, rax
 
     ; настроим стек
     lea rsp, [rel stack64_top]

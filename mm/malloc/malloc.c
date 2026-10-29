@@ -7,7 +7,8 @@
 #include "kernel/panic/panic.h"
 
 /* Конфигурация */
-#define ALIGN 8
+/* 16: payload должен быть выровнен под SSE (movaps, fxsave/fxrstor) */
+#define ALIGN 16
 #define MAGIC 0xB16B00B5U
 
 /* Заголовок блока (payload идёт сразу после заголовка) */
@@ -18,7 +19,10 @@ typedef struct block_header
     int free;    /* 1 если свободен, 0 если занят */
     struct block_header *prev;
     struct block_header *next;
+    uint64_t _pad; /* sizeof(block_header_t) == 48, кратно ALIGN */
 } block_header_t;
+
+_Static_assert(sizeof(block_header_t) % ALIGN == 0, "payload must stay ALIGN-aligned");
 
 #define MIN_SPLIT_SIZE (sizeof(block_header_t) + ALIGN)
 
@@ -53,6 +57,15 @@ void malloc_init(void *heap_start, size_t heap_size)
 {
     if (!heap_start || heap_size < sizeof(block_header_t))
         return;
+
+    /* начало вверх, размер вниз до ALIGN: первый payload и все последующие
+       остаются выровненными */
+    uintptr_t aligned = ((uintptr_t)heap_start + (ALIGN - 1)) & ~(uintptr_t)(ALIGN - 1);
+    size_t skip = aligned - (uintptr_t)heap_start;
+    if (heap_size <= skip + sizeof(block_header_t))
+        return;
+    heap_size = (heap_size - skip) & ~(size_t)(ALIGN - 1);
+    heap_start = (void *)aligned;
 
     heap_head = (block_header_t *)heap_start;
     heap_head->magic = MAGIC;
@@ -355,5 +368,39 @@ size_t malloc_usable_size(void *ptr)
         return 0;
     if (h->free)
         return 0;
+    return h->size;
+}
+
+/* Размер payload, если ptr — выровненный указатель на занятый блок кучи
+   с согласованными ссылками prev/next; иначе 0. Для указателей из ring-3. */
+size_t malloc_checked_size(void *ptr)
+{
+    char *p = (char *)ptr;
+    char *lo = (char *)heap_head;
+    char *hi = (char *)managed_heap_end;
+
+    if (!p || !heap_head || ((uintptr_t)p & (ALIGN - 1)))
+        return 0;
+    if (p < lo + sizeof(block_header_t) || p >= hi)
+        return 0;
+
+    block_header_t *h = payload_to_header(ptr);
+    if (h->magic != MAGIC || h->free || h->size > (size_t)(hi - p))
+        return 0;
+
+    if (h->next)
+    {
+        char *n = (char *)h->next;
+        if (((uintptr_t)n & (ALIGN - 1)) || n < lo || n > hi - sizeof(block_header_t) ||
+            h->next->prev != h)
+            return 0;
+    }
+    if (h->prev)
+    {
+        char *q = (char *)h->prev;
+        if (((uintptr_t)q & (ALIGN - 1)) || q < lo || q > hi - sizeof(block_header_t) ||
+            h->prev->next != h)
+            return 0;
+    }
     return h->size;
 }
