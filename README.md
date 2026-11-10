@@ -90,6 +90,10 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] Migration of user applications from the raw binary format to the ELF format, and adding support to the kernel for launching user programs in ELF format.
 
+* [X] SMP (multi-core): ACPI MADT topology discovery, Local APIC, AP bring-up
+  via INIT-SIPI-SIPI trampoline, per-CPU TSS/stack/idle task, shared scheduler
+  queue with task migration, IPI-based tick broadcast, spinlocks + BKL.
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 

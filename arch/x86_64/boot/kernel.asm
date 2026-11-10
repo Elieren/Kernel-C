@@ -1,6 +1,8 @@
 ; kernel.asm - 32-bit start -> switch to long mode -> call kmain (64-bit)
 ; Assemble with: nasm -f elf64 kernel.asm -o build/kernel.asm.o
 
+%define MAX_CPUS 1024   ; = SMP_MAX_CPUS / MAX_TSS
+
 [BITS 32]
 
 section .text
@@ -45,9 +47,12 @@ mb2_end:
 
 global start
 global gdt
-global tss_buffer
+global gdt_desc
+global ap_entry64
 global stack64_top
+global reload_cs_kernel
 extern kmain
+extern ap_main
 
 start:
     cli
@@ -81,7 +86,7 @@ start:
     jmp 0x08:long_mode_entry
 
 ; -----------------------------------------------------------------------
-; 64-bit entry
+; 64-bit entry (BSP)
 ; -----------------------------------------------------------------------
 [BITS 64]
 long_mode_entry:
@@ -112,18 +117,57 @@ long_mode_entry:
     jmp .hang64
 
 ; -----------------------------------------------------------------------
-; GDT с поддержкой Ring 3 и TSS
+; 64-bit entry (AP): сюда прыгает трамплин, rsp и rdi уже выставлены им.
+; -----------------------------------------------------------------------
+ap_entry64:
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    xor ebp, ebp
+
+    call ap_main
+
+.ap_hang:
+    cli
+    hlt
+    jmp .ap_hang
+
+; -----------------------------------------------------------------------
+; reload_cs_kernel — перезагрузить CS на 0x08 из GDT ядра.
+; AP стартует с GDT трамплина, где 0x18 — 64-битный код, а в GDT ядра это
+; user code, поэтому CS нужно перезагрузить через far return.
+; -----------------------------------------------------------------------
+reload_cs_kernel:
+    lea rax, [rel .after]
+    push qword 0x08          ; kernel code selector
+    push rax
+    retfq
+.after:
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov ss, ax
+    mov fs, ax
+    mov gs, ax
+    ret
+
+; -----------------------------------------------------------------------
+; GDT: 0x00 null, 0x08 kernel code, 0x10 kernel data, 0x18 user code,
+; 0x20 user data, далее по 16 байт на TSS каждого ядра (0x28 + i*16).
 ; -----------------------------------------------------------------------
 align 8
 gdt:
-    dq 0x0000000000000000     ; Null descriptor
+    dq 0x0000000000000000     ; 0x00: Null descriptor
     dq 0x00AF9A000000FFFF     ; 0x08: Kernel Code (L=1, DPL=0)
     dq 0x00AF92000000FFFF     ; 0x10: Kernel Data (L=1, DPL=0)
     dq 0x00AFFA000000FFFF     ; 0x18: User Code (L=1, DPL=3)
     dq 0x00AFF2000000FFFF     ; 0x20: User Data (L=1, DPL=3)
-    ; TSS descriptor (64-bit требует 2 записи)
-    dq 0x0000000000000000     ; 0x28: TSS lower 8 bytes (будет заполнен далее)
-    dq 0x0000000000000000     ; 0x30: TSS upper 8 bytes
+    ; TSS-дескрипторы заполняются в tss.c
+%rep MAX_CPUS
+    dq 0x0000000000000000     ; TSS lower 8 bytes
+    dq 0x0000000000000000     ; TSS upper 8 bytes
+%endrep
 gdt_end:
 
 gdt_desc:
@@ -131,21 +175,13 @@ gdt_desc:
     dq gdt
 
 ; -----------------------------------------------------------------------
-; место под стек 64-bit
+; место под стек 64-bit (BSP)
 ; -----------------------------------------------------------------------
 section .bss
 align 16
 stack64_bottom:
     resb 65536           ; резервируем 64 KiB под стек
 stack64_top:
-
-; -----------------------------------------------------------------------
-; TSS структура и её адрес (будет инициализирована в C коде)
-; -----------------------------------------------------------------------
-section .bss
-align 16
-tss_buffer:
-    resb 104  ; размер TSS в 64-bit режиме
 
 ; -----------------------------------------------------------------------
 ; Identity-map 0..4GiB (2MiB pages)

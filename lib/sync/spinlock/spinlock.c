@@ -1,5 +1,6 @@
 #include "spinlock.h"
 #include <asm/cpu.h>
+#include <asm/smp.h>
 
 /* Глобальный lock для fb - atomic_flag (специальный тип) */
 static atomic_flag g_fb_lock = ATOMIC_FLAG_INIT;
@@ -58,4 +59,61 @@ int spin_is_locked(spinlock_t *l)
 {
     /* relaxed - это просто snapshot состояния без синхронизации */
     return atomic_load_explicit(&l->flag, memory_order_relaxed) ? 1 : 0;
+}
+
+unsigned long spin_lock_irqsave(spinlock_t *l)
+{
+    unsigned long flags = save_flags();
+    local_irq_disable();
+    spin_lock(l);
+    return flags;
+}
+
+void spin_unlock_irqrestore(spinlock_t *l, unsigned long flags)
+{
+    spin_unlock(l);
+    restore_flags(flags);
+}
+
+int spin_trylock_irqsave(spinlock_t *l, unsigned long *flags)
+{
+    unsigned long f = save_flags();
+    local_irq_disable();
+    if (!spin_trylock(l))
+    {
+        restore_flags(f);
+        return 0;
+    }
+    if (flags)
+        *flags = f;
+    return 1;
+}
+
+/* Big Kernel Lock для подсистем, написанных однопроцессорными (консоль, VFS,
+ * драйверы). Не рекурсивный: повторный захват на том же CPU зациклится. */
+static spinlock_t g_bkl = SPINLOCK_INIT;
+
+void bkl_lock(void)
+{
+    /* держатель BKL не должен быть вытеснен */
+    preempt_disable();
+    spin_lock(&g_bkl);
+}
+
+void bkl_unlock(void)
+{
+    spin_unlock(&g_bkl);
+    preempt_enable();
+}
+
+unsigned long bkl_lock_irqsave(void)
+{
+    preempt_disable();
+    return spin_lock_irqsave(&g_bkl);
+}
+
+void bkl_unlock_irqrestore(unsigned long flags)
+{
+    spin_unlock_irqrestore(&g_bkl, flags);
+    preempt_enable();
 }

@@ -3,10 +3,14 @@
 #include <asm/io.h>
 #include "arch/x86_64/interrupt/isr.h"
 #include <asm/pic.h>
+#include <asm/lapic.h>
 
 // массив указателей на заглушки 0..31
 static struct idt_entry idt[IDT_ENTRIES];
 static struct idt_ptr idtp;
+
+/* Заглушка из isr_spurious.asm */
+extern void isr_spurious(void);
 
 /* Установка записи IDT для 64-bit handler */
 void idt_set_gate(uint16_t num, void (*handler)(), uint16_t sel, uint8_t flags)
@@ -22,6 +26,11 @@ void idt_set_gate(uint16_t num, void (*handler)(), uint16_t sel, uint8_t flags)
     idt[num].offset_mid = (uint16_t)((base >> 16) & 0xFFFF);
     idt[num].offset_high = (uint32_t)((base >> 32) & 0xFFFFFFFF);
     idt[num].zero = 0;
+}
+
+struct idt_ptr *idt_get_ptr(void)
+{
+    return &idtp;
 }
 
 void idt_install(void)
@@ -54,6 +63,10 @@ void idt_install(void)
     idt_set_gate(KEYBOARD, isr33, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(MOUSE, isr44, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(INTERRUPT, isr80, KERNEL_CODE_SEL, IDT_GATE_SYSCALL);
+
+    /* Spurious-вектор LAPIC (0xFF) приходит на любое ядро, включая AP, и без
+     * шлюза даёт #GP.*/
+    idt_set_gate(0xFF, isr_spurious, KERNEL_CODE_SEL, IDT_GATE_INT);
 
     /* Загружаем IDT через 64-bit asm-обёртку */
     lidt_load(&idtp);

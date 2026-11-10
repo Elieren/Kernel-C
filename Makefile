@@ -41,7 +41,11 @@ SHELL := /bin/bash
 IMG        := fs_test.img
 MOUNT_DIR  := /mnt/fs_test
 
-QEMU_RUN := qemu-system-x86_64 -m 512M -drive file=$(IMG),format=raw,index=0,media=disk -serial stdio $(QEMU_OPTS)
+# SMP_CPUS — сколько ядер отдать гостю (ядро поднимает их все через ACPI MADT).
+# Переопределяется из командной строки: make run SMP_CPUS=8
+SMP_CPUS ?= 4
+
+QEMU_RUN := qemu-system-x86_64 -m 512M -smp $(SMP_CPUS) -drive file=$(IMG),format=raw,index=0,media=disk -serial stdio $(QEMU_OPTS)
 
 # =============================================================================
 # Цели

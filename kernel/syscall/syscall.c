@@ -17,6 +17,7 @@
 #include <string.h>
 
 #include <asm/cpu.h>
+#include "lib/sync/spinlock/spinlock.h"
 
 extern volatile uint32_t seconds;
 
@@ -455,6 +456,8 @@ static void user_free_block(task_t *cur, void *ptr)
         free(ptr);
 }
 
+static uintptr_t syscall_dispatch(const struct syscall_regs *regs);
+
 uintptr_t syscall_handler(const struct syscall_regs *regs)
 {
     if (!regs)
@@ -462,6 +465,30 @@ uintptr_t syscall_handler(const struct syscall_regs *regs)
         panic("SYSCALL_NULL_REGS", false, true);
     }
 
+    /* Syscall-путь не реентерабелен (VFS, консоль): вход в ядро сериализуется
+     * BKL, вытеснение на время вызова запрещено. */
+    /* task_exit() и task_stop(self) не возвращаются и навсегда оставили бы BKL
+     * занятым. У них свой g_sched_lock — выполняем до захвата BKL. */
+    switch ((uint32_t)regs->rax)
+    {
+    case SYSCALL_TASK_EXIT:
+        task_exit((int)regs->rdi);
+        return 0;
+    case SYSCALL_TASK_STOP:
+        return (uintptr_t)task_stop((int)regs->rdi);
+    default:
+        break;
+    }
+
+    uintptr_t result;
+    unsigned long bkl_flags = bkl_lock_irqsave();
+    result = syscall_dispatch(regs);
+    bkl_unlock_irqrestore(bkl_flags);
+    return result;
+}
+
+static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
+{
     switch ((uint32_t)regs->rax)
     {
     case SYSCALL_PRINT_CHAR_POSITION:

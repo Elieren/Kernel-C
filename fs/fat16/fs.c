@@ -5,9 +5,36 @@
 
 #include "fs.h"
 #include "lib/string/string.h"
+#include "lib/sync/spinlock/spinlock.h"
 #include "kernel/time/clock/clock.h"
 #include <stdint.h>
 #include <stddef.h>
+
+/* Состояние драйвера глобальное (nodes[], кэш FAT, g_partition_lba), поэтому
+ * параллельные вызовы на разных ядрах недопустимы: все публичные fs_*
+ * сериализуются g_fs_lock. Внутренние __fs_* лок не берут (лок не рекурсивный). */
+static spinlock_t g_fs_lock = SPINLOCK_INIT;
+
+#define FS_LOCK() unsigned long __fs_fl = spin_lock_irqsave(&g_fs_lock)
+#define FS_UNLOCK() spin_unlock_irqrestore(&g_fs_lock, __fs_fl)
+
+/* Реализации без лока */
+static int __fs_sync(void);
+static int __fs_format(ide_disk_t *disk);
+static int __fs_format_mbr(ide_disk_t *disk, uint32_t partition_start_lba);
+static int __fs_init(ide_disk_t *disk);
+static int __fs_mkdir(const char *name, int parent);
+static int __fs_rmdir(int dir_idx);
+static int __fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_cluster);
+static int __fs_remove_entry(int idx);
+static int __fs_find_in_dir(const char *name, const char *ext, int parent, fs_entry_t *out);
+static int __fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent);
+static int __fs_read(uint16_t first_cluster, void *buf, size_t size);
+static int __fs_write(uint16_t first_cluster, const void *buf, size_t size);
+static int __fs_write_file_in_dir(const char *name, const char *ext, int parent, const void *data, size_t size);
+static int __fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf, size_t bufsize, size_t *out_size);
+static int __fs_get_parent_idx(int idx);
+static int __fs_build_path(int idx, char *buf, size_t size);
 
 /* ===================== Параметры и константы формата ===================== */
 
@@ -56,7 +83,7 @@
 #define SFN_NAME_CAP 9 /* 8 символов + '\0' */
 #define SFN_EXT_CAP 4  /* 3 символа + '\0' */
 
-/* Ограничение на глубину пути в fs_build_path (защита стека). */
+/* Ограничение на глубину пути в __fs_build_path(защита стека). */
 #define FS_MAX_PATH_DEPTH 128
 
 /* ===================== On-disk структуры ===================== */
@@ -389,7 +416,7 @@ static int save_fat(void)
     return FS_OK;
 }
 
-int fs_sync(void)
+static int __fs_sync(void)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -829,7 +856,7 @@ static int mbr_write(uint32_t part_start_lba, uint32_t part_sectors)
 
 /* ===================== Форматирование и монтирование ===================== */
 
-/* Общая часть fs_format()/fs_format_mbr(): создаёт FAT16-том, начинающийся с текущего g_partition_lba
+/* Общая часть __fs_format()/__fs_format_mbr(): создаёт FAT16-том, начинающийся с текущего g_partition_lba
    и занимающий volume_sectors физических секторов. Сам g_partition_lba должен быть уже выставлен
    вызывающей стороной (0 — для superfloppy, LBA раздела — для MBR-варианта). */
 static int format_volume(uint32_t volume_sectors)
@@ -922,7 +949,7 @@ static int format_volume(uint32_t volume_sectors)
     return FS_OK;
 }
 
-int fs_format(ide_disk_t *disk)
+static int __fs_format(ide_disk_t *disk)
 {
     if (!disk)
         return FS_ERR_INVALID_ARG;
@@ -945,7 +972,7 @@ int fs_format(ide_disk_t *disk)
     return FS_OK;
 }
 
-int fs_format_mbr(ide_disk_t *disk, uint32_t partition_start_lba)
+static int __fs_format_mbr(ide_disk_t *disk, uint32_t partition_start_lba)
 {
     if (!disk)
         return FS_ERR_INVALID_ARG;
@@ -989,7 +1016,7 @@ int fs_format_mbr(ide_disk_t *disk, uint32_t partition_start_lba)
     return FS_OK;
 }
 
-int fs_init(ide_disk_t *disk)
+static int __fs_init(ide_disk_t *disk)
 {
     if (!disk)
         return FS_ERR_INVALID_ARG;
@@ -1075,7 +1102,7 @@ int fs_init(ide_disk_t *disk)
 
 /* ===================== Каталоги ===================== */
 
-int fs_mkdir(const char *name, int parent)
+static int __fs_mkdir(const char *name, int parent)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1086,7 +1113,7 @@ int fs_mkdir(const char *name, int parent)
 
     uint16_t pdc = nodes[parent].start_cluster;
 
-    if (fs_find_in_dir(name, "", parent, NULL) >= 0)
+    if (__fs_find_in_dir(name, "", parent, NULL) >= 0)
         return FS_ERR_EXISTS;
 
     uint8_t target[11];
@@ -1158,11 +1185,11 @@ int fs_mkdir(const char *name, int parent)
     if (idx < 0)
         return idx;
 
-    fs_sync();
+    __fs_sync();
     return idx;
 }
 
-int fs_rmdir(int dir_idx)
+static int __fs_rmdir(int dir_idx)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1188,13 +1215,13 @@ int fs_rmdir(int dir_idx)
     free_cluster_chain(sc);
     nodes[dir_idx].used = 0;
 
-    fs_sync();
+    __fs_sync();
     return FS_OK;
 }
 
 /* ===================== Файлы ===================== */
 
-int fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_cluster)
+static int __fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_cluster)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1206,7 +1233,7 @@ int fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_
     const char *ext_cmp = ext ? ext : "";
     uint16_t pdc = nodes[parent].start_cluster;
 
-    if (fs_find_in_dir(name, ext_cmp, parent, NULL) >= 0)
+    if (__fs_find_in_dir(name, ext_cmp, parent, NULL) >= 0)
         return FS_ERR_EXISTS;
 
     uint8_t target[11];
@@ -1245,11 +1272,11 @@ int fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_
     if (out_cluster)
         *out_cluster = c;
 
-    fs_sync();
+    __fs_sync();
     return idx;
 }
 
-int fs_remove_entry(int idx)
+static int __fs_remove_entry(int idx)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1274,11 +1301,11 @@ int fs_remove_entry(int idx)
     free_cluster_chain(nodes[idx].start_cluster);
     nodes[idx].used = 0;
 
-    fs_sync();
+    __fs_sync();
     return FS_OK;
 }
 
-int fs_find_in_dir(const char *name, const char *ext, int parent, fs_entry_t *out)
+static int __fs_find_in_dir(const char *name, const char *ext, int parent, fs_entry_t *out)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1397,7 +1424,7 @@ int fs_find_in_dir(const char *name, const char *ext, int parent, fs_entry_t *ou
     return FS_ERR_NOT_FOUND;
 }
 
-int fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent)
+static int __fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1460,7 +1487,7 @@ int fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent)
 
 /* ===================== Низкоуровневые чтение/запись данных файла ===================== */
 
-int fs_read(uint16_t first_cluster, void *buf, size_t size)
+static int __fs_read(uint16_t first_cluster, void *buf, size_t size)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1498,7 +1525,7 @@ int fs_read(uint16_t first_cluster, void *buf, size_t size)
     return (int)done;
 }
 
-int fs_write(uint16_t first_cluster, const void *buf, size_t size)
+static int __fs_write(uint16_t first_cluster, const void *buf, size_t size)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1568,7 +1595,7 @@ int fs_write(uint16_t first_cluster, const void *buf, size_t size)
 
 /* ===================== Высокоуровневые операции с файлами ===================== */
 
-int fs_write_file_in_dir(const char *name, const char *ext, int parent, const void *data, size_t size)
+static int __fs_write_file_in_dir(const char *name, const char *ext, int parent, const void *data, size_t size)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1579,12 +1606,12 @@ int fs_write_file_in_dir(const char *name, const char *ext, int parent, const vo
     if (!nodes[parent].used || !nodes[parent].is_dir)
         return FS_ERR_NOT_DIR;
 
-    int idx = fs_find_in_dir(name, ext, parent, NULL);
+    int idx = __fs_find_in_dir(name, ext, parent, NULL);
     uint16_t cluster;
 
     if (idx < 0)
     {
-        int cidx = fs_create_file(name, ext, parent, &cluster);
+        int cidx = __fs_create_file(name, ext, parent, &cluster);
         if (cidx < 0)
             return cidx;
         idx = cidx;
@@ -1608,7 +1635,7 @@ int fs_write_file_in_dir(const char *name, const char *ext, int parent, const vo
     int written = 0;
     if (size > 0)
     {
-        written = fs_write(cluster, data, size);
+        written = __fs_write(cluster, data, size);
         if (written < 0)
             return written;
     }
@@ -1634,7 +1661,7 @@ int fs_write_file_in_dir(const char *name, const char *ext, int parent, const vo
     if (rc != FS_OK)
         return rc;
 
-    int sync_rc = fs_sync();
+    int sync_rc = __fs_sync();
     if (sync_rc != FS_OK)
         return sync_rc;
 
@@ -1644,7 +1671,7 @@ int fs_write_file_in_dir(const char *name, const char *ext, int parent, const vo
     return FS_OK;
 }
 
-int fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf, size_t bufsize, size_t *out_size)
+static int __fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf, size_t bufsize, size_t *out_size)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1652,7 +1679,7 @@ int fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf
         return FS_ERR_INVALID_ARG;
 
     fs_entry_t f;
-    int idx = fs_find_in_dir(name, ext, parent, &f);
+    int idx = __fs_find_in_dir(name, ext, parent, &f);
     if (idx < 0)
         return FS_ERR_NOT_FOUND;
 
@@ -1666,7 +1693,7 @@ int fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf
         return FS_OK;
     }
 
-    int r = fs_read(f.first_cluster, buf, f.size);
+    int r = __fs_read(f.first_cluster, buf, f.size);
     if (r < 0)
         return r;
 
@@ -1678,7 +1705,7 @@ int fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf
 
 /* ===================== Путь и родитель ===================== */
 
-int fs_get_parent_idx(int idx)
+static int __fs_get_parent_idx(int idx)
 {
     if (!fs_initialized)
         return FS_ERR_NOT_INITIALIZED;
@@ -1690,7 +1717,7 @@ int fs_get_parent_idx(int idx)
     return nodes[idx].parent;
 }
 
-int fs_build_path(int idx, char *buf, size_t size)
+static int __fs_build_path(int idx, char *buf, size_t size)
 {
     if (!fs_initialized)
         return 0;
@@ -1761,4 +1788,132 @@ int fs_build_path(int idx, char *buf, size_t size)
     buf[pos] = '\0';
 
     return 1;
+}
+/* SMP-обёртки: берут g_fs_lock и вызывают __-версии */
+int fs_sync(void)
+{
+    FS_LOCK();
+    int __r = __fs_sync();
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_format(ide_disk_t *disk)
+{
+    FS_LOCK();
+    int __r = __fs_format(disk);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_format_mbr(ide_disk_t *disk, uint32_t partition_start_lba)
+{
+    FS_LOCK();
+    int __r = __fs_format_mbr(disk, partition_start_lba);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_init(ide_disk_t *disk)
+{
+    FS_LOCK();
+    int __r = __fs_init(disk);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_mkdir(const char *name, int parent)
+{
+    FS_LOCK();
+    int __r = __fs_mkdir(name, parent);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_rmdir(int dir_idx)
+{
+    FS_LOCK();
+    int __r = __fs_rmdir(dir_idx);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_create_file(const char *name, const char *ext, int parent, uint16_t *out_cluster)
+{
+    FS_LOCK();
+    int __r = __fs_create_file(name, ext, parent, out_cluster);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_remove_entry(int idx)
+{
+    FS_LOCK();
+    int __r = __fs_remove_entry(idx);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_find_in_dir(const char *name, const char *ext, int parent, fs_entry_t *out)
+{
+    FS_LOCK();
+    int __r = __fs_find_in_dir(name, ext, parent, out);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_get_all_in_dir(fs_entry_t *out_files, int max_files, int parent)
+{
+    FS_LOCK();
+    int __r = __fs_get_all_in_dir(out_files, max_files, parent);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_read(uint16_t first_cluster, void *buf, size_t size)
+{
+    FS_LOCK();
+    int __r = __fs_read(first_cluster, buf, size);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_write(uint16_t first_cluster, const void *buf, size_t size)
+{
+    FS_LOCK();
+    int __r = __fs_write(first_cluster, buf, size);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_write_file_in_dir(const char *name, const char *ext, int parent, const void *data, size_t size)
+{
+    FS_LOCK();
+    int __r = __fs_write_file_in_dir(name, ext, parent, data, size);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_read_file_in_dir(const char *name, const char *ext, int parent, void *buf, size_t bufsize, size_t *out_size)
+{
+    FS_LOCK();
+    int __r = __fs_read_file_in_dir(name, ext, parent, buf, bufsize, out_size);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_get_parent_idx(int idx)
+{
+    FS_LOCK();
+    int __r = __fs_get_parent_idx(idx);
+    FS_UNLOCK();
+    return __r;
+}
+
+int fs_build_path(int idx, char *buf, size_t size)
+{
+    FS_LOCK();
+    int __r = __fs_build_path(idx, buf, size);
+    FS_UNLOCK();
+    return __r;
 }

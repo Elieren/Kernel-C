@@ -1,28 +1,55 @@
 // multitask.c
-// Простая вытесняемая мультизадачность для long mode (x86_64).
+// Вытесняемая мультизадачность для long mode (x86_64) с поддержкой SMP.
+//
+// Все задачи лежат в одном кольце (task_ring), у каждого ядра свой указатель
+// на текущую задачу. Задача, занятая другим ядром, имеет task->cpu >= 0 и
+// пропускается. Переключение идёт из обработчика прерывания (isr32 на BSP,
+// isr_ipi_resched на AP), критические секции защищены g_sched_lock.
 #include "multitask.h"
 #include "mm/malloc/malloc.h"
 #include "lib/string/string.h"
+#include "lib/sync/spinlock/spinlock.h"
 #include "kernel/syscall/syscall.h"
 #include "fs/fat16/fs.h"
 #include <stdint.h>
 #include <stddef.h>
 #include <asm/tss.h>
+#include <asm/smp.h>
 #include "kernel/panic/panic.h"
 #include <asm/cpu.h>
 #include "mm/paging/paging.h"
+#include "drivers/serial/serial.h"
 
 extern char _heap_start;
 extern char _heap_end;
 
-static uint8_t init_task_stack[16 * 1024];
+#include <asm/smp.h>
+#define SMP_TASK_CPUS SMP_MAX_CPUS
+
+static spinlock_t g_sched_lock = SPINLOCK_INIT;
+
 static task_t *task_ring = NULL; /* tail (последний элемент) */
-static task_t *current = NULL;
 static int next_pid = 1;
+
+/* Текущая задача каждого ядра */
+static task_t *g_current_cpu[SMP_TASK_CPUS];
+
+/* Отложенное освобождение. После переключения A -> B ядро ещё исполняется на
+ * стеке A (внутри обработчика прерывания). Если сразу сбросить A->cpu, другое
+ * ядро возьмёт A и испортит этот стек. Поэтому A освобождается при следующем
+ * входе в планировщик. */
+static task_t *g_release_pending[SMP_TASK_CPUS];
+
+/* Задача, с которой ядро ушло в последнем переключении (любого состояния):
+ * до следующего входа в планировщик ядро ещё на её kstack, освобождать её нельзя. */
+static task_t *g_prev_task[SMP_TASK_CPUS];
+static uint64_t *g_idle_regs[SMP_TASK_CPUS];
 
 static volatile int g_foreground_pid = 0;
 
-/* Статическая init-задача, чтобы в ISR не вызывать malloc */
+/* Статическая init-задача, чтобы в ISR не вызывать malloc.
+ * Стек нужен для расчёта TSS.rsp0. */
+static uint8_t init_task_stack[16 * 1024] __attribute__((aligned(16)));
 static task_t init_task;
 
 /* Список зомби для отложенной очистки */
@@ -40,6 +67,25 @@ char *strdup(const char *s)
     return dup;
 }
 
+static inline uint32_t cur_cpu(void)
+{
+    return smp_cpu_index();
+}
+
+static inline task_t *current_task_of_cpu(uint32_t cpu)
+{
+    return (cpu < SMP_TASK_CPUS) ? g_current_cpu[cpu] : NULL;
+}
+
+/* Задача исполняется на каком-либо ядре или это хвост её переключения. Под g_sched_lock. */
+static int task_on_any_cpu(const task_t *t)
+{
+    for (uint32_t i = 0, nc = smp_cpu_count(); i < nc && i < SMP_TASK_CPUS; i++)
+        if (g_current_cpu[i] == t || g_prev_task[i] == t)
+            return 1;
+    return 0;
+}
+
 /* ----------------Scheduler init / create / pick_next -------------------- */
 void scheduler_init(void)
 {
@@ -54,24 +100,45 @@ void scheduler_init(void)
     init_task.next = &init_task;
     init_task.cwd_idx = FS_ROOT_IDX;
     init_task.page_table = NULL;
+    init_task.cpu = 0;
 
     task_ring = &init_task;
-    current = NULL;
+    for (uint32_t i = 0; i < SMP_TASK_CPUS; i++)
+    {
+        g_current_cpu[i] = NULL;
+        g_idle_regs[i] = NULL;
+    }
     next_pid = 1;
 
-    /* Инициализируем TSS */
-    init_task_switching();
+    /* TSS для всех ядер, AP загрузят свои при старте */
+    for (uint32_t i = 0; i < MAX_TSS; i++)
+        tss_init_cpu(i);
+    tss_load_for_cpu(0);
+}
+
+/* Вставка в кольцо (под g_sched_lock) */
+static void ring_insert(task_t *t)
+{
+    t->in_ring = 1;
+    if (!task_ring)
+    {
+        task_ring = t;
+        t->next = t;
+        return;
+    }
+    t->next = task_ring->next;
+    task_ring->next = t;
+    task_ring = t;
 }
 
 /* Создаёт kernel-thread */
 void task_create(void (*entry)(void), size_t stack_size, const char *name)
 {
-    unsigned long flags = save_flags();
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
 
     if (!entry)
     {
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         panic("TASK_CREATE_NULL_ENTRY", false, true);
     }
 
@@ -81,7 +148,7 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
     task_t *t = (task_t *)malloc(sizeof(task_t));
     if (!t)
     {
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         panic("TASK_ALLOCATION_FAILED", false, false);
     }
 
@@ -89,7 +156,7 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
     if (!kstack)
     {
         free(t);
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         panic("TASK_STACK_ALLOCATION_FAILED", false, false);
     }
 
@@ -104,6 +171,7 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
     t->cwd_idx = FS_ROOT_IDX;
     t->name = strdup(name);
     t->page_table = NULL;
+    t->cpu = -1;
 
     void *kstack_top = (char *)kstack + stack_size;
     t->regs = prepare_initial_stack(entry,
@@ -113,38 +181,60 @@ void task_create(void (*entry)(void), size_t stack_size, const char *name)
                                     0,
                                     0); /* kernel mode */
 
-    /* Вставляем в кольцо как новый tail */
-    if (!task_ring)
-    {
-        task_ring = t;
-        t->next = t;
-    }
-    else
-    {
-        t->next = task_ring->next;
-        task_ring->next = t;
-        task_ring = t;
-    }
-    restore_flags(flags);
+    ring_insert(t);
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 }
 
-/* Простая выборка следующей READY задачи (round-robin). */
-static task_t *pick_next(void)
+/* Выбор следующей READY задачи (round-robin), под g_sched_lock.
+ * Idle-задачи в кольцо не входят; сначала ищем реальную задачу (pid != 0),
+ * иначе остаёмся на текущем idle. */
+static task_t *pick_next(uint32_t cpu)
 {
     if (!task_ring)
         return NULL;
 
-    task_t *start = current ? current->next : task_ring->next;
-    task_t *it = start;
+    task_t *cur = current_task_of_cpu(cpu);
+    /* Если текущая задача — idle (не в кольце), начинаем со смещения по номеру
+     * ядра, иначе BSP всегда забирал бы первую задачу, а остальные простаивали. */
+    task_t *start;
+    if (cur && cur->in_ring)
+    {
+        start = cur->next;
+    }
+    else
+    {
+        start = task_ring->next;
+        for (uint32_t k = 0; k < cpu && start->next != task_ring->next; k++)
+            start = start->next;
+    }
+    task_t *it;
+
+    /* проход 1: реальные задачи */
+    it = start;
     do
     {
-        if (it->state == TASK_READY || it->state == TASK_RUNNING)
-            return it;
+        int runnable = (it->state == TASK_READY || it->state == TASK_RUNNING);
+        if (runnable && it->pid != 0)
+        {
+            /* пропускаем задачи, занятые другим ядром */
+            if (it == cur || it->cpu < 0 || it->cpu == (int)cpu)
+                return it;
+        }
         it = it->next;
     } while (it != start);
 
+    /* проход 2: остаёмся на idle */
+    if (cur && (cur->state == TASK_RUNNING || cur->state == TASK_READY))
+        return cur;
+
+    /* fallback: init-задача */
+    if (cur == NULL && cpu == 0)
+        return &init_task;
+
     return NULL;
 }
+
+static void add_to_zombie_list(task_t *t);
 
 void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
 {
@@ -153,53 +243,145 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr)
         panic("SCHEDULER_NULL_REGS", true, false);
     }
 
-    if (!current)
+    uint32_t cpu = cur_cpu();
+    if (cpu >= SMP_TASK_CPUS)
+        cpu = 0;
+
+    /* держатель BKL вытеснять нельзя: остальные ядра зависнут */
+    if (preempt_count() > 0 && g_current_cpu[cpu])
     {
+        *out_regs_ptr = regs;
+        return;
+    }
+
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
+
+    /* мы уже на другом стеке: прежнюю задачу можно отдавать другим ядрам */
+    if (g_release_pending[cpu])
+    {
+        if (g_release_pending[cpu]->state == TASK_READY)
+            g_release_pending[cpu]->cpu = -1;
+        g_release_pending[cpu] = NULL;
+    }
+    g_prev_task[cpu] = NULL; /* мы уже не на её стеке */
+
+    task_t *cur = g_current_cpu[cpu];
+
+    if (!cur)
+    {
+        /* первое прерывание на ядре: текущий контекст становится idle-задачей */
         init_task.kstack = init_task_stack;
         init_task.kstack_size = sizeof(init_task_stack);
         init_task.regs = regs;
         init_task.state = TASK_RUNNING;
-        current = &init_task;
-        update_kernel_stack((uint64_t)current->kstack + current->kstack_size);
+        {
+            extern task_t *smp_idle_task(uint32_t cpu);
+            task_t *idle = smp_idle_task(cpu);
+            if (idle)
+            {
+                idle->regs = regs;
+                idle->state = TASK_RUNNING;
+                idle->cpu = (int)cpu;
+                g_current_cpu[cpu] = idle;
+            }
+            else
+            {
+                g_current_cpu[cpu] = &init_task;
+            }
+        }
+        cur = g_current_cpu[cpu];
     }
     else
     {
-        current->regs = regs;
-        if (current->state == TASK_RUNNING)
-            current->state = TASK_READY;
+        cur->regs = regs;
+        if (cur->state == TASK_RUNNING)
+            cur->state = TASK_READY;
     }
 
-    task_t *next = pick_next();
+    task_t *next = pick_next(cpu);
+
     if (!next)
     {
-        panic("NO_RUNNABLE_TASKS", false, false);
-    }
-
-    if (next == current)
-    {
-        *out_regs_ptr = current->regs;
-        current->state = TASK_RUNNING;
-        update_kernel_stack((uint64_t)current->kstack + current->kstack_size);
-        paging_switch(current->page_table);
+        /* нет готовых задач — остаёмся на idle */
+        if (cur->state == TASK_RUNNING || cur->state == TASK_READY)
+            cur->state = TASK_RUNNING;
+        *out_regs_ptr = cur->regs;
+        update_kernel_stack((uint64_t)cur->kstack + cur->kstack_size);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return;
     }
 
-    fpu_save(current->fpu_state);
+    if (next == cur)
+    {
+        *out_regs_ptr = cur->regs;
+        cur->state = TASK_RUNNING;
+        cur->cpu = (int)cpu;
+        update_kernel_stack((uint64_t)cur->kstack + cur->kstack_size);
+        paging_switch(cur->page_table);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
+        return;
+    }
 
-    current = next;
-    current->state = TASK_RUNNING;
-    *out_regs_ptr = current->regs;
-    update_kernel_stack((uint64_t)current->kstack + current->kstack_size);
-    paging_switch(current->page_table);
-    fpu_restore(current->fpu_state);
+    /* Нельзя возвращаться в user-режим без page table: проверяем до изменения
+     * состояния. Такую задачу не выбираем, ядро остаётся на текущем контексте. */
+    {
+        uint64_t cs = next->regs ? next->regs[18] : 0;
+        uint64_t rip = next->regs ? next->regs[17] : 0;
+        /* ядро и user-образы лежат выше 1 MiB; RIP ниже — мусор (iretq уйдёт на 0x3) */
+        int bad_rip = (rip < 0x100000ULL);
+        int bad_frame = (!next->regs) || (cs != 0x08 && cs != 0x1B) || bad_rip;
+        int user_no_pt = ((cs & 3) == 3) && !next->page_table;
+        if (bad_frame || user_no_pt)
+        {
+            /* задачу с битым кадром нельзя запускать: помечаем зомби, её освободит
+             * reap_zombies() (так же делает Ctrl+C). exit_code -3 = битый кадр. */
+            char nm[TASK_NAME_MAX];
+            strncpy(nm, next->name ? next->name : "(noname)", sizeof(nm) - 1);
+            nm[sizeof(nm) - 1] = '\0';
+
+            next->exit_code = -3;
+            next->state = TASK_ZOMBIE;
+            add_to_zombie_list(next);
+
+            if (cur && cur->state == TASK_READY)
+                cur->state = TASK_RUNNING;
+            *out_regs_ptr = cur ? cur->regs : regs;
+            spin_unlock_irqrestore(&g_sched_lock, flags);
+
+            serial_write_string(1, "[sched] bad task frame, killing: ");
+            serial_write_string(1, nm);
+            serial_write_string(1, "\n");
+            return;
+        }
+    }
+
+    fpu_save(cur->fpu_state);
+
+    /* idle-задачи в кольцо не входят, поэтому им cpu не сбрасываем:
+     * иначе другое ядро выберет чужой idle */
+    /* освобождение отложено, см. g_release_pending */
+    if (cur != &init_task && cur->pid != 0 && cur->state == TASK_READY)
+        g_release_pending[cpu] = cur;
+    if (cur != &init_task && cur->pid != 0)
+        g_prev_task[cpu] = cur;
+
+    g_current_cpu[cpu] = next;
+    next->state = TASK_RUNNING;
+    next->cpu = (int)cpu;
+    *out_regs_ptr = next->regs;
+    update_kernel_stack((uint64_t)next->kstack + next->kstack_size);
+
+    paging_switch(next->page_table);
+    fpu_restore(next->fpu_state);
+
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 }
 
 task_t *get_current_task(void)
 {
-    if (current)
-    {
-        return current;
-    }
+    uint32_t cpu = cur_cpu();
+    if (cpu < SMP_TASK_CPUS && g_current_cpu[cpu])
+        return g_current_cpu[cpu];
     return &init_task;
 }
 
@@ -247,6 +429,7 @@ static int unlink_from_ring(task_t *t)
             prev->next = it->next;
             if (task_ring == it)
                 task_ring = prev;
+            it->in_ring = 0;
             return 0;
         }
         prev = it;
@@ -311,7 +494,8 @@ static void free_task_resources(task_t *t)
 
 void reap_zombies(void)
 {
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
+
     task_t *z = zombie_list;
     zombie_list = NULL;
     task_t *deferred = NULL;
@@ -319,10 +503,12 @@ void reap_zombies(void)
     while (z)
     {
         task_t *next_z = z->znext;
-        if (z == current)
+
+        /* задача может исполняться на любом ядре — освободим позже */
+        int busy = task_on_any_cpu(z);
+
+        if (busy)
         {
-            /* Задачу убили (Ctrl+C), но она ещё исполняется на своём стеке ядра
-               до ближайшего тика планировщика — освободим её в следующий раз. */
             z->znext = deferred;
             deferred = z;
         }
@@ -334,15 +520,16 @@ void reap_zombies(void)
         z = next_z;
     }
     zombie_list = deferred;
-    local_irq_enable();
+
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 }
 
 int task_list(task_info_t *buf, size_t max)
 {
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
     if (!task_ring)
     {
-        local_irq_enable();
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return 0;
     }
 
@@ -367,7 +554,7 @@ int task_list(task_info_t *buf, size_t max)
         it = it->next;
     } while (it != task_ring->next);
 
-    local_irq_enable();
+    spin_unlock_irqrestore(&g_sched_lock, flags);
     return count;
 }
 
@@ -378,10 +565,10 @@ int task_stop(int pid)
 
     reap_zombies();
 
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
     if (!task_ring)
     {
-        local_irq_enable();
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return -1;
     }
 
@@ -399,16 +586,16 @@ int task_stop(int pid)
 
     if (!found)
     {
-        local_irq_enable();
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return -1;
     }
 
-    if (found == current)
+    if (found == get_current_task())
     {
-        current->state = TASK_ZOMBIE;
-        add_to_zombie_list(current);
-        unlink_from_ring(current);
-        local_irq_enable();
+        found->state = TASK_ZOMBIE;
+        add_to_zombie_list(found);
+        unlink_from_ring(found);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         for (;;)
         {
             local_irq_enable();
@@ -420,12 +607,26 @@ int task_stop(int pid)
        Освободить здесь значило бы освободить дважды. */
     if (found->state == TASK_ZOMBIE)
     {
-        local_irq_enable();
+        spin_unlock_irqrestore(&g_sched_lock, flags);
+        return 0;
+    }
+
+    /* Задача исполняется на другом ядре: её page_table и kstack активны.
+     * Освободит reap_zombies(), когда она уйдёт со всех ядер. */
+    int busy = task_on_any_cpu(found);
+
+    if (busy)
+    {
+        found->state = TASK_ZOMBIE;
+        found->exit_code = -2;
+        add_to_zombie_list(found);
+        unlink_from_ring(found);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return 0;
     }
 
     unlink_from_ring(found);
-    local_irq_enable();
+    spin_unlock_irqrestore(&g_sched_lock, flags);
     free_task_resources(found);
     return 0;
 }
@@ -434,18 +635,19 @@ void task_exit(int exit_code)
 {
     reap_zombies();
 
-    local_irq_disable();
-    if (!current || current == &init_task)
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
+    task_t *cur = get_current_task();
+    if (!cur || cur == &init_task)
     {
-        local_irq_enable();
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return;
     }
 
-    current->exit_code = exit_code;
-    current->state = TASK_ZOMBIE;
-    add_to_zombie_list(current);
-    unlink_from_ring(current);
-    local_irq_enable();
+    cur->exit_code = exit_code;
+    cur->state = TASK_ZOMBIE;
+    add_to_zombie_list(cur);
+    unlink_from_ring(cur);
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 
     for (;;)
     {
@@ -462,18 +664,17 @@ uint64_t utask_create(void (*entry)(void),
                       uintptr_t argv_ptr,
                       const char *name)
 {
-    unsigned long flags = save_flags();
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
 
     if (!entry)
     {
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         panic("UTASK_CREATE_NULL_ENTRY", false, true);
     }
 
     if (!user_mem || user_mem_size == 0)
     {
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         panic("UTASK_CREATE_INVALID_MEMORY", false, true);
     }
 
@@ -483,7 +684,7 @@ uint64_t utask_create(void (*entry)(void),
     task_t *t = (task_t *)malloc(sizeof(task_t));
     if (!t)
     {
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return 0;
     }
 
@@ -491,7 +692,7 @@ uint64_t utask_create(void (*entry)(void),
     if (!kstack)
     {
         free(t);
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return 0;
     }
 
@@ -504,6 +705,7 @@ uint64_t utask_create(void (*entry)(void),
     t->user_mem = user_mem;
     t->user_mem_size = user_mem_size;
     t->name = strdup(name);
+    t->cpu = -1;
     t->page_table = paging_create_user_task(user_mem, user_mem_size);
     if (!t->page_table)
     {
@@ -512,7 +714,7 @@ uint64_t utask_create(void (*entry)(void),
             free(t->name);
         free(kstack);
         free(t);
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return 0;
     }
 
@@ -524,7 +726,7 @@ uint64_t utask_create(void (*entry)(void),
         paging_destroy_user_task(t->page_table);
         free(kstack);
         free(t);
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return 0;
     }
 
@@ -536,7 +738,7 @@ uint64_t utask_create(void (*entry)(void),
         paging_destroy_user_task(t->page_table);
         free(kstack);
         free(t);
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return 0;
     }
 
@@ -555,23 +757,14 @@ uint64_t utask_create(void (*entry)(void),
                                     1); /* ← User mode! */
     t->exit_code = 0;
 
-    if (current)
-        t->cwd_idx = current->cwd_idx;
+    task_t *cur = get_current_task();
+    if (cur)
+        t->cwd_idx = cur->cwd_idx;
     else
         t->cwd_idx = FS_ROOT_IDX;
 
-    if (!task_ring)
-    {
-        task_ring = t;
-        t->next = t;
-    }
-    else
-    {
-        t->next = task_ring->next;
-        task_ring->next = t;
-        task_ring = t;
-    }
-    restore_flags(flags);
+    ring_insert(t);
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 
     return t->pid;
 }
@@ -586,10 +779,10 @@ int task_is_alive(int pid)
 
     reap_zombies();
 
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
     if (!task_ring)
     {
-        local_irq_enable();
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return 0;
     }
 
@@ -599,13 +792,13 @@ int task_is_alive(int pid)
         if (it->pid == pid)
         {
             int alive = (it->state != TASK_ZOMBIE);
-            local_irq_enable();
+            spin_unlock_irqrestore(&g_sched_lock, flags);
             return alive;
         }
         it = it->next;
     } while (it != task_ring->next);
 
-    local_irq_enable();
+    spin_unlock_irqrestore(&g_sched_lock, flags);
     return 0;
 }
 
@@ -620,7 +813,7 @@ void task_kill_foreground(void)
     if (fpid <= 0)
         return; /* нет foreground-процесса — ничего не делаем */
 
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
 
     if (task_ring)
     {
@@ -639,15 +832,16 @@ void task_kill_foreground(void)
     }
 
     g_foreground_pid = 0;
-    local_irq_enable();
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 }
 
 int sys_chdir(const char *path)
 {
-    if (!path || !current || path[0] == '\0')
+    task_t *cur = get_current_task();
+    if (!path || !cur || path[0] == '\0')
         return FS_ERR_INVALID_ARG;
 
-    uint32_t start_idx = (uint32_t)current->cwd_idx;
+    uint32_t start_idx = (uint32_t)cur->cwd_idx;
     const char *p = path;
 
     if (p[0] == '/')
@@ -657,7 +851,7 @@ int sys_chdir(const char *path)
             p++;
         if (*p == '\0')
         {
-            current->cwd_idx = start_idx;
+            cur->cwd_idx = start_idx;
             return FS_OK;
         }
     }
@@ -689,16 +883,17 @@ int sys_chdir(const char *path)
         idx = (uint32_t)found;
     }
 
-    current->cwd_idx = idx;
+    cur->cwd_idx = idx;
     return FS_OK;
 }
 
 int sys_getcwd(char *buf, size_t size)
 {
-    if (!buf || !current)
+    task_t *cur = get_current_task();
+    if (!buf || !cur)
         return -1;
 
-    if (!fs_build_path(current->cwd_idx, buf, size))
+    if (!fs_build_path(cur->cwd_idx, buf, size))
         return -1;
 
     return (int)strlen(buf);
@@ -706,20 +901,21 @@ int sys_getcwd(char *buf, size_t size)
 
 int sys_get_cwd_idx(uint32_t *out_idx)
 {
-    if (!out_idx || !current)
+    task_t *cur = get_current_task();
+    if (!out_idx || !cur)
         return FS_ERR_INVALID_ARG;
 
-    *out_idx = current->cwd_idx;
+    *out_idx = cur->cwd_idx;
     return FS_OK;
 }
 
 void kill_all_tasks(void)
 {
-    local_irq_disable(); // Отключаем прерывания
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
 
     if (!task_ring)
     {
-        local_irq_enable();
+        spin_unlock_irqrestore(&g_sched_lock, flags);
         return;
     }
 
@@ -741,75 +937,135 @@ void kill_all_tasks(void)
         it = it->next;
     } while (it != start);
 
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+
     // Удаляем все завершенные задачи из кольца
     reap_zombies();
 
-    // Текущей задачей становится init
-    current = &init_task;
-    current->state = TASK_RUNNING;
-
-    // Обновляем кольцо, если нужно
-    if (task_ring->pid != 0)
-    {
-        task_ring = &init_task;
-        init_task.next = &init_task;
-    }
-
-    local_irq_enable();
+    /* g_current_cpu — забота планировщика; busy-задачи reap_zombies() откладывает сам */
 }
 
-/* Немедленно завершает все задачи с освобождением ресурсов */
+/* Завершает все задачи с освобождением ресурсов. Вызывается только из паники.
+ * Сначала останавливаются остальные ядра (smp_halt_others). Если остановились
+ * все, локи сбрасываются и освобождается всё; иначе — только задачи, не
+ * исполняющиеся ни на одном ядре (утечка при панике лучше порчи стека). */
 void emergency_terminate_all(void)
 {
-    local_irq_disable();
+    static volatile int in_progress;
+    if (__atomic_exchange_n(&in_progress, 1, __ATOMIC_SEQ_CST))
+        return; /* повторная паника изнутри освобождения: не рекурсируем */
 
-    if (!task_ring)
+    int all_halted = smp_halt_others(200) ? 1 : 0;
+
+    /* locked == 1 только если g_sched_lock взят нами */
+    int locked = 0;
+    unsigned long flags;
+    if (all_halted)
     {
-        local_irq_enable();
+        /* остальные ядра остановлены — берём лок принудительно */
+        atomic_store(&g_sched_lock.flag, false);
+        malloc_panic_reset_lock();
+        flags = spin_lock_irqsave(&g_sched_lock);
+        locked = 1;
+    }
+    else
+    {
+        flags = save_flags();
+        local_irq_disable();
+        for (uint32_t spin = 0; spin < 20000000u; spin++)
+        {
+            if (spin_trylock(&g_sched_lock))
+            {
+                locked = 1;
+                break;
+            }
+            cpu_relax();
+        }
+    }
+
+    if (!locked)
+    {
+        /* лок держит живое ядро: ничего не освобождаем */
+        restore_flags(flags);
         return;
     }
 
-    // Сохраняем указатель на начало
-    task_t *start = task_ring->next;
-    task_t *it = start;
+    task_t *chain = NULL;
 
-    // Создаем временный массив для задач, которые нужно удалить
-    task_t *tasks_to_free[256];
-    int task_count = 0;
-
-    // Сначала собираем все задачи кроме init
-    do
+    /* зомби, снятые с кольца, но ещё лежащие в zombie_list */
+    for (task_t *z = zombie_list, *nz; z; z = nz)
     {
-        if (it->pid != 0 && it != &init_task)
+        nz = z->znext;
+        if (!z->in_ring && z->pid != 0 && z != &init_task)
         {
-            if (task_count < 256)
-            {
-                tasks_to_free[task_count++] = it;
-            }
+            z->znext = chain;
+            chain = z;
         }
-        it = it->next;
-    } while (it != start && task_count < 256);
-
-    // Удаляем все найденные задачи из кольца
-    for (int i = 0; i < task_count; i++)
-    {
-        unlink_from_ring(tasks_to_free[i]);
     }
-
-    // Немедленно освобождаем ресурсы
-    for (int i = 0; i < task_count; i++)
-    {
-        free_task_resources(tasks_to_free[i]);
-    }
-
-    // Сбрасываем структуры
-    task_ring = &init_task;
-    init_task.next = &init_task;
-    current = &init_task;
-    current->state = TASK_RUNNING;
-
-    // Очищаем список зомби
     zombie_list = NULL;
 
-    local_irq_enable();
+    /* всё кольцо, кроме init/idle */
+    if (task_ring)
+    {
+        task_t *start = task_ring->next;
+        task_t *it = start;
+        uint32_t guard = 0;
+        do
+        {
+            task_t *nx = it->next;
+            if (it->pid != 0 && it != &init_task)
+            {
+                it->in_ring = 0;
+                it->znext = chain;
+                chain = it;
+            }
+            it = nx;
+        } while (it && it != start && ++guard < 1000000u);
+    }
+
+    task_ring = &init_task;
+    init_task.next = &init_task;
+    init_task.in_ring = 1;
+    init_task.state = TASK_RUNNING;
+
+    /* free() берёт g_heap_lock; порядок sched -> heap как в reap_zombies() */
+    uint32_t me = smp_cpu_index();
+    task_t *mine = (me < SMP_TASK_CPUS) ? g_current_cpu[me] : NULL;
+    for (task_t *t = chain, *nt; t; t = nt)
+    {
+        nt = t->znext;
+        /* задачу, на чьём стеке идёт паника, не освобождаем */
+        if (t == mine)
+            continue;
+        /* не все ядра остановились: ещё исполняющиеся задачи не трогаем */
+        if (all_halted || !task_on_any_cpu(t))
+            free_task_resources(t);
+    }
+
+    /* остановленные ядра больше не планируются */
+    if (all_halted)
+    {
+        for (uint32_t i = 0; i < SMP_TASK_CPUS; i++)
+        {
+            g_prev_task[i] = NULL;
+            g_release_pending[i] = NULL;
+            if (i != me)
+                g_current_cpu[i] = &init_task;
+        }
+    }
+
+    spin_unlock_irqrestore(&g_sched_lock, flags);
+}
+
+/* Регистрирует idle-задачу AP до разрешения прерываний */
+void sched_adopt_idle(uint32_t cpu, task_t *idle)
+{
+    if (cpu >= SMP_TASK_CPUS || !idle)
+        return;
+    unsigned long flags = spin_lock_irqsave(&g_sched_lock);
+    if (!g_current_cpu[cpu])
+        g_current_cpu[cpu] = idle;
+    idle->cpu = (int)cpu;
+    idle->state = TASK_RUNNING;
+    spin_unlock_irqrestore(&g_sched_lock, flags);
 }

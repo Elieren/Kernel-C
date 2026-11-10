@@ -6,6 +6,7 @@
 #include "lib/string/string.h"
 #include "drivers/video/video.h"
 #include <asm/cpu.h>
+#include "lib/sync/spinlock/spinlock.h"
 
 extern bool screen_refresh_status;
 extern bool graphics_mode;
@@ -26,8 +27,11 @@ void screen_refresh(void)
     {
         if (screen_refresh_status)
         {
+            /* framebuffer общий с syscall-путём, который рисует под BKL */
+            unsigned long fl = bkl_lock_irqsave();
             video_update_screen();
             screen_refresh_status = false;
+            bkl_unlock_irqrestore(fl);
         }
         halt();
     }

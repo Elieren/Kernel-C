@@ -24,10 +24,22 @@ typedef struct
     uint16_t iopb_offset;
 } __attribute__((packed)) tss_t;
 
-/* Инициализирует TSS и записывает дескриптор в GDT */
+/* Селектор TSS ядра: 0x28 + i*16 */
+#define TSS_SEL_BASE 0x28
+#define TSS_SEL(cpu) ((uint16_t)(TSS_SEL_BASE + (cpu) * 16))
+/* Должно совпадать с MAX_CPUS в kernel.asm и SMP_MAX_CPUS */
+#define MAX_TSS 1024
+
+/* Инициализирует TSS ядра cpu и пишет дескриптор в GDT (без ltr) */
+void tss_init_cpu(uint32_t cpu);
+
 void tss_init(void);
 
-/* Обновляет RSP0 в TSS при переключении контекста */
+void tss_load_for_cpu(uint32_t cpu);
+
+/* RSP0 в TSS текущего ядра (вызывается планировщиком) */
 void tss_update_rsp0(uint64_t rsp0);
+
+void tss_set_rsp0_for_cpu(uint32_t cpu, uint64_t rsp0);
 
 #endif

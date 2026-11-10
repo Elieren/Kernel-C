@@ -24,6 +24,9 @@
 #include "kernel/panic/panic.h"
 #include <asm/cpu.h>
 #include "mm/paging/paging.h"
+#include <asm/acpi.h>
+#include <asm/smp.h>
+#include <asm/lapic.h>
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -41,6 +44,11 @@ extern void vga_register(void);
 extern void gfx_register(void);
 extern void uart16550_driver_init(void);
 #endif
+
+static void serial_banner(const char *s)
+{
+    serial_write_string(1, s);
+}
 
 /*-------------------------------------------------------------
     Основная функция ядра
@@ -105,6 +113,11 @@ void kmain(uint64_t mb2_addr)
         vga_register();
     }
 
+    /* Framebuffer — MMIO выше RAM: резервируем в user-таблицах */
+    if (info && info->fb.addr != 0 && info->fb.pitch && info->fb.height)
+        paging_reserve_kernel_mmio(info->fb.addr,
+                                   (size_t)info->fb.pitch * info->fb.height);
+
     /* Инициализация видео */
     video_init();
 
@@ -152,6 +165,19 @@ void kmain(uint64_t mb2_addr)
     if (fs_init(&disk) == FS_ERR_NOT_FOUND)
     {
         panic("FILESYSTEM_NOT_FOUND", true, false);
+    }
+
+    /* SMP: найти ядра (ACPI MADT) и поднять их. IDT уже загружена, куча работает,
+     * прерывания ещё запрещены, чтобы тик не начал планировать до готовности AP. */
+    acpi_init(info->rsdp_addr);
+    acpi_dump_to_serial();
+
+    uint32_t cpus = smp_init();
+    {
+        char buf[64];
+        kformat(buf, sizeof(buf), "[smp] started: %u cpu(s)\n", (unsigned)cpus);
+        serial_banner(buf);
+        smp_dump_to_serial();
     }
 
     tasks_init();

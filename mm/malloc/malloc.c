@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <asm/cpu.h>
+#include <asm/smp.h>
+#include "lib/sync/spinlock/spinlock.h"
 #include "kernel/syscall/syscall.h"
 #include "kernel/panic/panic.h"
 
@@ -25,6 +27,10 @@ typedef struct block_header
 _Static_assert(sizeof(block_header_t) % ALIGN == 0, "payload must stay ALIGN-aligned");
 
 #define MIN_SPLIT_SIZE (sizeof(block_header_t) + ALIGN)
+
+/* Куча общая для всех ядер: cli защищает только свой CPU, поэтому операции
+ * сериализуются спинлоком (с отключением прерываний). */
+static spinlock_t g_heap_lock = SPINLOCK_INIT;
 
 /* Глобальные */
 static block_header_t *heap_head = NULL;
@@ -189,8 +195,7 @@ void *malloc(size_t size)
     if (size == 0)
         return NULL;
 
-    unsigned long flags = save_flags();
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_heap_lock);
 
     size = align_up(size);
 
@@ -202,13 +207,13 @@ void *malloc(size_t size)
     {
         if (++expansion_attempts > MAX_EXPANSION_ATTEMPTS)
         {
-            restore_flags(flags);
+            spin_unlock_irqrestore(&g_heap_lock, flags);
             panic("KERNEL_HEAP_EXHAUSTED", false, false);
         }
 
         if (!heap_expand(size))
         {
-            restore_flags(flags);
+            spin_unlock_irqrestore(&g_heap_lock, flags);
             panic("KERNEL_HEAP_EXPANSION_FAILED", false, false);
         }
         fit = find_fit(size);
@@ -216,7 +221,7 @@ void *malloc(size_t size)
 
     split_block(fit, size);
     fit->free = 0;
-    restore_flags(flags);
+    spin_unlock_irqrestore(&g_heap_lock, flags);
     return header_to_payload(fit);
 }
 
@@ -226,22 +231,21 @@ void free(void *ptr)
     if (!ptr)
         return;
 
-    unsigned long flags = save_flags();
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_heap_lock);
 
     block_header_t *h = payload_to_header(ptr);
 
     /* проверяем magic */
     if (h->magic != MAGIC)
     {
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_heap_lock, flags);
         panic("HEAP_CORRUPTION_INVALID_MAGIC", false, true);
     }
 
     /* проверка на многократное освобождение */
     if (h->free)
     {
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_heap_lock, flags);
         panic("DOUBLE_FREE_DETECTED", false, true);
     }
 
@@ -249,7 +253,7 @@ void free(void *ptr)
 
     /* объединяем соседние свободные блоки */
     coalesce(h);
-    restore_flags(flags);
+    spin_unlock_irqrestore(&g_heap_lock, flags);
 }
 
 /* realloc */
@@ -263,13 +267,12 @@ void *realloc(void *ptr, size_t new_size)
         return NULL;
     }
 
-    unsigned long flags = save_flags();
-    local_irq_disable();
+    unsigned long flags = spin_lock_irqsave(&g_heap_lock);
 
     block_header_t *h = payload_to_header(ptr);
     if (h->magic != MAGIC)
     {
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_heap_lock, flags);
         return NULL;
     }
 
@@ -277,7 +280,7 @@ void *realloc(void *ptr, size_t new_size)
     if (new_size <= h->size)
     {
         split_block(h, new_size);
-        restore_flags(flags);
+        spin_unlock_irqrestore(&g_heap_lock, flags);
         return ptr;
     }
 
@@ -305,22 +308,20 @@ void *realloc(void *ptr, size_t new_size)
                 to->prev = h;
             split_block(h, new_size);
             h->free = 0;
-            restore_flags(flags);
+            spin_unlock_irqrestore(&g_heap_lock, flags);
             return ptr;
         }
     }
 
-    /* Нельзя in-place — выделяем новый, копируем и освобождаем старый */
+    /* размер старого блока читаем до unlock: malloc()/free() берут тот же лок */
+    size_t old_size = h->size;
+    spin_unlock_irqrestore(&g_heap_lock, flags);
     void *newp = malloc(new_size);
     if (!newp)
-    {
-        restore_flags(flags);
         return NULL;
-    }
-    size_t copy = (h->size < new_size) ? h->size : new_size;
+    size_t copy = (old_size < new_size) ? old_size : new_size;
     memcpy(newp, ptr, copy);
     free(ptr);
-    restore_flags(flags);
     return newp;
 }
 
@@ -338,6 +339,8 @@ void get_kmalloc_stats(kmalloc_stats_t *st)
     st->largest_free = 0;
     st->num_blocks = st->num_used = st->num_free = 0;
 
+    /* обход списка без лока гонится с coalesce()/split() на другом ядре */
+    unsigned long flags = spin_lock_irqsave(&g_heap_lock);
     block_header_t *cur = heap_head;
     while (cur)
     {
@@ -357,6 +360,7 @@ void get_kmalloc_stats(kmalloc_stats_t *st)
         }
         cur = cur->next;
     }
+    spin_unlock_irqrestore(&g_heap_lock, flags);
 }
 
 size_t malloc_usable_size(void *ptr)
@@ -364,16 +368,17 @@ size_t malloc_usable_size(void *ptr)
     if (!ptr)
         return 0;
     block_header_t *h = payload_to_header(ptr);
-    if (h->magic != MAGIC)
-        return 0;
-    if (h->free)
-        return 0;
-    return h->size;
+    unsigned long flags = spin_lock_irqsave(&g_heap_lock);
+    size_t r = 0;
+    if (h->magic == MAGIC && !h->free)
+        r = h->size;
+    spin_unlock_irqrestore(&g_heap_lock, flags);
+    return r;
 }
 
 /* Размер payload, если ptr — выровненный указатель на занятый блок кучи
    с согласованными ссылками prev/next; иначе 0. Для указателей из ring-3. */
-size_t malloc_checked_size(void *ptr)
+static size_t malloc_checked_size_locked(void *ptr)
 {
     char *p = (char *)ptr;
     char *lo = (char *)heap_head;
@@ -403,4 +408,19 @@ size_t malloc_checked_size(void *ptr)
             return 0;
     }
     return h->size;
+}
+
+/* Обёртка с локом: free() на другом ядре переписывает заголовки в coalesce() */
+size_t malloc_checked_size(void *ptr)
+{
+    unsigned long flags = spin_lock_irqsave(&g_heap_lock);
+    size_t r = malloc_checked_size_locked(ptr);
+    spin_unlock_irqrestore(&g_heap_lock, flags);
+    return r;
+}
+
+/* Только из паники после smp_halt_others(): лок мог держать остановленное ядро */
+void malloc_panic_reset_lock(void)
+{
+    atomic_store(&g_heap_lock.flag, false);
 }

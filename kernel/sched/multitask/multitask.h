@@ -8,7 +8,7 @@
 #include <asm/fpu.h>
 #include "mm/uaccess/uaccess.h"
 
-#define KSTACK_SIZE (8 * 1024) /* дефолтный размер */
+#define KSTACK_SIZE (32 * 1024) /* дефолтный размер стека ядра задачи */
 #define TASK_NAME_MAX 32
 
 typedef enum
@@ -22,7 +22,7 @@ typedef enum
 typedef struct task
 {
     int pid;
-    int state;
+    volatile int state;
     uint64_t *regs;
     void *kstack;
     size_t kstack_size;
@@ -38,6 +38,9 @@ typedef struct task
     uint64_t *page_table;
     user_alloc_t user_allocs[USER_ALLOC_MAX];                       /* блоки из SYSCALL_MALLOC */
     uint8_t fpu_state[FPU_STATE_SIZE] __attribute__((aligned(16))); /* FXSAVE */
+
+    int cpu;     /* на каком ядре задача исполняется (-1 = нигде) */
+    int in_ring; /* 1 — задача входит в общее кольцо готовых задач */
 } task_t;
 
 typedef struct task_info
@@ -77,5 +80,11 @@ void task_kill_foreground(void);
 
 void kill_all_tasks(void);
 void emergency_terminate_all(void);
+
+/* Регистрирует idle-задачу ядра (AP, до разрешения прерываний) */
+void sched_adopt_idle(uint32_t cpu, task_t *idle);
+/* idle-задача ядра (создаётся лениво) */
+task_t *smp_idle_task(uint32_t cpu);
+#include <asm/smp.h>
 
 #endif

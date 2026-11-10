@@ -9,10 +9,10 @@
 #define PTE_ADDR 0x000FFFFFFFFFF000ULL
 
 /* ─── Флаги PTE ─────────────────────────────────────────────────── */
-#define PTE_P (1ULL << 0)  /* Present                         */
-#define PTE_W (1ULL << 1)  /* Writable                        */
-#define PTE_U (1ULL << 2)  /* User-accessible (ring-3 может)  */
-#define PTE_PS (1ULL << 7) /* Page Size: 2MB large page       */
+#define PTE_P (1ULL << 0)   /* Present                         */
+#define PTE_W (1ULL << 1)   /* Writable                        */
+#define PTE_U (1ULL << 2)   /* User-accessible (ring-3 может)  */
+#define PTE_PS (1ULL << 7)  /* Page Size: 2MB large page       */
 #define PTE_NX (1ULL << 63) /* No-Execute (требует EFER.NXE)   */
 
 /* ─── Индексы уровней ───────────────────────────────────────────── */
@@ -48,6 +48,37 @@ static inline void invlpg(uint64_t va)
 /* ─── Глобальное состояние ──────────────────────────────────────── */
 static uint64_t kernel_cr3 = 0;
 static uint64_t phys_mem_total = 0;
+
+/* MMIO-диапазоны ядра (LAPIC, framebuffer). User-таблицы строятся только по RAM,
+ * без явного маппинга обращение к MMIO из user-контекста даст #PF. */
+#define MAX_MMIO_RANGES 8
+typedef struct
+{
+    uint64_t start;
+    uint64_t end;
+} mmio_range_t;
+
+static mmio_range_t g_mmio[MAX_MMIO_RANGES];
+static int g_mmio_count = 0;
+
+void paging_reserve_kernel_mmio(uint64_t phys, size_t size)
+{
+    if (size == 0 || g_mmio_count >= MAX_MMIO_RANGES)
+        return;
+    uint64_t start = ALIGN_DOWN_4KB(phys);
+    uint64_t end = ALIGN_UP_4KB(phys + size);
+    g_mmio[g_mmio_count].start = start;
+    g_mmio[g_mmio_count].end = end;
+    g_mmio_count++;
+}
+
+static int overlaps_mmio(uint64_t start, uint64_t end)
+{
+    for (int i = 0; i < g_mmio_count; i++)
+        if (start < g_mmio[i].end && end > g_mmio[i].start)
+            return 1;
+    return 0;
+}
 
 /* ─── Внутренние утилиты ────────────────────────────────────────── */
 static uint64_t *get_or_create_supervisor(uint64_t *entry)
@@ -145,12 +176,11 @@ void paging_init(uint64_t total_phys_mem)
 
 void paging_switch(uint64_t *pml4)
 {
-    if (!pml4)
-    {
-        write_cr3(kernel_cr3);
-        return;
-    }
-    write_cr3((uint64_t)(uintptr_t)pml4);
+    /* Запись CR3 сбрасывает TLB целиком. В SMP это необходимо: invlpg действует
+     * только на своём ядре, и без сброса другое ядро может исполнять код
+     * по устаревшей записи (например, с NX). */
+    uint64_t target = pml4 ? (uint64_t)(uintptr_t)pml4 : kernel_cr3;
+    write_cr3(target);
 }
 
 uint64_t *paging_create_user_task(void *user_mem, size_t user_size)
@@ -165,11 +195,34 @@ uint64_t *paging_create_user_task(void *user_mem, size_t user_size)
     if (!pml4)
         return NULL;
 
+    /* MMIO ядра: 2MB supervisor-страницы */
+    for (int m = 0; m < g_mmio_count; m++)
+    {
+        uint64_t s = ALIGN_DOWN_2MB(g_mmio[m].start);
+        uint64_t e = ALIGN_UP_2MB(g_mmio[m].end);
+        for (uint64_t addr = s; addr < e; addr += TWO_MB)
+        {
+            uint64_t *pdpt = get_or_create_supervisor(&pml4[PML4_IDX(addr)]);
+            if (!pdpt)
+                goto fail;
+            uint64_t *pd = get_or_create_supervisor(&pdpt[PDPT_IDX(addr)]);
+            if (!pd)
+                goto fail;
+            uint64_t *pde = &pd[PD_IDX(addr)];
+            if (!(*pde & PTE_P))
+                *pde = addr | PTE_P | PTE_W | PTE_PS | PTE_NX;
+        }
+    }
+
     uint64_t map_end = ALIGN_UP_2MB(phys_mem_total);
 
     for (uint64_t addr = 0; addr < map_end; addr += TWO_MB)
     {
         uint64_t range_end = addr + TWO_MB;
+        /* MMIO уже замаплен отдельно */
+        if (overlaps_mmio(addr, range_end))
+            continue;
+
         int overlaps = (addr < user_end && range_end > user_start);
 
         if (!overlaps)
