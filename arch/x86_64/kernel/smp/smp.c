@@ -109,10 +109,6 @@ bool smp_cpu_online(uint32_t cpu)
     return (__atomic_load_n(&g_online_bits[cpu / 32], __ATOMIC_SEQ_CST) >> (cpu % 32)) & 1u;
 }
 
-/* Обработчики из isr_ipi.asm */
-extern void isr_ipi_resched(void);
-extern void isr_ipi_halt(void);
-
 static volatile uint32_t g_halted_cpus;
 
 /* Вызывается из isr_ipi_halt (IF=0), не возвращается */
@@ -231,13 +227,13 @@ static void trampoline_prepare(uint64_t kernel_pml4)
 }
 
 /* Значения ap_claim_slot (см. trampoline.asm) */
-#define AP_CLAIM_IDLE  0xFFFFFFFFu /* никого не ждём / запуск отменён */
+#define AP_CLAIM_IDLE 0xFFFFFFFFu  /* никого не ждём / запуск отменён */
 #define AP_CLAIM_TAKEN 0xFFFFFFFEu /* AP захватил слот и стартует     */
 
 /* Результат start_ap() */
-#define AP_START_OK        1  /* ядро online                                  */
-#define AP_START_CANCELLED 0  /* не ответило; слот ОТОЗВАН, индекс свободен   */
-#define AP_START_STUCK    (-1) /* захватило слот, но не дошло до online        */
+#define AP_START_OK 1        /* ядро online                                  */
+#define AP_START_CANCELLED 0 /* не ответило; слот ОТОЗВАН, индекс свободен   */
+#define AP_START_STUCK (-1)  /* захватило слот, но не дошло до online        */
 
 static volatile uint32_t *claim_slot(void)
 {
@@ -329,11 +325,6 @@ uint32_t smp_init(void)
     paging_reserve_kernel_mmio(g_lapic_base, 4096);
     /* LINT0 в ExtINT обязателен, иначе IRQ0/IRQ1 от 8259 не доставляются */
     lapic_init_extint(g_lapic_base, true);
-
-    /* IPI-обработчики должны быть в IDT до старта AP */
-    idt_set_gate(LAPIC_IPI_RESCHEDULE, isr_ipi_resched, KERNEL_CODE_SEL, IDT_GATE_INT);
-    /* без шлюза IPI на 0x43 дал бы #GP */
-    idt_set_gate(LAPIC_IPI_HALT, isr_ipi_halt, KERNEL_CODE_SEL, IDT_GATE_INT);
 
     g_cpu_local[0].apic_id = lapic_id();
     g_cpu_local[0].online = true;
