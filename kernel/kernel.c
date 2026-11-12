@@ -30,6 +30,7 @@
 
 /* символы из link.ld */
 extern char _heap_start;
+extern uint32_t boot_nx_support; /* kernel.asm: 1, если CPU умеет NX */
 volatile bool graphics_mode = false;
 
 // ============================================================================
@@ -83,6 +84,22 @@ void kmain(uint64_t mb2_addr)
     }
 
     paging_init(info->total_memory);
+
+    /* Диагностика NX */
+    {
+        char buf[128];
+        kformat(buf, sizeof(buf),
+                "[paging] NX: cpuid=%u efer_nxe=%u usable=%u\n",
+                (unsigned)(boot_nx_support ? 1u : 0u),
+                (unsigned)(paging_nx_enabled() ? 1u : 0u),
+                (unsigned)(paging_nx_usable() ? 1u : 0u));
+        serial_banner(buf);
+
+        if (!boot_nx_support || !paging_nx_supported())
+            serial_banner("[paging] WARNING: CPU has no NX\n");
+        else if (!paging_nx_enabled())
+            serial_banner("[paging] WARNING: EFER.NXE is clear, NX not used\n");
+    }
 
     scheduler_init();
 

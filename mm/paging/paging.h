@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 
 /* ─── Пул таблиц страниц ────────────────────────────────────────── */
 uint64_t *pool_alloc(void);
@@ -11,6 +12,11 @@ void pool_reset(void);
 
 /* ─── Public API ────────────────────────────────────────────────── */
 void paging_init(uint64_t total_phys_mem);
+
+/* ─── NX (No-Execute) ───────────────────────────────────────────── */
+bool paging_nx_supported(void);
+bool paging_nx_enabled(void);
+bool paging_nx_usable(void);
 
 /* Резервирует MMIO-диапазон ядра (LAPIC, framebuffer): user-таблицы строятся
  * только по RAM, без маппинга обращение к MMIO из user-задачи даст #PF. */

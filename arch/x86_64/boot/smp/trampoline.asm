@@ -12,6 +12,14 @@
 
 %define TRAMP_BASE 0x8000
 
+%define CPUID_LEAF_FEATURES     0x00000001
+%define CPUID_LEAF_EXT_BASIC    0x80000000
+%define CPUID_LEAF_EXT_FEATURES 0x80000001
+%define CPUID_EXT_NX_BIT        20      ; CPUID.80000001h:EDX[20]
+%define MSR_IA32_EFER           0xC0000080
+%define EFER_LME_BIT            8
+%define EFER_NXE_BIT            11
+
 section .text.ap_tramp progbits alloc exec nowrite
 
 global ap_trampoline_start
@@ -37,9 +45,16 @@ ap_trampoline_start:
     mov eax, [TRAMP_BASE + (ap_pml4_slot - ap_trampoline_start)]
     mov cr3, eax
 
-    mov ecx, 0xC0000080
+    ; EFER у каждого CPU свой: NXE только если NX есть (иначе #GP)
+    call ap_detect_nx
+    setc bl
+    mov ecx, MSR_IA32_EFER
     rdmsr
-    or eax, (1 << 8) | (1 << 11)
+    test bl, bl
+    jz .ap_no_nxe
+    bts eax, EFER_NXE_BIT
+.ap_no_nxe:
+    bts eax, EFER_LME_BIT
     wrmsr
 
     mov eax, cr0
@@ -49,6 +64,27 @@ ap_trampoline_start:
     db 0x66, 0xEA
     dd TRAMP_BASE + (ap_lm64 - ap_trampoline_start)
     dw 0x18
+
+; CF = 1, если CPU поддерживает NX (вызывается до перехода в long mode)
+ap_detect_nx:
+    xor eax, eax
+    cpuid
+    cmp eax, CPUID_LEAF_FEATURES
+    jb .no
+
+    mov eax, CPUID_LEAF_EXT_BASIC
+    cpuid
+    cmp eax, CPUID_LEAF_EXT_FEATURES
+    jb .no
+
+    mov eax, CPUID_LEAF_EXT_FEATURES
+    xor ecx, ecx
+    cpuid
+    bt edx, CPUID_EXT_NX_BIT
+    ret
+.no:
+    clc
+    ret
 
 [BITS 64]
 ap_lm64:

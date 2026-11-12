@@ -3,6 +3,14 @@
 
 %define MAX_CPUS 1024   ; = SMP_MAX_CPUS / MAX_TSS
 
+%define CPUID_LEAF_FEATURES     0x00000001
+%define CPUID_LEAF_EXT_BASIC    0x80000000
+%define CPUID_LEAF_EXT_FEATURES 0x80000001
+%define CPUID_EXT_NX_BIT        20      ; CPUID.80000001h:EDX[20]
+%define MSR_IA32_EFER           0xC0000080
+%define EFER_LME_BIT            8
+%define EFER_NXE_BIT            11
+
 [BITS 32]
 
 section .text
@@ -69,12 +77,34 @@ start:
     mov eax, pml4_table
     mov cr3, eax
 
-    ; --- Включаем LME (бит 8) и NXE (бит 11) через MSR IA32_EFER (0xC0000080) ---
-    ; Без NXE бит 63 (NX) в page-таблицах игнорируется.
-    mov ecx, 0xC0000080
+    ; --- NX: проверка CPUID (стек не используется, ebx -> edi) ---
+    mov edi, ebx
+    xor esi, esi
+    xor eax, eax
+    cpuid
+    cmp eax, CPUID_LEAF_FEATURES
+    jb .nx_done
+    mov eax, CPUID_LEAF_EXT_BASIC
+    cpuid
+    cmp eax, CPUID_LEAF_EXT_FEATURES
+    jb .nx_done
+    mov eax, CPUID_LEAF_EXT_FEATURES
+    cpuid
+    bt edx, CPUID_EXT_NX_BIT
+    jnc .nx_done
+    mov esi, 1
+.nx_done:
+    mov ebx, edi
+    mov [boot_nx_support], esi
+
+    ; --- Включаем LME (бит 8) и NXE (бит 11, только если NX есть: иначе #GP) ---
+    mov ecx, MSR_IA32_EFER
     rdmsr
-    bts eax, 8
-    bts eax, 11
+    test esi, esi
+    jz .no_nxe
+    bts eax, EFER_NXE_BIT
+.no_nxe:
+    bts eax, EFER_LME_BIT
     wrmsr
 
     ; --- Включаем paging (CR0.PG = 1) ---
@@ -173,6 +203,15 @@ gdt_end:
 gdt_desc:
     dw gdt_end - gdt - 1
     dq gdt
+
+; -----------------------------------------------------------------------
+; 1, если CPU поддерживает NX (читает kmain)
+; -----------------------------------------------------------------------
+section .data
+align 4
+global boot_nx_support
+boot_nx_support:
+    dd 0
 
 ; -----------------------------------------------------------------------
 ; место под стек 64-bit (BSP)

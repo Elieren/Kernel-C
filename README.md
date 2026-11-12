@@ -94,6 +94,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
   via INIT-SIPI-SIPI trampoline, per-CPU TSS/stack/idle task, shared scheduler
   queue with task migration, IPI-based tick broadcast, spinlocks + BKL.
 
+* [x] `EFER.NXE` is enabled only if the CPU reports NX (CPUID), so CPUs without NX no longer fault at boot.
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 

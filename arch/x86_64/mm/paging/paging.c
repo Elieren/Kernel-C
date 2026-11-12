@@ -1,7 +1,9 @@
 #include "mm/paging/paging.h"
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #include <string.h>
+#include <asm/cpu.h>
 
 /* ─── Размерные константы ───────────────────────────────────────── */
 #define PAGE_SIZE 4096ULL
@@ -48,6 +50,16 @@ static inline void invlpg(uint64_t va)
 /* ─── Глобальное состояние ──────────────────────────────────────── */
 static uint64_t kernel_cr3 = 0;
 static uint64_t phys_mem_total = 0;
+
+/* NX: бит 63 в PTE ставится только при EFER.NXE = 1 (иначе он зарезервирован) */
+static bool g_nx_supported = false;
+static bool g_nx_enabled = false;
+static bool g_nx_usable = false;
+
+static inline uint64_t nx_mask(void)
+{
+    return g_nx_usable ? PTE_NX : 0ULL;
+}
 
 /* MMIO-диапазоны ядра (LAPIC, framebuffer). User-таблицы строятся только по RAM,
  * без явного маппинга обращение к MMIO из user-контекста даст #PF. */
@@ -167,10 +179,30 @@ static uint64_t *get_or_create_pt_for_user(uint64_t *pml4, uint64_t va)
  *  PUBLIC API
  * ═══════════════════════════════════════════════════════════════════ */
 
+bool paging_nx_supported(void)
+{
+    return g_nx_supported;
+}
+
+bool paging_nx_enabled(void)
+{
+    return g_nx_enabled;
+}
+
+bool paging_nx_usable(void)
+{
+    return g_nx_usable;
+}
+
 void paging_init(uint64_t total_phys_mem)
 {
     kernel_cr3 = read_cr3();
     phys_mem_total = total_phys_mem;
+
+    g_nx_supported = cpu_has_nx();
+    g_nx_enabled = cpu_efer_nxe_enabled();
+    g_nx_usable = g_nx_supported && g_nx_enabled;
+
     pool_reset();
 }
 
@@ -210,7 +242,7 @@ uint64_t *paging_create_user_task(void *user_mem, size_t user_size)
                 goto fail;
             uint64_t *pde = &pd[PD_IDX(addr)];
             if (!(*pde & PTE_P))
-                *pde = addr | PTE_P | PTE_W | PTE_PS | PTE_NX;
+                *pde = addr | PTE_P | PTE_W | PTE_PS | nx_mask();
         }
     }
 
@@ -302,7 +334,7 @@ static int map_user_region(uint64_t *pml4, void *addr, size_t size, int nx)
         /* NX ставим только на страницы, которые ещё не были user-страницами:
            страница может делить границу с образом программы (код). */
         if (nx && !was_user)
-            *pte |= PTE_NX;
+            *pte |= nx_mask();
         else if (!nx)
             *pte &= ~PTE_NX;
         invlpg(page);
