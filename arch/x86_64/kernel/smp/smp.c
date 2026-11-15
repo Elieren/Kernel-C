@@ -1,6 +1,6 @@
 /* smp.c — подъём ядер: топология из ACPI MADT, запуск AP по INIT-SIPI-SIPI
- * через трамплин (0x8000). Тик PIT приходит только на BSP, поэтому он
- * рассылает остальным ядрам IPI RESCHEDULE. */
+ * через трамплин (0x8000). Тик PIT приходит только на BSP; у каждого AP свой
+ * периодический таймер LAPIC (вектор LAPIC_TIMER_VECTOR), IPI для тика не нужны. */
 #include <asm/smp.h>
 #include <asm/acpi.h>
 #include <asm/lapic.h>
@@ -20,6 +20,7 @@
 #define TRAMP_BASE 0x8000
 #define AP_STACK_SIZE (16 * 1024)
 #define APIC_ID_XAPIC_MAX 254 /* 0xFF в xAPIC — broadcast, адресовать нельзя */
+#define AP_TIMER_HZ 1000      /* частота тика планировщика на AP (как у PIT на BSP) */
 
 extern char ap_trampoline_start[];
 extern char ap_trampoline_end[];
@@ -114,6 +115,8 @@ static volatile uint32_t g_halted_cpus;
 /* Вызывается из isr_ipi_halt (IF=0), не возвращается */
 void smp_ipi_halt_handler(void)
 {
+    /* свой таймер больше не нужен: тик не должен ждать в IRR */
+    lapic_timer_stop();
     /* уходим с CR3 задачи: паникующее ядро освободит её таблицы страниц */
     paging_switch(NULL);
     __atomic_add_fetch(&g_halted_cpus, 1, __ATOMIC_SEQ_CST);
@@ -138,14 +141,6 @@ bool smp_halt_others(uint32_t timeout_ms)
         lapic_delay_ms(1);
     }
     return __atomic_load_n(&g_halted_cpus, __ATOMIC_SEQ_CST) >= others;
-}
-
-/* Один IPI «все, кроме себя» вместо цикла по ядрам на каждом тике */
-void smp_broadcast_reschedule(void)
-{
-    if (g_cpu_count <= 1)
-        return;
-    lapic_send_ipi_all_but_self(LAPIC_IPI_RESCHEDULE);
 }
 
 void ap_main(uint32_t cpu_index)
@@ -211,6 +206,11 @@ void ap_main(uint32_t cpu_index)
     sched_adopt_idle(cpu_index, idle);
     tss_set_rsp0_for_cpu(cpu_index,
                          (uint64_t)(uintptr_t)idle->kstack + idle->kstack_size);
+
+    /* Собственный таймер LAPIC этого ядра. Запускаем последним: прерывания ещё
+     * запрещены, первый тик придёт после sti в smp_idle_enter() уже на стеке
+     * idle-задачи, то есть на том же kstack, что и rsp0 в TSS. */
+    lapic_timer_start_periodic(AP_TIMER_HZ);
 
     /* Смена стека, sti и hlt-цикл — в asm (idle.asm), функция не возвращается */
     extern void smp_idle_enter(void *stack_top) __attribute__((noreturn));
@@ -354,6 +354,19 @@ uint32_t smp_init(void)
             want++;
     if (!want)
         return 1;
+
+    /* Калибруем на BSP до INIT (PIT канал 2 свободен), AP берут готовое значение. */
+    if (!lapic_timer_calibrate())
+    {
+        serial_write_string(1, "[smp] LAPIC timer calibration failed -> single CPU only\n");
+        return 1;
+    }
+    {
+        char b[64];
+        kformat(b, sizeof(b), "[smp] LAPIC timer: %u ticks/ms (div 16)\n",
+                (unsigned)lapic_timer_ticks_per_ms());
+        serial_write_string(1, b);
+    }
 
     /* один общий INIT и одна пауза вместо INIT на каждое ядро */
     lapic_send_init_all_but_self();

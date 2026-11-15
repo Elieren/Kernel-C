@@ -92,7 +92,7 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [X] SMP (multi-core): ACPI MADT topology discovery, Local APIC, AP bring-up
   via INIT-SIPI-SIPI trampoline, per-CPU TSS/stack/idle task, shared scheduler
-  queue with task migration, IPI-based tick broadcast, spinlocks + BKL.
+  queue with task migration, per-AP Local APIC timer tick (no IPI), spinlocks + BKL.
 
 * [x] `EFER.NXE` is enabled only if the CPU reports NX (CPUID), so CPUs without NX no longer fault at boot.
 

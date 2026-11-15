@@ -1,12 +1,11 @@
-; isr32.asm — IRQ32 (PIT timer), SMP-версия.
-; Тик приходит только на BSP, поэтому после timer_tick он рассылает
-; остальным ядрам IPI RESCHEDULE.
+; isr32.asm — IRQ32 (PIT timer).
+; Тик PIT приходит только на BSP: он ведёт время и планирует свою задачу.
+; У каждого AP свой таймер LAPIC (isr_lapic_timer.asm), рассылки IPI нет.
 [BITS 64]
 
 global isr32
 extern timer_tick
 extern schedule_from_isr
-extern smp_broadcast_reschedule
 
 isr32:
     ; --- Сохраняем регистры в порядке: rax, rcx, rdx, rbx, rbp, rsi, rdi, r8..r15 ---
@@ -31,8 +30,6 @@ isr32:
 
     ; --- вызов C-функции для тика таймера (не трогает regs на стеке) ---
     call timer_tick
-
-    call smp_broadcast_reschedule
 
     sub rsp, 16
     lea rdi, [rsp + 16]      ; frame pointer

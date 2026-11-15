@@ -36,9 +36,14 @@
 /* shorthand «все, кроме себя» */
 #define LAPIC_ICR_DEST_ALL_BUT_SELF (3u << 18)
 
-#define LAPIC_IPI_RESCHEDULE 0x40    /* перепланировать на этом ядре     */
 #define LAPIC_IPI_TLB_SHOOTDOWN 0x41 /* сбросить TLB */
 #define LAPIC_IPI_HALT 0x43
+
+/* Собственный таймер Local APIC на каждом AP: тик планировщика без IPI */
+#define LAPIC_TIMER_VECTOR 0x44
+#define LAPIC_LVT_MASKED (1u << 16)
+#define LAPIC_LVT_TIMER_PERIODIC (1u << 17) /* биты 18:17: 00 one-shot, 01 periodic */
+#define LAPIC_TIMER_DIV_16 0x3              /* делитель шины/кристалла на 16 */
 
 /* Инициализация LAPIC на текущем ядре. keep_pic=true оставляет LINT0 в ExtINT,
  * иначе IRQ от 8259 не доходят до CPU. */
@@ -65,5 +70,16 @@ void lapic_send_sipi(uint32_t dest_apic_id, uint8_t vector_page);
 void lapic_eoi(void);
 
 void lapic_delay_ms(uint32_t ms);
+
+/* Таймер LAPIC. Частота калибруется один раз на BSP по PIT (канал 2) и общая
+ * для всех ядер: AP калибровку не делают, иначе они спорили бы с BSP за PIT.
+ * lapic_timer_calibrate() вызывается на BSP до запуска AP, возвращает false,
+ * если частоту определить не удалось. */
+bool lapic_timer_calibrate(void);
+uint32_t lapic_timer_ticks_per_ms(void);
+
+/* Периодический тик с частотой hz на текущем ядре (вектор LAPIC_TIMER_VECTOR) */
+void lapic_timer_start_periodic(uint32_t hz);
+void lapic_timer_stop(void);
 
 #endif /* X86_64_LAPIC_H */

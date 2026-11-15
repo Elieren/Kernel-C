@@ -4,7 +4,8 @@
 // Все задачи лежат в одном кольце (task_ring), у каждого ядра свой указатель
 // на текущую задачу. Задача, занятая другим ядром, имеет task->cpu >= 0 и
 // пропускается. Переключение идёт из обработчика прерывания (isr32 на BSP,
-// isr_ipi_resched на AP), критические секции защищены g_sched_lock.
+// isr_lapic_timer на AP, у каждого AP свой таймер LAPIC), критические секции
+// защищены g_sched_lock.
 #include "multitask.h"
 #include "mm/malloc/malloc.h"
 #include "lib/string/string.h"

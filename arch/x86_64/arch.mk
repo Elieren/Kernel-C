@@ -14,6 +14,7 @@ ARCH_ASM_SRCS := \
 	arch/x86_64/interrupt/isr44.asm \
 	arch/x86_64/interrupt/isr80.asm \
 	arch/x86_64/interrupt/isr_ipi.asm \
+	arch/x86_64/interrupt/isr_lapic_timer.asm \
 	arch/x86_64/interrupt/isr_spurious.asm \
 	arch/x86_64/kernel/smp/idle.asm \
 	arch/x86_64/interrupt/isr_stubs.asm

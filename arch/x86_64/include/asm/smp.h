@@ -37,8 +37,6 @@ uint32_t smp_cpu_count(void);
 
 bool smp_cpu_online(uint32_t cpu);
 
-void smp_broadcast_reschedule(void);
-
 /* Аварийная остановка остальных ядер (путь паники): ядра уходят на ядерный CR3
  * и замирают в `cli; hlt`. Возвращает true, если остановились все за timeout_ms.
  * Ядро с запрещёнными прерываниями IPI не получит — тогда false, и на других

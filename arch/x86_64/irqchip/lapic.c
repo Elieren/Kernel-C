@@ -126,6 +126,68 @@ void lapic_delay_ms(uint32_t ms)
         pit_delay_ticks((uint16_t)(PIT_HZ / 1000u));
 }
 
+/* Тактов таймера LAPIC (при делителе 16) за 1 мс; 0 — не откалибровано.
+ * Пишет только BSP до SIPI, AP читают. */
+static volatile uint32_t g_lapic_timer_ticks_per_ms = 0;
+
+#define LAPIC_TIMER_CALIB_MS 20u
+
+bool lapic_timer_calibrate(void)
+{
+    /* таймер замаскирован: во время калибровки прерывание не нужно */
+    lapic_write(LAPIC_REG_TIMER_DIVIDE, LAPIC_TIMER_DIV_16);
+    lapic_write(LAPIC_REG_LVT_TIMER, LAPIC_LVT_MASKED | LAPIC_TIMER_VECTOR);
+    lapic_write(LAPIC_REG_TIMER_INIT, 0xFFFFFFFFu);
+
+    /* одно окно PIT: 20 мс = 23864 тика (влезает в 16 бит) */
+    pit_delay_ticks((uint16_t)((PIT_HZ / 1000u) * LAPIC_TIMER_CALIB_MS));
+
+    uint32_t left = lapic_read(LAPIC_REG_TIMER_CURRENT);
+    lapic_write(LAPIC_REG_TIMER_INIT, 0); /* стоп */
+
+    uint32_t elapsed = 0xFFFFFFFFu - left;
+    uint32_t per_ms = elapsed / LAPIC_TIMER_CALIB_MS;
+
+    /* per_ms == 0 — таймер не тикает; elapsed почти 0xFFFFFFFF — счётчик мог обернуться */
+    if (per_ms == 0 || elapsed >= 0xFFFFFFF0u)
+    {
+        g_lapic_timer_ticks_per_ms = 0;
+        return false;
+    }
+
+    __atomic_store_n(&g_lapic_timer_ticks_per_ms, per_ms, __ATOMIC_SEQ_CST);
+    return true;
+}
+
+uint32_t lapic_timer_ticks_per_ms(void)
+{
+    return __atomic_load_n(&g_lapic_timer_ticks_per_ms, __ATOMIC_SEQ_CST);
+}
+
+void lapic_timer_start_periodic(uint32_t hz)
+{
+    uint32_t per_ms = lapic_timer_ticks_per_ms();
+    if (!per_ms || !hz)
+        return;
+
+    uint64_t count = ((uint64_t)per_ms * 1000u) / hz;
+    if (count == 0)
+        count = 1;
+    if (count > 0xFFFFFFFFu)
+        count = 0xFFFFFFFFu;
+
+    /* порядок: делитель, режим и вектор, и только потом начальный счёт (он запускает таймер) */
+    lapic_write(LAPIC_REG_TIMER_DIVIDE, LAPIC_TIMER_DIV_16);
+    lapic_write(LAPIC_REG_LVT_TIMER, LAPIC_LVT_TIMER_PERIODIC | LAPIC_TIMER_VECTOR);
+    lapic_write(LAPIC_REG_TIMER_INIT, (uint32_t)count);
+}
+
+void lapic_timer_stop(void)
+{
+    lapic_write(LAPIC_REG_LVT_TIMER, LAPIC_LVT_MASKED | LAPIC_TIMER_VECTOR);
+    lapic_write(LAPIC_REG_TIMER_INIT, 0);
+}
+
 static bool lapic_init_impl(uint64_t base, bool keep_pic)
 {
     /* база из MSR точнее, чем из MADT */

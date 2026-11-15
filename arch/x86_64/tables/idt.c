@@ -9,9 +9,9 @@
 static struct idt_entry idt[IDT_ENTRIES];
 static struct idt_ptr idtp;
 
-/* Обработчики из isr_spurious.asm и isr_ipi.asm */
+/* Обработчики из isr_spurious.asm, isr_ipi.asm и isr_lapic_timer.asm */
 extern void isr_spurious(void);
-extern void isr_ipi_resched(void);
+extern void isr_lapic_timer(void);
 extern void isr_ipi_halt(void);
 
 /* Установка записи IDT для 64-bit handler */
@@ -65,7 +65,7 @@ void idt_install(void)
     idt_set_gate(KEYBOARD, isr33, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(MOUSE, isr44, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(INTERRUPT, isr80, KERNEL_CODE_SEL, IDT_GATE_SYSCALL);
-    idt_set_gate(LAPIC_IPI_RESCHEDULE, isr_ipi_resched, KERNEL_CODE_SEL, IDT_GATE_INT);
+    idt_set_gate(LAPIC_TIMER_VECTOR, isr_lapic_timer, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(LAPIC_IPI_HALT, isr_ipi_halt, KERNEL_CODE_SEL, IDT_GATE_INT);
 
     /* Spurious-вектор LAPIC (0xFF) приходит на любое ядро, включая AP, и без
