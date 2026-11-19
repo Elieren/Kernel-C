@@ -118,11 +118,18 @@ void kmain(uint64_t mb2_addr)
     malloc_init(&_heap_start, heap_size);
 
     /* Регистрация видеодрайвера на основе наличия framebuffer */
-    if (info && info->fb.addr != 0)
+    bool fb_ok = fb_is_linear(&info->fb);
+
+    if (fb_ok)
     {
         /* Framebuffer доступен - используем графический драйвер */
         gfx_register();
         graphics_mode = true;
+
+        char vbuf[48];
+        kformat(vbuf, sizeof(vbuf), "[video] %ux%ux%u\n",
+                (unsigned)info->fb.width, (unsigned)info->fb.height, (unsigned)info->fb.bpp);
+        serial_banner(vbuf);
     }
     else
     {
@@ -131,7 +138,7 @@ void kmain(uint64_t mb2_addr)
     }
 
     /* Framebuffer — MMIO выше RAM: резервируем в user-таблицах */
-    if (info && info->fb.addr != 0 && info->fb.pitch && info->fb.height)
+    if (fb_ok)
         paging_reserve_kernel_mmio(info->fb.addr,
                                    (size_t)info->fb.pitch * info->fb.height);
 
@@ -145,7 +152,7 @@ void kmain(uint64_t mb2_addr)
     uint32_t g_screen_height = 0;
 
     /* Настройка разрешения экрана для мыши (только для графического режима) */
-    if (info && info->fb.addr != 0)
+    if (fb_ok)
     {
         g_screen_width = info->fb.width;
         g_screen_height = info->fb.height;
@@ -165,7 +172,7 @@ void kmain(uint64_t mb2_addr)
     }
 
     /* Инициализация мыши только если есть framebuffer */
-    if (info && info->fb.addr != 0 && mouse_init())
+    if (fb_ok && mouse_init())
     {
         /* Устанавливаем границы мыши по размеру экрана */
         mouse_set_bounds(0, 0, g_screen_width - 1, g_screen_height - 1);

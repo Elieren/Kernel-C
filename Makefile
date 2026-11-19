@@ -122,7 +122,7 @@ image: builddir $(BUILD_KERNEL)
 	set timeout=2
 	insmod normal
 	insmod multiboot2
-	insmod all_video
+	insmod vbe
 	set gfxpayload=auto
 	menuentry "Kernel-C" {
 	    multiboot2 /boot/kernel.elf

@@ -36,14 +36,14 @@ mb2_start:
     ; checksum = -(magic + arch + length)  (выражение ниже даёт 32-bit)
     dd 0x100000000 - (0xE85250D6 + 0x00000000 + (mb2_end - mb2_start))
 
-    ; --- Framebuffer (header) tag: request preferred mode ---
+    ; --- Framebuffer tag: режим выбирает GRUB (0 = любой), тег нужен для линейного фреймбуфера ---
     align 8
     dw 5        ; tag type = 5 (framebuffer request in header)
-    dw 0        ; flags (0 = required; if you want optional set bit0)
-    dd 20       ; size of this tag (header + payload: 2+2+4 + 3*4 = 20)
-    dd 1920     ; width (px)  <-- поменяйте на нужную
-    dd 1080      ; height (px) <-- поменяйте на нужную
-    dd 32       ; bpp (bits per pixel) <-- 32 обычно
+    dw 1        ; flags (bit0 = optional)
+    dd 20       ; size of this tag
+    dd 0        ; width
+    dd 0        ; height
+    dd 0        ; bpp
 
     ; --- End tag ---
     align 8

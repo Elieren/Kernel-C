@@ -24,6 +24,7 @@ boot_info_t *arch_parse_boot_info(uint64_t mb2_addr)
     g_boot_info.fb.width = mb2_fb->width;
     g_boot_info.fb.height = mb2_fb->height;
     g_boot_info.fb.bpp = mb2_fb->bpp;
+    g_boot_info.fb.fb_type = mb2_fb->fb_type;
 
     // Получаем остальную информацию
     g_boot_info.rsdp_addr = get_rsdp_address();

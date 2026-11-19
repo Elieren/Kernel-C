@@ -21,4 +21,14 @@ boot_info_t *arch_parse_boot_info(uint64_t boot_addr);
 // Глобальная функция для получения информации о загрузке
 boot_info_t *get_boot_info(void);
 
+#define FB_TYPE_RGB 1
+
+/* Настоящий линейный фреймбуфер: не EGA-текст 0xB8000, глубина — как умеет драйвер */
+static inline bool fb_is_linear(const framebuffer_info_t *fb)
+{
+    return fb->fb_type == FB_TYPE_RGB && fb->addr && fb->pitch &&
+           fb->width >= 320 && fb->height >= 200 &&
+           (fb->bpp == 24 || fb->bpp == 32);
+}
+
 #endif /* BOOT_BOOTINFO_H */
