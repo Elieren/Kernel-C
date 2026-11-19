@@ -13,6 +13,10 @@ int user_range_ok(uint64_t *pml4, uint64_t uaddr, size_t len);
 /* То же для текущей задачи. */
 int user_range_ok_current(uint64_t uaddr, size_t len);
 
+/* Как user_range_ok*, но страницы ещё и записываемые: для буферов, куда пишет ядро */
+int user_range_ok_write(uint64_t *pml4, uint64_t uaddr, size_t len);
+int user_range_ok_current_write(uint64_t uaddr, size_t len);
+
 /* Длина строки в user-памяти текущей задачи (без '\0'); -1, если нет
    '\0' в пределах cap или байты выходят за user-страницы. */
 int user_str_len(const char *s, size_t cap);

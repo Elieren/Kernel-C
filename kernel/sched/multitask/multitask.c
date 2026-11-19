@@ -663,7 +663,9 @@ uint64_t utask_create(void (*entry)(void),
                       size_t user_mem_size,
                       int argc,
                       uintptr_t argv_ptr,
-                      const char *name)
+                      const char *name,
+                      const user_region_t *regions,
+                      size_t nregions)
 {
     unsigned long flags = spin_lock_irqsave(&g_sched_lock);
 
@@ -719,7 +721,18 @@ uint64_t utask_create(void (*entry)(void),
         return 0;
     }
 
-    void *user_stack = malloc(stack_size);
+    if (!paging_protect_user_image(t->page_table, user_mem, user_mem_size, regions, nregions))
+    {
+        if (t->name)
+            free(t->name);
+        paging_destroy_user_task(t->page_table);
+        free(kstack);
+        free(t);
+        spin_unlock_irqrestore(&g_sched_lock, flags);
+        return 0;
+    }
+
+    void *user_stack = malloc_pages((stack_size + (HEAP_PAGE_SIZE - 1)) / HEAP_PAGE_SIZE);
     if (!user_stack)
     {
         if (t->name)

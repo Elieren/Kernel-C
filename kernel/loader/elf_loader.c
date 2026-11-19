@@ -89,6 +89,10 @@ int elf_load_image(const void *file_data, size_t file_size,
         if (seg_end < ph->p_vaddr)
             return ELF_ERR_OVERFLOW;
 
+        // W^X
+        if ((ph->p_flags & PF_W) && (ph->p_flags & PF_X))
+            return ELF_ERR_WX_SEGMENT;
+
         if (!have_load || ph->p_vaddr < min_vaddr)
             min_vaddr = ph->p_vaddr;
         if (seg_end > max_end)
@@ -103,7 +107,10 @@ int elf_load_image(const void *file_data, size_t file_size,
     if (max_end < min_vaddr)
         return ELF_ERR_OVERFLOW;
 
-    Elf_Addr image_span_addr = max_end - min_vaddr;
+    // образ с границы страницы: по ней выставляются права
+    Elf_Addr base_vaddr = min_vaddr & ~(Elf_Addr)(HEAP_PAGE_SIZE - 1);
+
+    Elf_Addr image_span_addr = max_end - base_vaddr;
     if (image_span_addr == 0 || image_span_addr > (Elf_Addr)ELF_MAX_IMAGE_SIZE)
         return ELF_ERR_OVERFLOW;
 
@@ -112,19 +119,74 @@ int elf_load_image(const void *file_data, size_t file_size,
     if (eh->e_entry < min_vaddr || eh->e_entry >= max_end)
         return ELF_ERR_BAD_ENTRY;
 
-    size_t total_size = image_span + extra_tail_space;
-    if (total_size < image_span) // переполнение от extra_tail_space
+    user_region_t regions[ELF_IMAGE_MAX_REGIONS];
+    size_t nregions = 0;
+
+    for (Elf_Half i = 0; i < eh->e_phnum; i++)
+    {
+        const Elf_Phdr *ph = &phdrs[i];
+        if (ph->p_type != PT_LOAD || ph->p_memsz == 0)
+            continue;
+
+        if (nregions >= ELF_IMAGE_MAX_REGIONS)
+            return ELF_ERR_BAD_SEGMENT;
+
+        regions[nregions].offset = (size_t)(ph->p_vaddr - base_vaddr);
+        regions[nregions].size = (size_t)ph->p_memsz;
+        regions[nregions].perm = ((ph->p_flags & PF_W) ? USER_PERM_W : 0u) |
+                                 ((ph->p_flags & PF_X) ? USER_PERM_X : 0u);
+        nregions++;
+    }
+
+    // W и X на одной странице
+    for (size_t i = 0; i < nregions; i++)
+    {
+        size_t i_lo = regions[i].offset / HEAP_PAGE_SIZE;
+        size_t i_hi = (regions[i].offset + regions[i].size + (HEAP_PAGE_SIZE - 1)) / HEAP_PAGE_SIZE;
+        for (size_t j = i + 1; j < nregions; j++)
+        {
+            size_t j_lo = regions[j].offset / HEAP_PAGE_SIZE;
+            size_t j_hi = (regions[j].offset + regions[j].size + (HEAP_PAGE_SIZE - 1)) / HEAP_PAGE_SIZE;
+            if (i_lo < j_hi && j_lo < i_hi &&
+                (((regions[i].perm & USER_PERM_W) && (regions[j].perm & USER_PERM_X)) ||
+                 ((regions[i].perm & USER_PERM_X) && (regions[j].perm & USER_PERM_W))))
+                return ELF_ERR_WX_SEGMENT;
+        }
+    }
+
+    // e_entry — только в исполняемом сегменте
+    size_t entry_off = (size_t)(eh->e_entry - base_vaddr);
+    int entry_exec = 0;
+    for (size_t i = 0; i < nregions; i++)
+    {
+        if ((regions[i].perm & USER_PERM_X) && entry_off >= regions[i].offset &&
+            entry_off - regions[i].offset < regions[i].size)
+            entry_exec = 1;
+    }
+    if (!entry_exec)
+        return ELF_ERR_BAD_ENTRY;
+
+    // хвост под argv — с новой страницы
+    size_t tail_off = image_span;
+    if (extra_tail_space != 0)
+    {
+        if (image_span > SIZE_MAX - (HEAP_PAGE_SIZE - 1))
+            return ELF_ERR_OVERFLOW;
+        tail_off = (image_span + (HEAP_PAGE_SIZE - 1)) & ~(size_t)(HEAP_PAGE_SIZE - 1);
+    }
+
+    size_t total_size = tail_off + extra_tail_space;
+    if (total_size < tail_off) // переполнение от extra_tail_space
+        return ELF_ERR_OVERFLOW;
+    if (total_size > SIZE_MAX - (HEAP_PAGE_SIZE - 1)) // округление до страниц
         return ELF_ERR_OVERFLOW;
 
-    void *image_base = malloc(total_size);
+    // целые страницы: образ уходит в ring-3, malloc_pages() обнуляет
+    void *image_base = malloc_pages((total_size + (HEAP_PAGE_SIZE - 1)) / HEAP_PAGE_SIZE);
     if (!image_base)
         return ELF_ERR_NO_MEMORY;
 
-    memset(image_base, 0, total_size);
-
-    // Проход 2: копировать файловое содержимое сегментов; .bss уже обнулён.
-    int entry_covered = 0;
-
+    // Проход 2: копировать файловое содержимое сегментов.
     for (Elf_Half i = 0; i < eh->e_phnum; i++)
     {
         const Elf_Phdr *ph = &phdrs[i];
@@ -132,29 +194,20 @@ int elf_load_image(const void *file_data, size_t file_size,
             continue;
 
         uint8_t *dst = (uint8_t *)image_base +
-                       (size_t)(ph->p_vaddr - min_vaddr);
+                       (size_t)(ph->p_vaddr - base_vaddr);
         const uint8_t *src = (const uint8_t *)file_data + ph->p_offset;
 
         if (ph->p_filesz > 0)
             memcpy(dst, src, (size_t)ph->p_filesz);
-
-        if (eh->e_entry >= ph->p_vaddr &&
-            eh->e_entry < ph->p_vaddr + (Elf_Addr)ph->p_memsz)
-            entry_covered = 1;
-    }
-
-    if (!entry_covered)
-    {
-        // e_entry попал в «дыру» между сегментами.
-        free(image_base);
-        return ELF_ERR_BAD_ENTRY;
     }
 
     out->image_base = image_base;
     out->image_size = total_size;
-    out->segments_end = image_span;
-    out->entry = (uintptr_t)image_base +
-                 (uintptr_t)(eh->e_entry - min_vaddr);
+    out->segments_end = tail_off;
+    out->entry = (uintptr_t)image_base + entry_off;
+    out->nregions = nregions;
+    for (size_t i = 0; i < nregions; i++)
+        out->regions[i] = regions[i];
 
     return ELF_LOAD_OK;
 }
@@ -190,7 +243,9 @@ const char *elf_load_status_str(int status)
     case ELF_ERR_NO_MEMORY:
         return "out of memory";
     case ELF_ERR_BAD_ENTRY:
-        return "e_entry outside loaded segments";
+        return "e_entry outside executable segments";
+    case ELF_ERR_WX_SEGMENT:
+        return "segment or page both writable and executable (W^X)";
     default:
         return "unknown elf_load_status_t";
     }

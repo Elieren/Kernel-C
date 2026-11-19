@@ -225,6 +225,67 @@ void *malloc(size_t size)
     return header_to_payload(fit);
 }
 
+/* Блок из npages страниц, выровненный по странице; заголовок — в предыдущей странице.
+ * Остатки до и после блока остаются свободными (после — 0 или >= MIN_SPLIT_SIZE). */
+void *malloc_pages(size_t npages)
+{
+    if (npages == 0 || npages > SIZE_MAX / HEAP_PAGE_SIZE)
+        return NULL;
+
+    size_t size = npages * HEAP_PAGE_SIZE;
+    void *result = NULL;
+
+    unsigned long flags = spin_lock_irqsave(&g_heap_lock);
+
+    for (block_header_t *cur = heap_head; cur && !result; cur = cur->next)
+    {
+        if (!cur->free || cur->size < size)
+            continue;
+
+        uintptr_t p = (uintptr_t)header_to_payload(cur);
+        uintptr_t end = p + cur->size;
+        uintptr_t a = (p + (HEAP_PAGE_SIZE - 1)) & ~(uintptr_t)(HEAP_PAGE_SIZE - 1);
+
+        for (; a + size <= end; a += HEAP_PAGE_SIZE)
+        {
+            if (a != p && a < p + sizeof(block_header_t) + ALIGN)
+                continue;
+
+            uintptr_t tail = end - (a + size);
+            if (tail != 0 && tail < MIN_SPLIT_SIZE)
+                continue;
+
+            block_header_t *h = cur;
+            if (a != p)
+            {
+                h = (block_header_t *)(a - sizeof(block_header_t));
+                h->magic = MAGIC;
+                h->free = 1;
+                h->size = end - a;
+                h->prev = cur;
+                h->next = cur->next;
+                if (h->next)
+                    h->next->prev = h;
+                cur->next = h;
+                cur->size = (uintptr_t)h - p;
+                if (heap_tail == cur)
+                    heap_tail = h;
+            }
+
+            split_block(h, size);
+            h->free = 0;
+            result = header_to_payload(h);
+            break;
+        }
+    }
+
+    spin_unlock_irqrestore(&g_heap_lock, flags);
+
+    if (result)
+        memset(result, 0, size);
+    return result;
+}
+
 /* free */
 void free(void *ptr)
 {

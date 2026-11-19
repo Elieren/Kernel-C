@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "mm/paging/paging.h"
+
 // Коды результата; ELF_LOAD_OK == 0, ошибки — отрицательные.
 typedef enum
 {
@@ -20,21 +22,28 @@ typedef enum
     ELF_ERR_BAD_SEGMENT = -10, // PT_LOAD-сегмент выходит за границы файла
     ELF_ERR_OVERFLOW    = -11, // переполнение при вычислении размера образа
     ELF_ERR_NO_MEMORY   = -12, // malloc() вернул NULL
-    ELF_ERR_BAD_ENTRY   = -13, // e_entry не попадает ни в один PT_LOAD
+    ELF_ERR_BAD_ENTRY   = -13, // e_entry не в исполняемом сегменте
+    ELF_ERR_WX_SEGMENT  = -14, // W и X на одном сегменте или странице
 } elf_load_status_t;
+
+// Максимум непустых PT_LOAD
+#define ELF_IMAGE_MAX_REGIONS 16
 
 // Результат успешной загрузки.
 typedef struct
 {
-    void     *image_base;    // начало буфера
+    void     *image_base;    // начало буфера (по границе страницы)
     size_t    image_size;    // полный размер буфера (сегменты + extra_tail)
-    size_t    segments_end;  // смещение конца последнего сегмента
+    size_t    segments_end;  // смещение хвоста под extra_tail (с границы страницы)
     uintptr_t entry;         // абсолютный адрес точки входа
+    user_region_t regions[ELF_IMAGE_MAX_REGIONS]; // права сегментов
+    size_t        nregions;
 } elf_image_t;
 
-// Загружает все PT_LOAD-сегменты из file_data[0..file_size) в новый буфер.
-// extra_tail_space — резерв после сегментов (например, под argv).
-// При успехе *out заполнен, владение image_base переходит вызывающей стороне.
+// Загружает PT_LOAD-сегменты в новый буфер из целых страниц (malloc_pages).
+// Сегмент или страница с W и X отвергаются: линкуйте сегменты по 4 КиБ.
+// extra_tail_space — резерв после сегментов (argv), в отдельных страницах.
+// При успехе image_base освобождается через free().
 // При ошибке память не выделяется, *out не изменяется.
 int elf_load_image(const void *file_data, size_t file_size,
                    size_t extra_tail_space, elf_image_t *out);

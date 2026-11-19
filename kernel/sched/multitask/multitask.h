@@ -1,6 +1,7 @@
 #ifndef MULTITASK_H
 #define MULTITASK_H
 
+#include "mm/paging/paging.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -61,13 +62,16 @@ void schedule_from_isr(uint64_t *regs, uint64_t **out_regs_ptr);
 task_t *get_current_task(void);
 void task_exit(int exit_code);
 
+/* regions — права сегментов user_mem (W^X); при 0 user_mem остаётся у вызывающего */
 uint64_t utask_create(void (*entry)(void),
                       size_t stack_size,
                       void *user_mem,
                       size_t user_mem_size,
                       int argc,
                       uintptr_t argv_ptr,
-                      const char *name);
+                      const char *name,
+                      const user_region_t *regions,
+                      size_t nregions);
 
 int task_is_alive(int pid);
 

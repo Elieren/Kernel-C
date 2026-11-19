@@ -25,9 +25,26 @@ void paging_switch(uint64_t *pml4);
 uint64_t *paging_create_user_task(void *user_mem, size_t user_size);
 void paging_destroy_user_task(uint64_t *pml4);
 int paging_map_user_region(uint64_t *pml4, void *addr, size_t size);
-/* Новые user-страницы неисполняемые (NX): стек, куча. */
+/* User-страницы всегда NX; регион — целые страницы из malloc_pages() */
 int paging_map_user_region_nx(uint64_t *pml4, void *addr, size_t size);
 
 void paging_unmap_user_region(uint64_t *pml4, void *addr, size_t size);
+
+/* Права страниц образа (W^X) */
+#define USER_PERM_W 0x1u
+#define USER_PERM_X 0x2u
+
+/* [offset, offset+size] от начала образа; чтение всегда разрешено */
+typedef struct
+{
+    size_t offset;
+    size_t size;
+    uint32_t perm;
+} user_region_t;
+
+/* Выставляет права страницам образа по регионам; страница вне регионов — RW+NX.
+ * 0, если страница получилась бы W+X. Без NX в CPU запрет исполнения невозможен. */
+int paging_protect_user_image(uint64_t *pml4, void *image, size_t size,
+                              const user_region_t *regions, size_t nregions);
 
 #endif

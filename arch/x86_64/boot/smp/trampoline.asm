@@ -96,10 +96,10 @@ ap_lm64:
     mov gs, ax
     xor ebp, ebp
 
-    ; включаем FPU/SSE
+    ; включаем FPU/SSE и CR0.WP (ring-0 подчиняется запрету записи в страницы)
     mov rax, cr0
     and rax, ~((1 << 2) | (1 << 3))
-    or rax, (1 << 1)
+    or rax, (1 << 1) | (1 << 16)
     mov cr0, rax
     mov rax, cr4
     or rax, (1 << 9) | (1 << 10)

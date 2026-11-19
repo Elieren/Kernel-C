@@ -96,6 +96,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [x] `EFER.NXE` is enabled only if the CPU reports NX (CPUID), so CPUs without NX no longer fault at boot.
 
+* [x] W^X for user memory: user blocks, stack and ELF image are whole pages from `malloc_pages()`; heap/stack are NX, ELF segments get their own permissions (apps need 4 KiB-aligned segments), `CR0.WP` is set and syscalls write only into writable user pages.
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 

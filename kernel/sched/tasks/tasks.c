@@ -227,8 +227,10 @@ void load_and_run_from_autorun(void)
                             {
                                 // Запустить задачу с именем файла (без расширения);
                                 // точка входа — настоящий e_entry из ELF.
-                                utask_create((void (*)(void))(uintptr_t)image.entry,
-                                             0, image.image_base, image.image_size, 0, 0, file_name);
+                                if (!utask_create((void (*)(void))(uintptr_t)image.entry,
+                                                  0, image.image_base, image.image_size, 0, 0, file_name,
+                                                  image.regions, image.nregions))
+                                    free(image.image_base);
                             }
                             /* при ошибке разбора ELF буфер образа не создавался —
                              * освобождать, кроме file_buf ниже, больше нечего */

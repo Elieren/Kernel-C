@@ -126,9 +126,10 @@ long_mode_entry:
     mov ss, ax
 
     ; --- FPU/SSE: CR0.EM=0, CR0.TS=0, CR0.MP=1; CR4.OSFXSR=1, CR4.OSXMMEXCPT=1 ---
+    ; --- CR0.WP=1: ring-0 тоже подчиняется запрету записи в страницы (W^X) ---
     mov rax, cr0
     and rax, ~((1 << 2) | (1 << 3))
-    or  rax, (1 << 1)
+    or  rax, (1 << 1) | (1 << 16)
     mov cr0, rax
     mov rax, cr4
     or  rax, (1 << 9) | (1 << 10)

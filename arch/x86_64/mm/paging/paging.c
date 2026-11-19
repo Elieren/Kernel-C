@@ -328,15 +328,70 @@ static int map_user_region(uint64_t *pml4, void *addr, size_t size, int nx)
             return 0;
 
         uint64_t *pte = &pt[PT_IDX(page)];
-        int was_user = (*pte & PTE_U) != 0;
 
         *pte |= PTE_U;
-        /* NX ставим только на страницы, которые ещё не были user-страницами:
-           страница может делить границу с образом программы (код). */
-        if (nx && !was_user)
+        if (nx)
             *pte |= nx_mask();
-        else if (!nx)
+        else
             *pte &= ~PTE_NX;
+        invlpg(page);
+    }
+
+    return 1;
+}
+
+int paging_protect_user_image(uint64_t *pml4, void *image, size_t size,
+                              const user_region_t *regions, size_t nregions)
+{
+    if (!pml4 || !image || size == 0 || (nregions && !regions))
+        return 0;
+
+    uint64_t base = (uint64_t)(uintptr_t)image;
+    uint64_t start = ALIGN_DOWN_4KB(base);
+    uint64_t end = ALIGN_UP_4KB(base + size);
+
+    if (end <= start || end > phys_mem_total)
+        return 0;
+
+    for (uint64_t page = start; page < end; page += PAGE_SIZE)
+    {
+        int covered = 0, w = 0, x = 0;
+
+        for (size_t i = 0; i < nregions; i++)
+        {
+            if (regions[i].size == 0)
+                continue;
+            uint64_t rs = base + regions[i].offset;
+            uint64_t re = rs + regions[i].size;
+            if (re < rs)
+                return 0;
+            if (rs < page + PAGE_SIZE && re > page)
+            {
+                covered = 1;
+                if (regions[i].perm & USER_PERM_W)
+                    w = 1;
+                if (regions[i].perm & USER_PERM_X)
+                    x = 1;
+            }
+        }
+
+        if (!covered)
+            w = 1; /* вне регионов — данные */
+
+        if (w && x)
+            return 0;
+
+        uint64_t *pt = get_or_create_pt_for_user(pml4, page);
+        if (!pt)
+            return 0;
+
+        uint64_t *pte = &pt[PT_IDX(page)];
+        uint64_t v = (*pte & ~(PTE_W | PTE_NX)) | PTE_P | PTE_U;
+        if (w)
+            v |= PTE_W;
+        if (!x)
+            v |= nx_mask();
+        *pte = v;
         invlpg(page);
     }
 

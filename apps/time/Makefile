@@ -17,9 +17,9 @@ LD := ld
 
 CFLAGS := -m64 -c -ffreestanding -fno-builtin -nostdlib -fno-stack-protector
 
-# max-page-size=0x10 — без выравнивания сегментов (ядро не делает постраничную защиту)
+# max-page-size=0x1000 — сегменты по 4 KiB, ядро выставляет права постранично
 # -s — убрать таблицы символов, грузчику нужны только program headers
-LDFLAGS := -m elf_x86_64 -z max-page-size=0x10 -s -T $(LINKER)
+LDFLAGS := -m elf_x86_64 -z max-page-size=0x1000 -z common-page-size=0x1000 -z noexecstack -s -T $(LINKER)
 
 .PHONY: all clean
 

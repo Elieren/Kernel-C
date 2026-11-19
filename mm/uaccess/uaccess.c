@@ -3,6 +3,7 @@
 #include "kernel/sched/multitask/multitask.h"
 
 #define PTE_P 1ULL
+#define PTE_W (1ULL << 1)
 #define PTE_U (1ULL << 2)
 #define PTE_PS (1ULL << 7)
 #define PTE_ADDR 0x000FFFFFFFFFF000ULL
@@ -14,29 +15,31 @@
 #define PT_IDX(va) (((va) >> 12) & 0x1FF)
 
 /* Страница доступна из ring-3: Present и U/S=1 на каждом уровне,
-   без huge-страниц (user-регионы в этом ядре всегда 4 KiB). */
-static int page_is_user(const uint64_t *pml4, uint64_t va)
+   без huge-страниц. need_write — ещё и R/W=1 на каждом уровне. */
+static int page_is_user(const uint64_t *pml4, uint64_t va, int need_write)
 {
+    uint64_t need = PTE_P | PTE_U | (need_write ? PTE_W : 0);
+
     uint64_t e = pml4[PML4_IDX(va)];
-    if ((e & (PTE_P | PTE_U | PTE_PS)) != (PTE_P | PTE_U))
+    if ((e & (need | PTE_PS)) != need)
         return 0;
 
     const uint64_t *pdpt = (const uint64_t *)(uintptr_t)(e & PTE_ADDR);
     e = pdpt[PDPT_IDX(va)];
-    if ((e & (PTE_P | PTE_U | PTE_PS)) != (PTE_P | PTE_U))
+    if ((e & (need | PTE_PS)) != need)
         return 0;
 
     const uint64_t *pd = (const uint64_t *)(uintptr_t)(e & PTE_ADDR);
     e = pd[PD_IDX(va)];
-    if ((e & (PTE_P | PTE_U | PTE_PS)) != (PTE_P | PTE_U))
+    if ((e & (need | PTE_PS)) != need)
         return 0;
 
     const uint64_t *pt = (const uint64_t *)(uintptr_t)(e & PTE_ADDR);
     e = pt[PT_IDX(va)];
-    return (e & (PTE_P | PTE_U)) == (PTE_P | PTE_U);
+    return (e & need) == need;
 }
 
-int user_range_ok(uint64_t *pml4, uint64_t uaddr, size_t len)
+static int range_ok(uint64_t *pml4, uint64_t uaddr, size_t len, int need_write)
 {
     if (!pml4)
         return 0;
@@ -48,10 +51,20 @@ int user_range_ok(uint64_t *pml4, uint64_t uaddr, size_t len)
     uint64_t end = uaddr + len;
     for (uint64_t page = uaddr & ~(PAGE_SZ - 1); page < end; page += PAGE_SZ)
     {
-        if (!page_is_user(pml4, page))
+        if (!page_is_user(pml4, page, need_write))
             return 0;
     }
     return 1;
+}
+
+int user_range_ok(uint64_t *pml4, uint64_t uaddr, size_t len)
+{
+    return range_ok(pml4, uaddr, len, 0);
+}
+
+int user_range_ok_write(uint64_t *pml4, uint64_t uaddr, size_t len)
+{
+    return range_ok(pml4, uaddr, len, 1);
 }
 
 int user_range_ok_current(uint64_t uaddr, size_t len)
@@ -60,6 +73,14 @@ int user_range_ok_current(uint64_t uaddr, size_t len)
     if (!cur)
         return 0;
     return user_range_ok(cur->page_table, uaddr, len);
+}
+
+int user_range_ok_current_write(uint64_t uaddr, size_t len)
+{
+    task_t *cur = get_current_task();
+    if (!cur)
+        return 0;
+    return user_range_ok_write(cur->page_table, uaddr, len);
 }
 
 int user_str_len(const char *s, size_t cap)
@@ -74,7 +95,7 @@ int user_str_len(const char *s, size_t cap)
     while (i < cap)
     {
         uint64_t cur_addr = addr + i;
-        if (cur_addr >= USER_TOP || !page_is_user(cur->page_table, cur_addr))
+        if (cur_addr >= USER_TOP || !page_is_user(cur->page_table, cur_addr, 0))
             return -1;
 
         /* проверена целая страница — сканируем до её конца */

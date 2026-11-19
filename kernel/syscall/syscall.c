@@ -384,7 +384,8 @@ uint64_t load_and_run_program(const char *str)
     uintptr_t argv_user_ptr = (uintptr_t)argv_user;
 
     // 6. Создать задачу: точка входа — настоящий e_entry из ELF, а не начало буфера
-    uint64_t pid = utask_create((void (*)(void))(uintptr_t)image.entry, 0, user_mem, user_mem_size, argc, argv_user_ptr, progname);
+    uint64_t pid = utask_create((void (*)(void))(uintptr_t)image.entry, 0, user_mem, user_mem_size, argc, argv_user_ptr, progname,
+                                image.regions, image.nregions);
     if (pid == 0)
     {
         free(user_mem);
@@ -416,9 +417,22 @@ static int uptr_ok(const void *p, size_t n)
     return user_range_ok_current((uint64_t)(uintptr_t)p, n);
 }
 
+/* буфер, в который ядро пишет по указателю из ring-3 */
+static int uptr_w_ok(const void *p, size_t n)
+{
+    return user_range_ok_current_write((uint64_t)(uintptr_t)p, n);
+}
+
 static int ustr_ok(const char *s, size_t cap)
 {
     return user_str_len(s, cap) >= 0;
+}
+
+static size_t user_block_pages(size_t bytes)
+{
+    if (bytes == 0 || bytes > SIZE_MAX - (HEAP_PAGE_SIZE - 1))
+        return 0;
+    return (bytes + (HEAP_PAGE_SIZE - 1)) / HEAP_PAGE_SIZE;
 }
 
 /* Размер блока, если ptr — живой блок кучи, целиком лежащий в user-страницах
@@ -434,9 +448,7 @@ static size_t user_heap_block_size(task_t *cur, void *ptr)
     return size;
 }
 
-/* Освободить блок, выданный задаче SYSCALL_MALLOC. Только блоки из таблицы задачи:
-   чужие и соседние объекты кучи (в т.ч. ядра), делящие с ней страницу, освободить
-   нельзя. U/S снимается лишь со страниц, которые больше никем не заняты. */
+/* Освободить блок, выданный задаче SYSCALL_MALLOC. Только блоки из таблицы задачи. */
 static void user_free_block(task_t *cur, void *ptr)
 {
     user_alloc_t *ua = user_alloc_find(cur, ptr);
@@ -444,8 +456,6 @@ static void user_free_block(task_t *cur, void *ptr)
         return; /* не наш блок — игнорируем */
 
     size_t size = ua->size;
-    /* заголовок блока лежит на user-странице и мог быть испорчен задачей:
-       в этом случае блок не освобождаем */
     int sane = (user_heap_block_size(cur, ptr) == size);
 
     ua->ptr = NULL;
@@ -521,7 +531,7 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
     case SYSCALL_GET_TIME:
         if (regs->rdi && regs->rsi >= sizeof(ClockTime))
         {
-            if (!uptr_ok((void *)(uintptr_t)regs->rdi, 3))
+            if (!uptr_w_ok((void *)(uintptr_t)regs->rdi, 3))
                 return SYS_ERR;
             uint8_t *buf = (uint8_t *)(uintptr_t)regs->rdi;
             buf[0] = system_clock.hh;
@@ -536,7 +546,7 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
     case SYSCALL_GET_DATE:
         if (regs->rdi && regs->rsi >= 4)
         {
-            if (!uptr_ok((void *)(uintptr_t)regs->rdi, 4))
+            if (!uptr_w_ok((void *)(uintptr_t)regs->rdi, 4))
                 return SYS_ERR;
             uint8_t *buf = (uint8_t *)(uintptr_t)regs->rdi;
             buf[0] = system_date.day;
@@ -557,16 +567,20 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
         if (!cur || !cur->page_table)
             return 0;
 
-        /* слот резервируем до malloc: нет места в таблице — отказ без побочных эффектов */
+        size_t npages = user_block_pages(sz);
+        if (npages == 0)
+            return 0;
+
+        /* слот резервируем до выделения */
         user_alloc_t *slot = user_alloc_slot(cur);
         if (!slot)
             return 0;
 
-        void *ptr = malloc(sz);
+        void *ptr = malloc_pages(npages);
         if (!ptr)
             return 0;
 
-        size_t actual = malloc_usable_size(ptr);
+        size_t actual = npages * HEAP_PAGE_SIZE;
         if (!paging_map_user_region_nx(cur->page_table, ptr, actual))
         {
             user_pages_release(cur, ptr, actual);
@@ -603,6 +617,11 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
             return 0;
         }
 
+        size_t new_pages = user_block_pages(new_size);
+        if (new_pages == 0)
+            return 0;
+        size_t new_actual = new_pages * HEAP_PAGE_SIZE;
+
         user_alloc_t *ua;
         size_t old_size = 0;
 
@@ -613,7 +632,10 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
                 return 0; /* не наш блок */
             old_size = ua->size;
             if (user_heap_block_size(cur, old_ptr) != old_size)
-                return 0; /* заголовок испорчен */
+                return 0;
+
+            if (new_actual == old_size)
+                return (uintptr_t)old_ptr;
         }
         else
         {
@@ -622,13 +644,13 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
                 return 0;
         }
 
-        /* Старый блок остаётся живым и замапленным, пока realloc не вернул успех:
-           при NULL по стандарту old_ptr остаётся валидным — ничего восстанавливать не надо. */
-        void *new_ptr = realloc(old_ptr, new_size);
+        /* пока новый блок не замаплен, старый остаётся валидным */
+        void *new_ptr = malloc_pages(new_pages);
         if (!new_ptr)
             return 0;
 
-        size_t new_actual = malloc_usable_size(new_ptr);
+        if (old_ptr)
+            memcpy(new_ptr, old_ptr, old_size < new_actual ? old_size : new_actual);
 
         /* Сначала записываем новый блок */
         ua->ptr = new_ptr;
@@ -636,18 +658,18 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
 
         if (!paging_map_user_region_nx(cur->page_table, new_ptr, new_actual))
         {
-            ua->ptr = NULL;
-            ua->size = 0;
+            ua->ptr = old_ptr;
+            ua->size = old_size;
             user_pages_release(cur, new_ptr, new_actual);
-            if (old_ptr)
-                user_pages_release(cur, old_ptr, old_size);
             free(new_ptr);
             return 0;
         }
 
-        /* затем снимаем U/S со страниц старого диапазона, которые больше не нужны. */
         if (old_ptr)
+        {
             user_pages_release(cur, old_ptr, old_size);
+            free(old_ptr);
+        }
 
         return (uintptr_t)new_ptr;
     }
@@ -655,7 +677,7 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
     case SYSCALL_KMALLOC_STATS:
         if (regs->rdi)
         {
-            if (!uptr_ok((void *)(uintptr_t)regs->rdi, sizeof(kmalloc_stats_t)))
+            if (!uptr_w_ok((void *)(uintptr_t)regs->rdi, sizeof(kmalloc_stats_t)))
                 return SYS_ERR;
             get_kmalloc_stats((void *)(uintptr_t)regs->rdi);
         }
@@ -691,7 +713,7 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
             max = 256;
         if (!regs->rdi || max == 0)
             return 0;
-        if (!uptr_ok((void *)(uintptr_t)regs->rdi, max * sizeof(task_info_t)))
+        if (!uptr_w_ok((void *)(uintptr_t)regs->rdi, max * sizeof(task_info_t)))
             return SYS_ERR;
 
         task_info_t *out = (task_info_t *)(uintptr_t)regs->rdi;
@@ -763,14 +785,14 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
 
     case SYSCALL_GETCWD:
     {
-        if (!regs->rdi || !uptr_ok((void *)(uintptr_t)regs->rdi, (size_t)regs->rsi))
+        if (!regs->rdi || !uptr_w_ok((void *)(uintptr_t)regs->rdi, (size_t)regs->rsi))
             return SYS_ERR;
         int result = sys_getcwd((char *)(uintptr_t)regs->rdi, (size_t)regs->rsi);
         return (result == -1) ? (uintptr_t)-1 : (uintptr_t)result;
     }
 
     case SYSCALL_GET_CWD_IDX:
-        if (!uptr_ok((void *)(uintptr_t)regs->rdi, sizeof(uint32_t)))
+        if (!uptr_w_ok((void *)(uintptr_t)regs->rdi, sizeof(uint32_t)))
             return FS_ERR_INVALID_ARG;
         return (uintptr_t)sys_get_cwd_idx((uint32_t *)(uintptr_t)regs->rdi);
 
@@ -786,7 +808,7 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
         if (!ustr_ok((const char *)(uintptr_t)regs->rdi, FS_NAME_MAX) ||
             (regs->rsi && !ustr_ok((const char *)(uintptr_t)regs->rsi, FS_EXT_MAX)))
             return FS_ERR_INVALID_ARG;
-        if (regs->r10 && !uptr_ok((void *)(uintptr_t)regs->r10, sizeof(uint16_t)))
+        if (regs->r10 && !uptr_w_ok((void *)(uintptr_t)regs->r10, sizeof(uint16_t)))
             return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_create_file(
             (const char *)(uintptr_t)regs->rdi,
@@ -801,7 +823,7 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
         if (!ustr_ok((const char *)(uintptr_t)regs->rdi, FS_NAME_MAX) ||
             (regs->rsi && !ustr_ok((const char *)(uintptr_t)regs->rsi, FS_EXT_MAX)))
             return FS_ERR_INVALID_ARG;
-        if (regs->r10 && !uptr_ok((void *)(uintptr_t)regs->r10, sizeof(fs_entry_t)))
+        if (regs->r10 && !uptr_w_ok((void *)(uintptr_t)regs->r10, sizeof(fs_entry_t)))
             return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_find_in_dir(
             (const char *)(uintptr_t)regs->rdi,
@@ -814,7 +836,7 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
         int max = (int)regs->rsi;
         if (max > FS_MAX_ENTRIES)
             max = FS_MAX_ENTRIES;
-        if (max > 0 && !uptr_ok((void *)(uintptr_t)regs->rdi, (size_t)max * sizeof(fs_entry_t)))
+        if (max > 0 && !uptr_w_ok((void *)(uintptr_t)regs->rdi, (size_t)max * sizeof(fs_entry_t)))
             return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_get_all_in_dir(
             (fs_entry_t *)(uintptr_t)regs->rdi,
@@ -823,7 +845,7 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
     }
 
     case SYSCALL_FS_READ:
-        if (!uptr_ok((void *)(uintptr_t)regs->rsi, (size_t)regs->rdx))
+        if (!uptr_w_ok((void *)(uintptr_t)regs->rsi, (size_t)regs->rdx))
             return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_read(
             (uint16_t)regs->rdi,
@@ -855,8 +877,8 @@ static uintptr_t syscall_dispatch(const struct syscall_regs *regs)
         if (!ustr_ok((const char *)(uintptr_t)regs->rdi, FS_NAME_MAX) ||
             (regs->rsi && !ustr_ok((const char *)(uintptr_t)regs->rsi, FS_EXT_MAX)))
             return FS_ERR_INVALID_ARG;
-        if (!uptr_ok((void *)(uintptr_t)regs->r10, (size_t)regs->r8) ||
-            (regs->r9 && !uptr_ok((void *)(uintptr_t)regs->r9, sizeof(size_t))))
+        if (!uptr_w_ok((void *)(uintptr_t)regs->r10, (size_t)regs->r8) ||
+            (regs->r9 && !uptr_w_ok((void *)(uintptr_t)regs->r9, sizeof(size_t))))
             return FS_ERR_INVALID_ARG;
         return (uintptr_t)fs_read_file_in_dir(
             (const char *)(uintptr_t)regs->rdi,
