@@ -1,5 +1,11 @@
 #include "ide.h"
 #include <asm/io.h>
+#include <asm/pic.h>
+#include <asm/cpu.h>
+#include <asm/smp.h>
+#include <asm/lapic.h>
+#include <asm/ioapic.h>
+#include <asm/idt.h>
 
 /* Небольшая задержка: четыре чтения ALTSTATUS (~100ns) */
 static inline void io_delay(uint16_t ctrl_port)
@@ -50,6 +56,199 @@ static int check_err_and_clear(uint16_t base_port)
         return IDE_ERR_DEVICE;
     }
     return IDE_OK;
+}
+
+/* ===== Режим прерываний (IRQ14) =====
+ * IRQ только будит ядро, готовность проверяется по ALTSTATUS.
+ * IOAPIC: IRQ идёт на ядро, выдавшее команду; PIC: спит только BSP. */
+#define IDE_ROUTE_NONE 0
+#define IDE_ROUTE_PIC 1
+#define IDE_ROUTE_IOAPIC 2
+
+#define IDE_NOT_BOUND 0xFFFFFFFFu
+
+/* Ожидаемый результат команды */
+#define IDE_WAIT_DONE 0 /* без данных */
+#define IDE_WAIT_DRQ 1  /* нужен DRQ */
+
+static volatile int g_ide_irq_active[2];                   /* пока 0 — опрос */
+static volatile int g_ide_route = IDE_ROUTE_NONE;          /* нужен для EOI */
+static uint32_t g_ide_gsi;                                 /* GSI входа IRQ14 */
+static volatile uint32_t g_ide_bound_apic = IDE_NOT_BOUND; /* APIC ID адресата */
+static volatile uint32_t g_ide_irq_count[2];               /* диагностика */
+
+static inline int ide_disk_irq_active(const ide_disk_t *disk)
+{
+    return g_ide_irq_active[disk->channel & 1];
+}
+
+/* Вызывается из isr_ide.asm; без локов, не трогает планировщик */
+void ide_irq_handler(void)
+{
+    /* STATUS (не ALTSTATUS) снимает INTRQ */
+    (void)io_read8(IDE_BASE_PRIMARY + IDE_STATUS);
+
+    __atomic_fetch_add(&g_ide_irq_count[IDE_CHANNEL_PRIMARY], 1u, __ATOMIC_RELAXED);
+
+    if (g_ide_route == IDE_ROUTE_IOAPIC)
+        lapic_eoi(); /* EOI в LAPIC */
+    else
+        pic_send_eoi(IDE_IRQ_PRIMARY); /* EOI в PIC */
+}
+
+int ide_irq_enable(ide_channel_t channel)
+{
+    if (channel != IDE_CHANNEL_PRIMARY)
+        return IDE_ERR_INVALID; /* вторичный канал остаётся на опросе */
+
+    /* порядок: снять INTRQ, выбрать маршрут, включить IRQ в устройстве, открыть линию */
+    (void)io_read8(IDE_BASE_PRIMARY + IDE_STATUS);
+
+    int route = IDE_ROUTE_PIC;
+    uint32_t gsi = 0;
+    bool low = false, level = false;
+
+    if (ioapic_present() && ioapic_resolve_isa_irq(IDE_IRQ_PRIMARY, &gsi, &low, &level))
+    {
+        /* стартовый адресат — BSP */
+        uint32_t id = lapic_id();
+        if (id <= IOAPIC_MAX_DEST_ID && ioapic_setup_route(gsi, IDE_PRIMARY, id, low, level))
+        {
+            g_ide_gsi = gsi;
+            g_ide_bound_apic = id;
+            route = IDE_ROUTE_IOAPIC;
+        }
+    }
+
+    g_ide_route = route;
+    io_write8(IDE_CTRL_PRIMARY + IDE_CONTROL, 0x00); /* nIEN = 0 */
+    g_ide_irq_active[channel] = 1;
+
+    if (route == IDE_ROUTE_IOAPIC)
+    {
+        pic_mask_irq(IDE_IRQ_PRIMARY); /* чтобы не пришло и через 8259 */
+        ioapic_unmask(gsi);
+    }
+    else
+    {
+        pic_unmask_irq(IDE_IRQ_PRIMARY);
+    }
+    return IDE_OK;
+}
+
+void ide_irq_disable(ide_channel_t channel)
+{
+    if (channel != IDE_CHANNEL_PRIMARY)
+        return;
+
+    /* g_ide_route не трогаем: EOI позднего IRQ */
+    g_ide_irq_active[channel] = 0;
+
+    if (g_ide_route == IDE_ROUTE_IOAPIC)
+        ioapic_mask(g_ide_gsi);
+    pic_mask_irq(IDE_IRQ_PRIMARY);
+
+    io_write8(IDE_CTRL_PRIMARY + IDE_CONTROL, IDE_CTRL_NIEN);
+    (void)io_read8(IDE_BASE_PRIMARY + IDE_STATUS);
+}
+
+int ide_irq_active(ide_channel_t channel)
+{
+    return g_ide_irq_active[channel & 1];
+}
+
+uint32_t ide_irq_count(ide_channel_t channel)
+{
+    if (channel != IDE_CHANNEL_PRIMARY)
+        return 0;
+    return __atomic_load_n(&g_ide_irq_count[channel], __ATOMIC_RELAXED);
+}
+
+const char *ide_irq_route_name(ide_channel_t channel)
+{
+    if (channel != IDE_CHANNEL_PRIMARY || !g_ide_irq_active[channel])
+        return "polling";
+    return g_ide_route == IDE_ROUTE_IOAPIC ? "ioapic" : "pic";
+}
+
+/* Направить IRQ14 на текущее ядро, пока команда не выдана */
+static void ide_bind_self(const ide_disk_t *disk)
+{
+    if (!ide_disk_irq_active(disk) || g_ide_route != IDE_ROUTE_IOAPIC)
+        return;
+
+    uint32_t id = lapic_id();
+    if (id == g_ide_bound_apic)
+        return;
+
+    if (id <= IOAPIC_MAX_DEST_ID && ioapic_set_dest(g_ide_gsi, id))
+        g_ide_bound_apic = id;
+    else
+        g_ide_bound_apic = IDE_NOT_BOUND; /* это ядро адресовать нельзя: будет опрос */
+}
+
+/* Дойдёт ли IRQ14 до этого ядра */
+static int ide_can_sleep(void)
+{
+    switch (g_ide_route)
+    {
+    case IDE_ROUTE_IOAPIC:
+        return lapic_id() == g_ide_bound_apic;
+    case IDE_ROUTE_PIC:
+        return smp_is_bsp();
+    default:
+        return 0;
+    }
+}
+
+/* Спим до IRQ14 или тика; вытеснение запрещено: держим FS-лок и BKL */
+static void ide_sleep_once(void)
+{
+    unsigned long flags = save_flags();
+
+    preempt_disable();
+    safe_halt();
+    local_irq_disable();
+    preempt_enable();
+    restore_flags(flags);
+}
+
+/* Дождаться завершения команды (what: IDE_WAIT_*), не дольше max_wakes пробуждений */
+static int ide_wait_complete(ide_disk_t *disk, int what, uint32_t max_wakes)
+{
+    if (!ide_disk_irq_active(disk) || !ide_can_sleep())
+    {
+        int rc = wait_bsy_clear(disk->base_port, disk->ctrl_port, IDE_TIMEOUT_LOOPS);
+        if (rc != IDE_OK)
+            return rc;
+        if (what == IDE_WAIT_DRQ)
+            return wait_drq_or_err(disk->base_port, disk->ctrl_port, IDE_TIMEOUT_LOOPS);
+        return check_err_and_clear(disk->base_port);
+    }
+
+    /* 400 нс: иначе ALTSTATUS мог показать устаревшее «готово» */
+    io_delay(disk->ctrl_port);
+
+    for (uint32_t wakes = 0;; ++wakes)
+    {
+        if (!(io_read8(disk->ctrl_port + IDE_ALTSTATUS) & IDE_STATUS_BSY))
+        {
+            uint8_t s = io_read8(disk->base_port + IDE_STATUS); /* снимает INTRQ */
+            if (s & (IDE_STATUS_ERR | IDE_STATUS_DF))
+            {
+                (void)io_read8(disk->base_port + IDE_ERROR);
+                return IDE_ERR_DEVICE;
+            }
+            if (what == IDE_WAIT_DRQ && !(s & IDE_STATUS_DRQ))
+                return IDE_ERR_DEVICE;
+            return IDE_OK;
+        }
+
+        if (wakes >= max_wakes)
+            return IDE_ERR_TIMEOUT;
+
+        ide_sleep_once();
+    }
 }
 
 /* Выбрать устройство (LBA/CHS) и задержка */
@@ -193,6 +392,10 @@ int ide_init(ide_disk_t *disk, ide_channel_t channel, uint8_t drive)
     disk->supports_lba48 = 0;
     disk->total_sectors = 0;
 
+    /* до включения IRQ устройство не должно поднимать INTRQ */
+    if (!g_ide_irq_active[channel & 1])
+        io_write8(disk->ctrl_port + IDE_CONTROL, IDE_CTRL_NIEN);
+
     uint16_t ident[256];
     int rc = ide_identify(disk, ident);
     if (rc != IDE_OK)
@@ -243,6 +446,8 @@ int ide_read_sectors(ide_disk_t *disk, uint64_t lba, uint32_t count, void *buffe
     if (disk->total_sectors && lba > disk->total_sectors - (uint64_t)count)
         return IDE_ERR_INVALID;
 
+    ide_bind_self(disk); /* IRQ14 на текущее ядро */
+
     const uint32_t max_per_op = 256;
     uint8_t *user_buf = (uint8_t *)buffer;
     uint32_t remaining = count;
@@ -269,11 +474,8 @@ int ide_read_sectors(ide_disk_t *disk, uint64_t lba, uint32_t count, void *buffe
                 io_write8(disk->base_port + IDE_COMMAND, IDE_CMD_READ_SECTORS);
             }
 
-            int rc = wait_bsy_clear(disk->base_port, disk->ctrl_port, IDE_TIMEOUT_LOOPS);
-            if (rc != IDE_OK)
-                return rc;
-
-            rc = wait_drq_or_err(disk->base_port, disk->ctrl_port, IDE_TIMEOUT_LOOPS);
+            /* ждём IRQ14: сектор готов */
+            int rc = ide_wait_complete(disk, IDE_WAIT_DRQ, IDE_IRQ_WAKES);
             if (rc != IDE_OK)
                 return rc;
 
@@ -322,6 +524,8 @@ int ide_write_sectors(ide_disk_t *disk, uint64_t lba, uint32_t count, const void
 
     if (disk->total_sectors && lba > disk->total_sectors - (uint64_t)count)
         return IDE_ERR_INVALID;
+
+    ide_bind_self(disk); /* IRQ14 на текущее ядро */
 
     const uint32_t max_per_op = 256;
     const uint8_t *user_buf = (const uint8_t *)buffer;
@@ -388,11 +592,10 @@ int ide_write_sectors(ide_disk_t *disk, uint64_t lba, uint32_t count, const void
                 }
             }
 
-            if (wait_bsy_clear(disk->base_port, disk->ctrl_port, IDE_TIMEOUT_LOOPS) != IDE_OK)
-                return IDE_ERR_TIMEOUT;
-
-            if (check_err_and_clear(disk->base_port) != IDE_OK)
-                return IDE_ERR_DEVICE;
+            /* ждём IRQ14: сектор записан */
+            rc = ide_wait_complete(disk, IDE_WAIT_DONE, IDE_IRQ_WAKES);
+            if (rc != IDE_OK)
+                return rc;
         }
 
         user_buf += (size_t)chunk * disk->sector_size;
@@ -406,10 +609,6 @@ int ide_write_sectors(ide_disk_t *disk, uint64_t lba, uint32_t count, const void
     else
         io_write8(disk->base_port + IDE_COMMAND, IDE_CMD_CACHE_FLUSH);
 
-    if (wait_bsy_clear(disk->base_port, disk->ctrl_port, IDE_TIMEOUT_LOOPS) != IDE_OK)
-        return IDE_ERR_TIMEOUT;
-    if (check_err_and_clear(disk->base_port) != IDE_OK)
-        return IDE_ERR_DEVICE;
-
-    return IDE_OK;
+    /* самая долгая операция */
+    return ide_wait_complete(disk, IDE_WAIT_DONE, IDE_IRQ_FLUSH_WAKES);
 }

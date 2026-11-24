@@ -9,6 +9,9 @@
 #define MOUSE 44
 #define INTERRUPT 0x80
 
+/* IRQ14 (первичный IDE) */
+#define IDE_PRIMARY 0x2E
+
 /* Флаги селекторов и типов */
 #define KERNEL_CODE_SEL 0x08
 #define IDT_GATE_INT 0x8E     /* interrupt gate */

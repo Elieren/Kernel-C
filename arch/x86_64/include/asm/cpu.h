@@ -77,6 +77,12 @@ static inline void halt(void)
     __asm__ volatile("hlt");
 }
 
+/* sti; hlt одним блоком: IRQ не потеряется между проверкой и hlt */
+static inline void safe_halt(void)
+{
+    __asm__ volatile("sti; hlt" ::: "memory");
+}
+
 static inline unsigned long save_flags(void)
 {
     unsigned long flags;

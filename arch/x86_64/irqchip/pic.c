@@ -31,3 +31,19 @@ void pic_send_eoi(uint8_t irq)
         io_write8(PIC2_COMMAND, 0x20);
     io_write8(PIC1_COMMAND, 0x20);
 }
+
+void pic_unmask_irq(uint8_t irq)
+{
+    uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
+    uint8_t bit = (uint8_t)(1u << (irq & 7u));
+
+    io_write8(port, (uint8_t)(io_read8(port) & (uint8_t)~bit));
+}
+
+void pic_mask_irq(uint8_t irq)
+{
+    uint16_t port = (irq < 8) ? PIC1_DATA : PIC2_DATA;
+    uint8_t bit = (uint8_t)(1u << (irq & 7u));
+
+    io_write8(port, (uint8_t)(io_read8(port) | bit));
+}

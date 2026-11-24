@@ -27,6 +27,7 @@
 #include <asm/acpi.h>
 #include <asm/smp.h>
 #include <asm/lapic.h>
+#include <asm/ioapic.h>
 
 /* символы из link.ld */
 extern char _heap_start;
@@ -196,6 +197,18 @@ void kmain(uint64_t mb2_addr)
     acpi_init(info->rsdp_addr);
     acpi_dump_to_serial();
 
+    /* I/O APIC — до первой user-задачи (MMIO в user-таблицы страниц) */
+    if (ioapic_init())
+    {
+        char buf[64];
+        kformat(buf, sizeof(buf), "[ioapic] ready (%u controller(s))\n", (unsigned)acpi_get_info()->ioapic_count);
+        serial_banner(buf);
+    }
+    else
+    {
+        serial_banner("[ioapic] not available -> IRQ14 via 8259 (BSP only)\n");
+    }
+
     uint32_t cpus = smp_init();
     {
         char buf[64];
@@ -205,6 +218,19 @@ void kmain(uint64_t mb2_addr)
     }
 
     tasks_init();
+
+    /* Диск на IRQ14 — строго перед sti */
+    if (ide_irq_enable(IDE_CHANNEL_PRIMARY) == IDE_OK)
+    {
+        char buf[80];
+        kformat(buf, sizeof(buf), "[ide] IRQ14 mode enabled (%s)\n",
+                ide_irq_route_name(IDE_CHANNEL_PRIMARY));
+        serial_banner(buf);
+    }
+    else
+    {
+        serial_banner("[ide] IRQ14 mode failed -> polling\n");
+    }
 
     /* Разрешаем прерывания */
     local_irq_enable();

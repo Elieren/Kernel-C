@@ -14,6 +14,7 @@
 
 #define MADT_TYPE_LAPIC 0
 #define MADT_TYPE_IOAPIC 1
+#define MADT_TYPE_ISO 2
 #define MADT_TYPE_LAPIC_OVERRIDE 5
 #define MADT_TYPE_LAPIC_X2APIC 9
 
@@ -166,6 +167,29 @@ static void parse_madt(uint64_t madt)
         {
             g_acpi.lapic_base = rd64(p + 4);
         }
+        else if (type == MADT_TYPE_IOAPIC && elen >= 12)
+        {
+            /* 1: id, 2..5: MMIO, 6..9: gsi_base */
+            if (g_acpi.ioapic_count < ACPI_MAX_IOAPICS)
+            {
+                acpi_ioapic_t *io = &g_acpi.ioapics[g_acpi.ioapic_count++];
+                io->id = rd8(p + 2);
+                io->addr = (uint64_t)rd32(p + 4);
+                io->gsi_base = rd32(p + 8);
+            }
+        }
+        else if (type == MADT_TYPE_ISO && elen >= 10)
+        {
+            /* 2: bus, 3: source, 4..7: gsi, 8..9: flags */
+            if (g_acpi.iso_count < ACPI_MAX_ISO)
+            {
+                acpi_iso_t *o = &g_acpi.isos[g_acpi.iso_count++];
+                o->bus = rd8(p + 2);
+                o->src_irq = rd8(p + 3);
+                o->gsi = rd32(p + 4);
+                o->flags = rd16(p + 8);
+            }
+        }
 
         p += elen;
     }
@@ -229,10 +253,28 @@ void acpi_dump_to_serial(void)
     serial_write_string(1, a->madt_found ? "found" : "missing");
     serial_write_string(1, "\n");
 
-    kformat(buf, sizeof(buf), "[acpi] lapic_base=0x%llx cpus=%u enabled=%u\n",
+    kformat(buf, sizeof(buf), "[acpi] lapic_base=0x%llx cpus=%u enabled=%u ioapic=%u iso=%u\n",
             (unsigned long long)a->lapic_base,
-            (unsigned)a->cpu_count, (unsigned)a->enabled_count);
+            (unsigned)a->cpu_count, (unsigned)a->enabled_count,
+            (unsigned)a->ioapic_count, (unsigned)a->iso_count);
     serial_write_string(1, buf);
+
+    for (uint32_t i = 0; i < a->ioapic_count; i++)
+    {
+        kformat(buf, sizeof(buf), "[acpi]   ioapic%u id=%u addr=0x%llx gsi_base=%u\n",
+                (unsigned)i, (unsigned)a->ioapics[i].id,
+                (unsigned long long)a->ioapics[i].addr,
+                (unsigned)a->ioapics[i].gsi_base);
+        serial_write_string(1, buf);
+    }
+
+    for (uint32_t i = 0; i < a->iso_count; i++)
+    {
+        kformat(buf, sizeof(buf), "[acpi]   iso%u bus=%u irq=%u -> gsi=%u flags=0x%x\n",
+                (unsigned)i, (unsigned)a->isos[i].bus, (unsigned)a->isos[i].src_irq,
+                (unsigned)a->isos[i].gsi, (unsigned)a->isos[i].flags);
+        serial_write_string(1, buf);
+    }
 
     /* serial медленный: печатаем первые 16 и последнее */
     for (uint32_t i = 0; i < a->cpu_count; i++)

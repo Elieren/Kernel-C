@@ -100,6 +100,8 @@ The goal is not to create a fully functional OS, but to understand how its key m
 
 * [x] Multi-resolution graphics: the kernel adapts to any 24/32-bpp mode chosen by GRUB (tested 640x480 - 2560x1440), with fallback to VGA text.
 
+* [X] IDE primary channel works via IRQ14 interrupts (I/O APIC, 8259 fallback).
+
 ## Iist of available commands:
 To view the list of available commands, use the "help" command.
 

@@ -6,6 +6,8 @@
 #include <stdbool.h>
 
 #define ACPI_MAX_CPUS 1024
+#define ACPI_MAX_IOAPICS 4
+#define ACPI_MAX_ISO 16
 
 /* Логический процессор из MADT */
 typedef struct
@@ -17,6 +19,23 @@ typedef struct
     bool is_bsp;       /* true для ядра, на котором мы стартовали */
 } acpi_cpu_t;
 
+/* I/O APIC из MADT */
+typedef struct
+{
+    uint32_t id;       /* APIC ID */
+    uint64_t addr;     /* физический адрес MMIO */
+    uint32_t gsi_base; /* первый GSI */
+} acpi_ioapic_t;
+
+/* Interrupt Source Override из MADT */
+typedef struct
+{
+    uint8_t bus;      /* 0 = ISA */
+    uint8_t src_irq;  /* IRQ на шине */
+    uint32_t gsi;     /* GSI */
+    uint16_t flags;   /* полярность (1:0), триггер (3:2) */
+} acpi_iso_t;
+
 typedef struct
 {
     uint64_t lapic_base;             /* физический адрес MMIO Local APIC */
@@ -26,6 +45,12 @@ typedef struct
     bool madt_found;
     uint64_t madt_addr;
     uint8_t madt_flags;              /* bit0 = PCAT_COMPAT (есть 8259) */
+
+    acpi_ioapic_t ioapics[ACPI_MAX_IOAPICS];
+    uint32_t ioapic_count;
+
+    acpi_iso_t isos[ACPI_MAX_ISO];
+    uint32_t iso_count;
 } acpi_info_t;
 
 /* Разбирает ACPI (RSDP -> RSDT/XSDT -> MADT).

@@ -27,6 +27,9 @@
 #define IDE_ALTSTATUS 0x0 /* чтение */
 #define IDE_CONTROL 0x0   /* запись */
 
+/* nIEN: прерывания устройства запрещены */
+#define IDE_CTRL_NIEN 0x02
+
 /* Статус-биты */
 #define IDE_STATUS_BSY 0x80
 #define IDE_STATUS_DRDY 0x40
@@ -46,6 +49,13 @@
 
 /* Таймаут (итерации опроса) */
 #define IDE_TIMEOUT_LOOPS 100000U
+
+/* Предел ожидания по прерыванию (пробуждения из hlt, ~1 мс каждое) */
+#define IDE_IRQ_WAKES 5000U
+#define IDE_IRQ_FLUSH_WAKES 30000U
+
+/* IRQ первичного канала */
+#define IDE_IRQ_PRIMARY 14
 
 /* Коды возврата */
 #define IDE_OK 0
@@ -82,5 +92,15 @@ int ide_init(ide_disk_t *disk, ide_channel_t channel, uint8_t drive);
 int ide_identify(ide_disk_t *disk, uint16_t ident_buffer[256]);
 int ide_read_sectors(ide_disk_t *disk, uint64_t lba, uint32_t count, void *buffer);
 int ide_write_sectors(ide_disk_t *disk, uint64_t lba, uint32_t count, const void *buffer);
+
+/* Режим прерываний (первичный канал, IRQ14); до ide_irq_enable() — опрос */
+int ide_irq_enable(ide_channel_t channel);
+void ide_irq_disable(ide_channel_t channel); /* вернуться к опросу */
+int ide_irq_active(ide_channel_t channel);
+uint32_t ide_irq_count(ide_channel_t channel);         /* счётчик IRQ */
+const char *ide_irq_route_name(ide_channel_t channel); /* "ioapic" | "pic" | "polling" */
+
+/* Вызывается из isr_ide.asm */
+void ide_irq_handler(void);
 
 #endif /* IDE_H */

@@ -12,6 +12,7 @@ ARCH_ASM_SRCS := \
 	arch/x86_64/interrupt/isr32.asm \
 	arch/x86_64/interrupt/isr33.asm \
 	arch/x86_64/interrupt/isr44.asm \
+	arch/x86_64/interrupt/isr_ide.asm \
 	arch/x86_64/interrupt/isr80.asm \
 	arch/x86_64/interrupt/isr_ipi.asm \
 	arch/x86_64/interrupt/isr_lapic_timer.asm \
@@ -27,6 +28,7 @@ ARCH_C_SRCS := \
 	arch/x86_64/tables/idt.c \
 	arch/x86_64/tables/tss.c \
 	arch/x86_64/irqchip/pic.c \
+	arch/x86_64/irqchip/ioapic.c \
 	arch/x86_64/irqchip/lapic.c \
 	arch/x86_64/kernel/smp/smp.c \
 	arch/x86_64/kernel/sched/multitask.c \

@@ -13,6 +13,7 @@ static struct idt_ptr idtp;
 extern void isr_spurious(void);
 extern void isr_lapic_timer(void);
 extern void isr_ipi_halt(void);
+extern void isr_ide(void);
 
 /* Установка записи IDT для 64-bit handler */
 void idt_set_gate(uint16_t num, void (*handler)(), uint16_t sel, uint8_t flags)
@@ -64,6 +65,7 @@ void idt_install(void)
     idt_set_gate(TIMER, isr32, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(KEYBOARD, isr33, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(MOUSE, isr44, KERNEL_CODE_SEL, IDT_GATE_INT);
+    idt_set_gate(IDE_PRIMARY, isr_ide, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(INTERRUPT, isr80, KERNEL_CODE_SEL, IDT_GATE_SYSCALL);
     idt_set_gate(LAPIC_TIMER_VECTOR, isr_lapic_timer, KERNEL_CODE_SEL, IDT_GATE_INT);
     idt_set_gate(LAPIC_IPI_HALT, isr_ipi_halt, KERNEL_CODE_SEL, IDT_GATE_INT);
