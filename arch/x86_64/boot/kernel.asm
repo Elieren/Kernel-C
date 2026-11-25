@@ -13,7 +13,7 @@
 
 [BITS 32]
 
-section .text
+section .multiboot
     align 8
 
     ; --------------------
@@ -53,6 +53,7 @@ mb2_start:
 
 mb2_end:
 
+section .text
 global start
 global gdt
 global gdt_desc
