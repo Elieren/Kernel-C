@@ -6,7 +6,11 @@
 #include <boot/bootinfo.h>
 
 const int GLYPH_W = 8;
-const int GLYPH_H = 12;
+const int GLYPH_H = 16;
+
+#define CELL_SW 0
+#define CELL_SH 0
+#define SCREEN_MARGIN 10
 
 /* Внутренняя глобальная ссылка на информацию о framebuffer */
 static framebuffer_info_t *g_fb = NULL;
@@ -155,7 +159,7 @@ static void gfx_init()
     }
     g_fb = &boot_info->fb;
 
-    g_grid = calc_grid(2, 2, 10);
+    g_grid = calc_grid(CELL_SW, CELL_SH, SCREEN_MARGIN);
 
     if (g_grid.cols == 0 || g_grid.rows == 0)
         return;
@@ -468,10 +472,12 @@ static void gfx_draw_all_from_cells(void)
             uint64_t idx = cell_index(gx, gy);
             char ch = g_cells[idx].ch;
             uint32_t color = g_cells[idx].color;
-            point_t p = glyph_pixel_pos(gx, gy, /*Sw*/ 2, /*Sh*/ 2, /*M*/ 10, /*scale*/ 1);
+            point_t p = glyph_pixel_pos(gx, gy, CELL_SW, CELL_SH, SCREEN_MARGIN, /*scale*/ 1);
             if (ch == 0)
             {
-                const uint8_t glyph_bool[12][1] = {
+                const uint8_t glyph_bool[16][1] = {
+                    {0xFF},
+                    {0xFF},
                     {0xFF},
                     {0xFF},
                     {0xFF},
@@ -787,7 +793,7 @@ void gfx_draw_glyph(const uint8_t *glyph, int x0, int y0, uint32_t color, int sc
     if (scale == 1)
     {
         /* быстрый путь для scale == 1 */
-        for (int row = 0; row < 12; row++)
+        for (int row = 0; row < GLYPH_H; row++)
         {
             uint8_t line = glyph[row];
             for (int col = 0; col < 8; col++)
@@ -802,7 +808,7 @@ void gfx_draw_glyph(const uint8_t *glyph, int x0, int y0, uint32_t color, int sc
     else
     {
         /* масштабируем каждый включённый пиксель в квадрат scale x scale */
-        for (int row = 0; row < 12; row++)
+        for (int row = 0; row < GLYPH_H; row++)
         {
             uint8_t line = glyph[row];
             for (int col = 0; col < 8; col++)

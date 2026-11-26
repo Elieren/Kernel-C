@@ -11,7 +11,7 @@
 
 /* Константы размеров глифов */
 #define FONT_GLYPH_WIDTH 8
-#define FONT_GLYPH_HEIGHT 12
+#define FONT_GLYPH_HEIGHT 16
 
 #ifdef __GNUC__
 #define UNUSED __attribute__((unused))
